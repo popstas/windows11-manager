@@ -68,6 +68,7 @@ module.exports = {
   fancyZones,
   wallpapers,
 
+  virtualDesktopPath: __dirname +'/VirtualDesktop11.exe',
   store: {
     path: './data/windows-store.json',
 

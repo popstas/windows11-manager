@@ -4,9 +4,8 @@ const { virtualDesktop } = require('./sysapi');
 const wql = require('wql-process-monitor');
 const { exec, spawn, spawnSync } = require('child_process');
 const fs = require('fs');
-// const { mqtt } = require('../../windows-mqtt/src/config');
 
-const vd11Path = 'C:/Users/popstas/bin/VirtualDesktop11.exe';
+const vd11Path = config.virtualDesktopPath;
 
 function vd11Command(args) {
   const cmd = `${vd11Path} ${args}`;

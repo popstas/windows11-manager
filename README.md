@@ -1,5 +1,8 @@
 Rules based manager of windows state for Windows 11: position, desktop, pin.
 
+## Attention
+Project is dirty and will not work out of the box.
+
 ## Features:
 - Place windows by config rules
 - Find window by title/path regex
@@ -16,3 +19,8 @@ I use it with:
 
 - [windows-mqtt](https://github.com/popstas/windows-mqtt)
 - Autohotkey
+
+
+## Install
+- Copy [config.example.js](config.example.js) to config.js
+- See [examples](examples)
