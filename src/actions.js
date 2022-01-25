@@ -366,11 +366,31 @@ function getFancyZoneMonitor(num) {
 }
 
 // TODO:
+function getFancyZones() {
+  return [];
+}
+
+// TODO:
 function getFancyZoneByPos(pos) {
   const matchedZones = getFancyZones().filter(zone => {
+    const isMatch = false;
     if (isMatch) return zone;
   });
-  return matchedZones;
+  return matchedZones ? matchedZones[0] : false;
+}
+
+// TODO:
+function buildWindowRule(win) {
+  const rule = {
+    titleMatch: win.getTitle(),
+  };
+
+  const fz = getFancyZoneByPos({x: win.X, y: win.Y, width: win.width, height: win.height});
+  if (fz) {
+    rule.fancyZones = {
+
+    }
+  }
 }
 
 // TODO: cache?
@@ -711,8 +731,23 @@ async function startPlaceNewProcesses() {
   await wql.promises.createEventSink();
   const processMonitor = await wql.promises.subscribe();
 
+  const excludedApps = [
+    'dllhost.exe',
+    'taskhostw.exe',
+    'code.exe'
+  ];
+
+  const fastApps = [
+    'putty.exe',
+  ];
+
   processMonitor.on('creation', async ([process, pid, filepath]) => {
     // log(`creation: ${process}::${pid} ["${filepath}"]`);
+    if (excludedApps.includes(process.toLowerCase())) return;
+
+    const isFast = fastApps.includes(process.toLowerCase());
+    const delay = isFast ? 50 : 1000;
+    // if (isFast) log('Place fast window: ' + process + ', ' + pid);
 
     setTimeout(async () => {
       const placed = await placeProcessWindow(pid);
@@ -721,7 +756,7 @@ async function startPlaceNewProcesses() {
           log(`try to place again: ${process}`);
           await placeProcessWindow(pid);
         }, 5000);
-    }, 1000);
+    }, delay);
   });
 
   /* processMonitor.on("deletion",([process,pid]) => {
