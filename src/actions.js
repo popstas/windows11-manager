@@ -911,8 +911,16 @@ function openWindows(storedWins, wins) {
     if (wins.find((w) => w.path === storedWin.path)) continue; // don't open twice
     log(`Open: ${storedWin.path}`);
     restored.push(storedWin);
+
+    let args = [];
+    const res = storedWin.path.match(/\.exe (.*)$/);
+    if (res) {
+      storedWin.path = storedWin.path.replace(/\.exe.*/, '.exe');
+      args = res[1].split(' ');
+    }
+
     try {
-      const subprocess = spawn(storedWin.path, [], { detached: true, stdio: 'ignore' }); // action
+      const subprocess = spawn(storedWin.path, args, { detached: true, stdio: 'ignore' }); // action
       subprocess.unref();
     } catch(e) {
       log (`Error while opening ${storedWin.path}`);
