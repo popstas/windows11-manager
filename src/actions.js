@@ -397,7 +397,7 @@ function buildWindowRule(win) {
 // return { monitor, zoneset, zone }
 // zone: { X, Y, width, height }
 function getFancyZoneInfo(opts) {
-  let monitor, zoneset, zone;
+  let monitor, layout, zone;
 
   if (!opts.monitor) {
     log('fancyZones.monitor is required');
@@ -408,29 +408,36 @@ function getFancyZoneInfo(opts) {
     return false;
   }
 
-  const zones = require(`${config.fancyZones.path}/zones-settings.json`);
-
   monitor = getFancyZoneMonitor(opts.monitor);
+
+  // const zones = require(`${config.fancyZones.path}/zones-settings.json`);
+  const appliedLayouts = require(`${config.fancyZones.path}/applied-layouts.json`)['applied-layouts'];
+  const customLayouts = require(`${config.fancyZones.path}/custom-layouts.json`)['custom-layouts'];
 
   // монитора может не быть, если есть, пробуем получить зону
   if (monitor !== undefined) {
-    const zoneDevice = zones.devices.find((dev) => dev['device-id'] == monitor['monitor-id']);
-    const activeZoneset = zoneDevice['active-zoneset'];
+    // const zoneDevice = zones.devices.find((dev) => dev['device-id'] == monitor['monitor-id']);
+    const appliedLayout = appliedLayouts.find((lay) => lay['device-id'] === monitor['monitor-id']);
+
+    if (!appliedLayout) {
+      log (`layout not found: ${opts}`);
+      return false;
+    }
 
     // check for custom zoneset
-    if (activeZoneset.type == 'custom') {
-      zoneset = zones['custom-zone-sets'].find((zs) => zs.uuid == activeZoneset.uuid);
+    if (appliedLayout['applied-layout'].type === 'custom') {
+      layout = customLayouts.find((lay) => lay.uuid === appliedLayout['applied-layout'].uuid);
     } else {
       // zoneset = zones['templates'].find(zs => zs.type == activeZoneset.type);
       log(`fancyZonesToPos(${opts}): only custom zone sets supported, don't use layout templates!`);
     }
 
-    if (!zoneset) return false;
+    if (!layout) return false;
 
     // zoneset + monBounds + opts.position = absolute coordinates
 
     // get zone
-    zone = zoneset.info.zones[opts.position - 1];
+    zone = layout.info.zones[opts.position - 1];
   }
 
   if (!zone) {
@@ -441,18 +448,18 @@ function getFancyZoneInfo(opts) {
     });
     if (backup) {
       const res = getFancyZoneInfo(backup.to);
-      if (!res || !res.monitor || !res.zoneset || !res.zone) {
+      if (!res || !res.monitor || !res.layout || !res.zone) {
         return false;
       }
       monitor = res.monitor;
-      zoneset = res.zoneset;
+      layout = res.layout;
       zone = res.zone;
     }
   }
 
   return {
     monitor,
-    zoneset,
+    layout,
     zone,
   }
 }
