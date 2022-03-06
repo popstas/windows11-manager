@@ -858,7 +858,7 @@ async function focusWindow(rule) {
 function storeWindows() {
   log('Store windows:');
   const wins = getWindows();
-  const matchList = config.store.matchList;
+  const matchList = {...config.store.matchList};
 
   const matchedWins = wins.filter((w) => {
     for (let i in matchList) {
