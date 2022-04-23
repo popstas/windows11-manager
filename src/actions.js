@@ -226,7 +226,7 @@ function isWindowMatchRule(w, rule) {
 
   // path
   if (rule.pathMatch && !isMatch) {
-    return testField('path', rule.pathMatch)
+    isMatch = testField('path', rule.pathMatch)
   }
 
   // exclude
