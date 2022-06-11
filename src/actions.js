@@ -417,7 +417,7 @@ function getFancyZoneInfo(opts) {
   // монитора может не быть, если есть, пробуем получить зону
   if (monitor !== undefined) {
     // const zoneDevice = zones.devices.find((dev) => dev['device-id'] == monitor['monitor-id']);
-    const appliedLayout = appliedLayouts.find((lay) => lay['device-id'] === monitor['monitor-id']);
+    const appliedLayout = appliedLayouts.find((lay) => lay.device.monitor === monitor.monitor);
 
     if (!appliedLayout) {
       log (`layout not found: ${opts}`);
