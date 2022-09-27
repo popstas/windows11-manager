@@ -356,8 +356,19 @@ function getFancyZoneMonitor(num) {
 
   // sort by horizontal offset
   const sortedMons = editor.monitors.sort((a, b) => {
+
+    // sort monitors by y offset, when delta > 1000
+    const yOffset = b['top-coordinate'] - a['top-coordinate'];
+    if (Math.abs(yOffset) > 1000) {
+      if (yOffset > 0) return -1;
+      if (yOffset < 0) return 1;
+      return 0;
+    }
+
+    // sort by x offset
     if (a['left-coordinate'] > b['left-coordinate']) return 1;
     if (a['left-coordinate'] < b['left-coordinate']) return -1;
+
     return 0;
   });
 
