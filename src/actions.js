@@ -937,8 +937,17 @@ function openWindows(storedWins, wins) {
       args = res[1].split(' ');
     }
 
+    if (!fs.existsSync(storedWin.path)) {
+      console.log(`${storedWin.path} not exists`);
+      continue;
+    }
+
     try {
       const subprocess = spawn(storedWin.path, args, { detached: true, stdio: 'ignore' }); // action
+      subprocess.on('error', (err) => {
+        log (`Error while opening ${storedWin.path}`);
+        log(err.message);
+      });
       subprocess.unref();
     } catch(e) {
       log (`Error while opening ${storedWin.path}`);
