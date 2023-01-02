@@ -1,24 +1,22 @@
-// test file
-
+const { program } = require('commander');
 const winMan = require('./actions');
-
-const place = true;
-// const place = false;
-// const stats = true;
-const stats = false;
 
 start();
 
 async function start() {
+  program
+    .option('--first')
 
-  if (place) {
-    const placed = await winMan.placeWindows();
-    console.log(`Placed windows: ${placed.length}`);
-  }
+  program.command('place').action(winMan.placeWindows)
+  program.command('store').action(winMan.storeWindows)
+  program.command('restore').action(winMan.restoreWindows)
 
-  if (stats) {
+  program.command('stats').action(() => {
     const stats = winMan.getStats();
     console.log(stats);
-  }
+  });
+
+  program.parse();
+  // const options = program.opts();
 }
 module.exports = {}

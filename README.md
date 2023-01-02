@@ -12,6 +12,7 @@ Project is dirty and will not work out of the box.
 - Store/restore opened windows
 - Set wallpapers by virtual desktop
 - Opened windows stats
+- Command line: place, store, restore, stats
 
 Based on [MScholtes/VirtualDesktop CLI tool](https://github.com/MScholtes/VirtualDesktop).
 
