@@ -242,9 +242,9 @@ function isWindowMatchRule(w, rule) {
 
 function getWindowInfo(w) {
   let msg = getAppFromPath(w.path);
+  msg += ` (${w.getTitle()})`;
   if (config.debug) {
-    msg += `\ntitle: ${w.getTitle()}`
-    + `\npath: ${w.path}`
+    msg += `\npath: ${w.path}`
     + `\nbounds: ${JSON.stringify(w.getBounds())}`
     + `\nproc: ${w.processId}\n`
   }
@@ -335,6 +335,7 @@ async function placeWindows() {
   for (let w of wins) {
     const matchedRules = getMatchedRules(w);
     for (let rule of matchedRules) {
+      if (rule.onlyOnOpen) continue;
       rule.pos = parsePos(rule, mons);
       const changes = await placeWindow({ w, rule });
       if (config.debug) log(`after placeWindow: ${Date.now() - t}`)
