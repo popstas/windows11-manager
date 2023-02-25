@@ -124,16 +124,17 @@ function timeout(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function getMonitors() {
+function getWindowsMonitors() {
   return windowManager.getMonitors().map((mon) => {
     mon.bounds = mon.getBounds();
+    mon.name = mon.getTitle;
     return mon;
   });
 }
 
 function getMonitor(num) {
   const ind = config.monitors[num];
-  const mons = getMonitors();
+  const mons = getWindowsMonitors();
   const sorted = [];
   for (let num in config.monitorsSize) {
     const size = config.monitorsSize[num];
@@ -148,6 +149,44 @@ function getMonitor(num) {
   return sorted[ind];
 }
 
+// return object key of config.monitorsSize by name
+function getMonitorNumByName(name) {
+  const config = getConfig();
+  for (let key in config.monitorsSize) {
+    if (config.monitorsSize[key].name == name) {
+      return parseInt(key);
+    }
+  }
+}
+
+function getSortedMonitors() {
+  const editor = require(`${config.fancyZones.path}/editor-parameters.json`);
+  return editor.monitors.sort((a, b) => {
+    // sort by name instead of size
+    const aByName = getMonitorNumByName(a.monitor);
+    const bByName = getMonitorNumByName(b.monitor);
+    if (aByName !== undefined && bByName !== undefined) {
+      return aByName - bByName;
+    }
+
+    // sort by y offset, when delta > 1000
+    const yOffset = b['top-coordinate'] - a['top-coordinate'];
+    if (Math.abs(yOffset) > 1000) { // TODO: вычислять или в конфиг
+      if (yOffset > 0) return -1;
+      if (yOffset < 0) return 1;
+      return 0;
+    }
+
+    // sort by x offset
+    return a['left-coordinate'] - b['left-coordinate'];
+  });
+}
+// fancyZone
+function getFancyZoneMonitor(num) {
+  const sortedMons = getSortedMonitors();
+  monitor = sortedMons[num - 1];
+  return monitor;
+}
 // loads config without cache
 function getConfig() {
   const configPath = '../config.js';
@@ -321,60 +360,49 @@ async function placeWindowsByConfig(wins = [], opts = {}) {
   }
 }
 
-
+// autoplace
 async function placeWindows() {
   const t = Date.now();
   const config = getConfig();
-  const mons = [{}, getMonitor(1), getMonitor(2), getMonitor(3)];
+  const mons = [{}, getMonitor(1), getMonitor(2), getMonitor(3), getMonitor(4)];
 
-  if (config.debug) log(`get mons: ${Date.now() - t}`)
+  if (config.debug) {
+    log(`mons:`);
+    log(JSON.stringify(mons));
+
+    const sortedMons = getSortedMonitors();
+    if (config.debug) {
+      log(`sortedMons:`);
+      log(sortedMons.map(m => `
+        name: ${m.monitor},
+        size: ${m['monitor-width']}x${m['monitor-height']},
+        offset: ${m['left-coordinate']}x${m['top-coordinate']}`
+      ).join(',\n '));
+    }
+  }
   const placed = [];
   const wins = getWindowsByConfig(config.windows, mons);
   if (config.debug) log(`getWindowsByConfig: ${Date.now() - t}`)
 
+  const tasks = [];
   for (let w of wins) {
     const matchedRules = getMatchedRules(w);
     for (let rule of matchedRules) {
       if (rule.onlyOnOpen) continue;
       rule.pos = parsePos(rule, mons);
-      const changes = await placeWindow({ w, rule });
-      if (config.debug) log(`after placeWindow: ${Date.now() - t}`)
-      if (changes.length > 0) {
-        placed.push(w);
-      }
+      const task = placeWindow({ w, rule }).then(changes => {
+        if (config.debug) log(`after placeWindow: ${Date.now() - t}`);
+        if (changes.length > 0) {
+          placed.push(w);
+        }
+      });
+      tasks.push(task);
     }
   }
+  await Promise.all(tasks);
   if (config.debug) log(`after placeWindows: ${Date.now() - t}`)
 
   return placed;
-}
-
-// fancyZone
-function getFancyZoneMonitor(num) {
-  const editor = require(`${config.fancyZones.path}/editor-parameters.json`);
-  // console.log('zones: ', zones);
-  // console.log('editor: ', editor);
-
-  // sort by horizontal offset
-  const sortedMons = editor.monitors.sort((a, b) => {
-
-    // sort monitors by y offset, when delta > 1000
-    const yOffset = b['top-coordinate'] - a['top-coordinate'];
-    if (Math.abs(yOffset) > 1000) {
-      if (yOffset > 0) return -1;
-      if (yOffset < 0) return 1;
-      return 0;
-    }
-
-    // sort by x offset
-    if (a['left-coordinate'] > b['left-coordinate']) return 1;
-    if (a['left-coordinate'] < b['left-coordinate']) return -1;
-
-    return 0;
-  });
-
-  monitor = sortedMons[num - 1];
-  return monitor;
 }
 
 // TODO:
@@ -627,6 +655,9 @@ function parsePos(pos, mons) {
 // TODO: refactor to rule as 2-nd arg
 async function placeWindow({ w, rule = {} }) {
   if (!w) return false;
+  if (config.debug) {
+    log(`trying to placeWindow: ${w.title}`);
+  }
   const pos = rule.pos;
 
   const oldPos = w.getBounds();
@@ -665,6 +696,9 @@ async function placeWindow({ w, rule = {} }) {
     }
 
     w.setBounds(pos);
+  } else if (config.debug) {
+    if (!pos) log('no position');
+    if (!isPlaced()) log('window placed before');
   }
 
   // pin

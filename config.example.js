@@ -60,7 +60,7 @@ const wallpapers = {
   0: 'd:/images/wallpapers/desktops/1.png',
   1: 'd:/images/wallpapers/desktops/2.png',
   2: 'd:/images/wallpapers/desktops/3.png',
-}
+};
 
 module.exports = {
   debug: false,
@@ -84,7 +84,7 @@ module.exports = {
       'slack.exe',
       'telegram.exe',
       'whatsapp.exe',
-    ]
+    ],
   },
 
   // backup positions for FancyZones
@@ -118,9 +118,10 @@ module.exports = {
     3: 2,
   },
   monitorsSize: {
-    1: { width: 3440, height: 1440 },
-    2: { width: 1440, height: 2560 },
-    3: { width: 2560, height: 1080 },
+    // name is optional, force pin monitor to it's index
+    1: { width: 3440, height: 1440, name: 'IVM7613' },
+    2: { width: 1440, height: 2560, name: 'DPL0000' },
+    3: { width: 2560, height: 1080, name: 'GSM76FA' },
   },
   presets: [
     {
@@ -129,14 +130,14 @@ module.exports = {
         1: { width: 3440, height: 1440 },
         2: { width: 1440, height: 2560 },
         3: { width: 2560, height: 1080 },
-      }
+      },
     },
     {
       name: 'office',
       monitors: {
         1: { width: 1920, height: 1080 },
         2: { width: 1920, height: 1080 },
-      }
+      },
     },
   ],
 }
