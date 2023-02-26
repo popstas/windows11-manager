@@ -671,8 +671,9 @@ async function placeWindow({ w, rule = {} }) {
     return true;
   };
 
+  const placed = isPlaced();
   // change position
-  if (pos && !isPlaced()) {
+  if (pos && !placed) {
     // save window size, but change position, when no width and height
     if (
       pos.width === undefined &&
@@ -696,9 +697,12 @@ async function placeWindow({ w, rule = {} }) {
     }
 
     w.setBounds(pos);
+
+    // bring window to front
+    w.bringToTop();
   } else if (config.debug) {
     if (!pos) log('no position');
-    if (!isPlaced()) log('window placed before');
+    if (placed) log('window placed before');
   }
 
   // pin
