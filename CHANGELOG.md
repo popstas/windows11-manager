@@ -1,3 +1,13 @@
+## [0.1.3](https://github.com/popstas/windows11-manager/compare/v0.1.2...v0.1.3) (2023-02-26)
+
+
+### Features
+
+* bring window to top after place ([4758065](https://github.com/popstas/windows11-manager/commit/47580655cfe22f619200133a38eae2e660acd1ce))
+* pin monitor to num by name ([f8ff010](https://github.com/popstas/windows11-manager/commit/f8ff010e7c143d5bb9ae76e04ad380482ffbad8c))
+
+
+
 ## [0.1.2](https://github.com/popstas/windows11-manager/compare/v0.1.1...v0.1.2) (2023-02-12)
 
 
