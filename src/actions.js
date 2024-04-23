@@ -260,12 +260,13 @@ function isWindowMatchRule(w, rule) {
 
   // title
   if (rule.titleMatch) {
-    isMatch = testField('title', rule.titleMatch)
+    isMatch = testField('title', rule.titleMatch);
+    if (!isMatch) return false;
   }
 
   // path
-  if (rule.pathMatch && !isMatch) {
-    isMatch = testField('path', rule.pathMatch)
+  if (rule.pathMatch) {
+    isMatch = testField('path', rule.pathMatch);
   }
 
   // exclude
@@ -340,8 +341,8 @@ async function placeWindowsByConfig(wins = [], opts = {}) {
   }
   for (let w of wins) {
     const matchedRules = getMatchedRules(w);
-    console.log('matchedRules: ', matchedRules);
-    if (matchedRules.length == 0) continue;
+    if (config.debug) console.log('matchedRules: ', matchedRules);
+    if (matchedRules.length === 0) continue;
 
     const mons = [{}, getMonitor(1), getMonitor(2), getMonitor(3)];
     for (let rule of matchedRules) {
@@ -364,6 +365,7 @@ async function placeWindowsByConfig(wins = [], opts = {}) {
 async function placeWindows() {
   const t = Date.now();
   const config = getConfig();
+  // console.log('config (TODO: placeWindows): ', config);
   const mons = [{}, getMonitor(1), getMonitor(2), getMonitor(3), getMonitor(4)];
 
   if (config.debug) {
@@ -395,11 +397,15 @@ async function placeWindows() {
         if (changes.length > 0) {
           placed.push(w);
         }
-      });
+      }).catch(e => {
+        log(e, "error");
+      })
       tasks.push(task);
     }
   }
-  await Promise.all(tasks);
+  await Promise.all(tasks).catch(e => {
+    log(e, "error");
+  });
   if (config.debug) log(`after placeWindows: ${Date.now() - t}`)
 
   return placed;
@@ -687,7 +693,7 @@ async function placeWindow({ w, rule = {} }) {
 
     // no log minimized windows, but place it
     if (w.getBounds()['x'] >= 0) {
-      log(`Place ${getWindowInfo(w)} to ${JSON.stringify(pos)}\n`);
+      if (config.debug) log(`Place ${getWindowInfo(w)} to ${JSON.stringify(pos)}\n`);
       changes.push({ name: 'bounds', value: pos });
       isChanged = true;
 
@@ -719,28 +725,34 @@ async function placeWindow({ w, rule = {} }) {
   if (rule.desktop) {
     const num = rule.desktop - 1;
     // const winDesktopNum = virtualDesktop.GetWindowDesktopNumber(w.id);
-    const winDesktopNum = await virtualDesktop.GetWindowDesktopNumber(w.id);
-    if (winDesktopNum != num) {
-      log(`Move ${w.title} to Desktop ${rule.desktop} (id: ${w.id}, process id: ${w.processId})`);
-      // virtualDesktop.MoveWindowToDesktopNumber(w.id, num);
-
-      // заменяю на процесс, но это не подходит для окон браузера
-      virtualDesktop.MoveWindowToDesktopNumber(w.id, num);
-      changes.push({ name: 'desktop', value: num });
-      isChanged = true;
-
-      // перемещать текущее окно - могло бы сработать, но w.show() не срабатывает как надо
-      // w.show();
+    try {
+      const winDesktopNum = await virtualDesktop.GetWindowDesktopNumber(w.id);
+      if (winDesktopNum != num) {
+        log(`Move ${w.title} to Desktop ${rule.desktop} (id: ${w.id}, process id: ${w.processId})`);
+        // virtualDesktop.MoveWindowToDesktopNumber(w.id, num);
+  
+        // заменяю на процесс, но это не подходит для окон браузера
+        virtualDesktop.MoveWindowToDesktopNumber(w.id, num);
+        changes.push({ name: 'desktop', value: num });
+        isChanged = true;
+  
+        // перемещать текущее окно - могло бы сработать, но w.show() не срабатывает как надо
+        // w.show();
+        // w.restore();
+        // await timeout(2000);
+        // virtualDesktop.MoveActiveWindowToDesktopNumber(num);
+      }
+  
+      /* w.bringToTop();
       // w.restore();
-      // await timeout(2000);
-      // virtualDesktop.MoveActiveWindowToDesktopNumber(num);
+      await timeout(1000);
+      exec(`C:/projects/_temp/VirtualDesktop/VirtualDesktop.exe Q gd:${desktop-1} /MOVEACTIVEWINDOW`)
+      log(`Move ${w.title} to Desktop ${desktop}`); */
     }
-
-    /* w.bringToTop();
-    // w.restore();
-    await timeout(1000);
-    exec(`C:/projects/_temp/VirtualDesktop/VirtualDesktop.exe Q gd:${desktop-1} /MOVEACTIVEWINDOW`)
-    log(`Move ${w.title} to Desktop ${desktop}`); */
+    // doesn't work
+    catch (e) {
+      log(`Failed to place ${w.title} to Desktop ${rule.desktop}`, 'error');
+    }
   }
 
   return changes;
@@ -765,7 +777,9 @@ function startPlaceNewWindows() {
           return !exists;
         });
 
-        console.log(`New windows: ${newWins.length}\n${newWins.map(w => w.getTitle()).join('\n')}`);
+        if (config.debug) {
+          console.log(`New windows: ${newWins.length}\n${newWins.map(w => w.getTitle()).join('\n')}`);
+        }
         const changeDesktop = newWins.length === 1;
         await placeWindowsByConfig(newWins, { changeDesktop });
         stored = getWindows();
@@ -831,7 +845,7 @@ async function placeProcessWindow(pid) {
     // log('no matched windows');
     return true;
   }
-  log(`open ${JSON.stringify(matched)}`);
+  if (config.debug) log(`open ${JSON.stringify(matched)}`);
 
   for (let w of matched) {
     const matchedRules = getMatchedRules(w);
@@ -913,7 +927,7 @@ async function focusWindow(rule) {
 }
 
 function storeWindows() {
-  log('Store windows:');
+  // log('Store windows:');
   const wins = getWindows();
   const matchList = {...config.store.matchList};
 
@@ -929,7 +943,7 @@ function storeWindows() {
     return false;
   });
 
-  log(`Store windows: ${matchedWins.length}`);
+  if (config.debug) log(`Store windows: ${matchedWins.length}`);
   // console.log('matchedWins: ', matchedWins);
 
   // explorer windows
@@ -939,7 +953,9 @@ function storeWindows() {
     isPath = fs.existsSync(title) && fs.statSync(title).isDirectory();
     return isPath;
   });
-  if (storedPaths.length > 0) log(`Store explorer paths: ${storedPaths.length}`);
+  if (storedPaths.length > 0 && config.debug) {
+    log(`Store explorer paths: ${storedPaths.length}`);
+  }
 
   const store = {
     windows: matchedWins,
@@ -1069,6 +1085,7 @@ function getStats() {
 
 
 function setWallpapers() {
+  console.log('config.wallpapers: ', config.wallpapers);
   if (!config.wallpapers) return;
   for (let desktop in config.wallpapers) {
     const wpPath = wpMap[desktop];
