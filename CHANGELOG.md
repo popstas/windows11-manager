@@ -1,3 +1,12 @@
+## [0.1.4](https://github.com/popstas/windows11-manager/compare/v0.1.3...v0.1.4) (2024-04-23)
+
+
+### Bug Fixes
+
+* isWindowMatchRule fixes, less logging without debug, better error handling, update VirtualDesktop11.exe ([d60556a](https://github.com/popstas/windows11-manager/commit/d60556a678f45395ea8d347188d93ce26a2be5ae))
+
+
+
 ## [0.1.3](https://github.com/popstas/windows11-manager/compare/v0.1.2...v0.1.3) (2023-02-26)
 
 
