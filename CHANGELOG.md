@@ -1,3 +1,12 @@
+## [0.1.5](https://github.com/popstas/windows11-manager/compare/v0.1.4...v0.1.5) (2024-11-15)
+
+
+### Bug Fixes
+
+* remove ffi-napi, ref-napi, disable process monitor, update node-windows-manager ([3d28c9d](https://github.com/popstas/windows11-manager/commit/3d28c9dd3231b48a8a79fafd4522bfa704b1943b))
+
+
+
 ## [0.1.4](https://github.com/popstas/windows11-manager/compare/v0.1.3...v0.1.4) (2024-04-23)
 
 
