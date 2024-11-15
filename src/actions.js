@@ -1,7 +1,6 @@
 const { windowManager } = require('node-window-manager');
 const config = require('../config');
-const { virtualDesktop } = require('./sysapi');
-const wql = require('wql-process-monitor');
+// const { virtualDesktop } = require('./sysapi');
 const { exec, spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 
@@ -17,8 +16,8 @@ function vd11Command(args) {
         resolve(stdout);
       }
       if (stderr) {
-        // console.log('stderr: ', stderr);
-        reject(stderr);
+        console.error(`${cmd} - ${stderr}`);
+        resolve(null);
       }
     });
   });
@@ -34,6 +33,8 @@ function vd11Command(args) {
 
 
 */
+
+const virtualDesktop = {};
 
 // migrate to windows 11
 virtualDesktop.PinWindow = function (id) {
@@ -149,6 +150,13 @@ function getMonitor(num) {
   return sorted[ind];
 }
 
+function getMons() {
+  const mons = [{}];
+  for (let i in config.monitorsSize) {
+    mons.push(getMonitor(i));
+  }
+  return mons;
+}
 // return object key of config.monitorsSize by name
 function getMonitorNumByName(name) {
   const config = getConfig();
@@ -328,7 +336,7 @@ function getWindow(rule) {
 // rule - element of config.windows
 async function placeWindowByConfig(rule) {
   const w = getWindow(rule);
-  const mons = [{}, getMonitor(1), getMonitor(2), getMonitor(3)];
+  const mons = getMons();
   rule.pos = parsePos(rule, mons);
   const isChanged = placeWindow({ w, rule });
   return w;
@@ -344,7 +352,7 @@ async function placeWindowsByConfig(wins = [], opts = {}) {
     if (config.debug) console.log('matchedRules: ', matchedRules);
     if (matchedRules.length === 0) continue;
 
-    const mons = [{}, getMonitor(1), getMonitor(2), getMonitor(3)];
+    const mons = getMons();
     for (let rule of matchedRules) {
       rule.pos = parsePos(rule, mons);
       const changes = await placeWindow({ w, rule });
@@ -366,7 +374,7 @@ async function placeWindows() {
   const t = Date.now();
   const config = getConfig();
   // console.log('config (TODO: placeWindows): ', config);
-  const mons = [{}, getMonitor(1), getMonitor(2), getMonitor(3), getMonitor(4)];
+  const mons = getMons();
 
   if (config.debug) {
     log(`mons:`);
@@ -760,12 +768,16 @@ async function placeWindow({ w, rule = {} }) {
 
 // time to action = (random(0, updateInterval) + delay
 function startPlaceNewWindows() {
-  const updateInterval = 1000; // don't set too fast, it scan all system windows!
-  const delay = 2000; // after new windows detect, for show title
+  const updateInterval = 500; // don't set too fast, it scan all system windows!
+  const delay = 1000; // after new windows detect, for show title
 
   let stored;
+  // let timeTotal = 0;
   setInterval(async () => {
+    // const start = Date.now();
     const wins = getWindows();
+    // timeTotal += Date.now() - start;
+    // console.log('timeTotal: ', timeTotal);
 
     // windows count changed
     if (stored && stored.length < wins.length) {
@@ -786,7 +798,7 @@ function startPlaceNewWindows() {
       }, delay);
     }
     else {
-      stored = getWindows();
+      stored = wins;
     }
   }, updateInterval);
 }
@@ -795,12 +807,15 @@ async function placeWindowOnOpen() {
   log('Start new windows autoplacer', 'info');
 
   startPlaceNewWindows();
-  startPlaceNewProcesses();
+  // startPlaceNewProcesses();
 }
 
 async function startPlaceNewProcesses() {
-  await wql.promises.createEventSink();
-  const processMonitor = await wql.promises.subscribe();
+  const wql = await import('wql-process-monitor');
+  const processMonitor = await wql.subscribe({
+    сreation: true,
+    deletion: false,
+  });
 
   const excludedApps = [
     'dllhost.exe',
@@ -855,7 +870,7 @@ async function placeProcessWindow(pid) {
     }
     // log('matchedRules: ', matchedRules);
 
-    const mons = [{}, getMonitor(1), getMonitor(2), getMonitor(3)];
+    const mons = getMons();
     for (let rule of matchedRules) {
       rule.pos = parsePos(rule, mons);
       await placeWindow({ w, rule });
