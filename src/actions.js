@@ -1,5 +1,5 @@
 const { windowManager } = require('node-window-manager');
-const config = require('../config');
+let config = require('../config');
 // const { virtualDesktop } = require('./sysapi');
 const { exec, spawn, spawnSync } = require('child_process');
 const fs = require('fs');
@@ -1108,6 +1108,45 @@ function setWallpapers() {
   }
 }
 
+function reloadConfigs() {
+  // Reload main config.js
+  config = getConfig(); // Already clears require cache
+  
+  // Reload FancyZones JSON files if FancyZones is enabled
+  if (config.fancyZones?.path) {
+    try {
+      // Clear require cache for JSON files
+      const jsonFiles = [
+        'applied-layouts.json',
+        'custom-layouts.json',
+        'app-zone-history.json'
+      ];
+      
+      for (const file of jsonFiles) {
+        const path = require.resolve(`${config.fancyZones.path}/${file}`);
+        delete require.cache[path];
+      }
+      
+      // Re-require the files to refresh them
+      require(`${config.fancyZones.path}/applied-layouts.json`);
+      require(`${config.fancyZones.path}/custom-layouts.json`); 
+      require(`${config.fancyZones.path}/app-zone-history.json`);
+
+      if (config.debug) {
+        log('Reloaded FancyZones configuration files');
+      }
+    } catch (err) {
+      log(`Error reloading FancyZones configs: ${err.message}`, 'error');
+    }
+  }
+
+  if (config.debug) {
+    log('Configuration reloaded');
+  }
+  
+  return config;
+}
+
 module.exports = {
   placeWindows,
   // placeWindow,
@@ -1123,4 +1162,5 @@ module.exports = {
   focusWindow,
   getStats,
   setWallpapers,
+  reloadConfigs,
 };
