@@ -1,3 +1,12 @@
+# [0.2.0](https://github.com/popstas/windows11-manager/compare/v0.1.5...v0.2.0) (2024-11-22)
+
+
+### Features
+
+* Add reloadConfigs function to dynamically reload configuration files ([15a491d](https://github.com/popstas/windows11-manager/commit/15a491d10d611cc886c62777d0c324e4922d2be6))
+
+
+
 ## [0.1.5](https://github.com/popstas/windows11-manager/compare/v0.1.4...v0.1.5) (2024-11-15)
 
 
