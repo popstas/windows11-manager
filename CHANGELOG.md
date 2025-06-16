@@ -1,3 +1,12 @@
+## [0.2.1](https://github.com/popstas/windows11-manager/compare/v0.2.0...v0.2.1) (2025-06-16)
+
+
+### Bug Fixes
+
+* update virtualdesktop11.exe for Windows 24H2 ([f745405](https://github.com/popstas/windows11-manager/commit/f745405d48ada6da7ce7ece902c5844e12776873))
+
+
+
 # [0.2.0](https://github.com/popstas/windows11-manager/compare/v0.1.5...v0.2.0) (2024-11-22)
 
 
