@@ -4,8 +4,8 @@ This repository contains a Node.js tool for managing window placement on Windows
 
 ## Project layout
 
-- **src/index.js** – command line entry point using `commander`. It wires commands like `place`, `store`, `restore` and `stats` to the actions in `src/actions.js`.
-- **src/actions.js** – the heart of the project. Provides functions to locate windows, move them between desktops, pin them, read FancyZones data and more.
+- **src/index.js** – command line entry point using `commander`. It wires commands like `place`, `store`, `restore` and `stats` to the functions exported from `src/lib/`.
+- **src/lib/** – directory with modularized logic (`placement.js`, `windows.js`, `monitors.js`, `virtual-desktop.js`, etc.).
 - **src/helpers/** – helper types (TypeScript) used by the main code.
 - **examples/** – small scripts showing how to call the library (e.g. `placeWindows.js`, `swapWindows.js`).
 - **config.example.js** – copy this file to `config.js` and customise rules for your environment. Without `config.js` the CLI will fail.
@@ -27,7 +27,7 @@ There are no automated tests at the moment. Functionality heavily depends on a W
 
 ## Next steps
 
-- Study `src/actions.js` – all main features are implemented here.
+- Study the modules in `src/lib/` – all main features are implemented there.
 - Explore `config.example.js` to learn how rules are defined and how FancyZones monitors are referenced.
 - Review `examples/*.js` for practical code snippets.
 
