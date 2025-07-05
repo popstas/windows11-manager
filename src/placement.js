@@ -1,9 +1,10 @@
 const { windowManager } = require('node-window-manager');
 const { getConfig } = require('./config');
-const { getMons, getSortedMonitors } = require('./monitors');
+const { getMons, getSortedMonitors, getMonitorByPoint } = require('./monitors');
 const { fancyZonesToPos, addFancyZoneHistory } = require('./fancyzones');
 const { getWindows, getMatchedRules, getWindowInfo, getWindow } = require('./windows');
 const { virtualDesktop } = require('./virtual-desktop');
+const { adjustBoundsForScale } = require('./scale');
 const fs = require('fs');
 const { exec } = require('child_process');
 const path = require('path');
@@ -63,7 +64,17 @@ function parsePos(pos, mons) {
   return newPos;
 }
 
-async function placeWindow({ w, rule = {} }) {
+function isBoundsMatch(oldPos, newPos) {
+  for (let name in newPos) {
+    if (newPos[name] === undefined) continue;
+    const isExactlyPlaced = oldPos[name] == newPos[name];
+    const isPixelPlaced = Math.abs(oldPos[name] - newPos[name]) < 2;
+    if (!isExactlyPlaced && !isPixelPlaced) return false;
+  }
+  return true;
+}
+
+async function placeWindow({ w, rule = {}, isBulk = false }) {
   const config = getConfig();
   if (!w) return false;
   const baseName = path.basename(w.path);
@@ -72,43 +83,44 @@ async function placeWindow({ w, rule = {} }) {
   const pos = rule.pos;
   const oldPos = w.getBounds();
   const changes = [];
-  const isPlaced = () => {
-    for (let name in pos) {
-      if (pos[name] === undefined) continue;
-      if (oldPos[name] != pos[name]) return false;
-    }
-    return true;
-  };
+
+  let applyPos = { ...pos };
+  if (applyPos.width === undefined && applyPos.height === undefined && applyPos.x !== undefined && applyPos.y !== undefined) {
+    applyPos.width = oldPos.width;
+    applyPos.height = oldPos.height;
+  }
+
+  const widthSpecified = rule.width !== undefined || rule.pos?.width !== undefined;
+  const heightSpecified = rule.height !== undefined || rule.pos?.height !== undefined;
+
+  const oldScale = w.getMonitor().getScaleFactor();
+  const targetMon = getMonitorByPoint(applyPos) || w.getMonitor();
+  const newScaleCheck = targetMon.getScaleFactor();
+  const finalBounds = adjustBoundsForScale({ bounds: applyPos, oldScale, newScale: newScaleCheck, widthSpecified, heightSpecified });
+
+  const isPlaced = () => isBoundsMatch(oldPos, finalBounds);
   const placed = isPlaced();
   if (pos && !placed) {
-    if (pos.width === undefined && pos.height === undefined && pos.x !== undefined && pos.y !== undefined) {
-      pos.width = oldPos.width;
-      pos.height = oldPos.height;
-    }
     if (w.getBounds()['x'] >= 0) {
-      if (config.debug) console.log(`Place ${getWindowInfo(w)} to ${JSON.stringify(pos)}\n`);
-      changes.push({ name: 'bounds', value: pos });
+      if (config.debug) console.log(`Place ${getWindowInfo(w)} to ${JSON.stringify(applyPos)}\n`);
+      changes.push({ name: 'bounds', oldPos, value: applyPos });
       if (rule.fancyZones) addFancyZoneHistory({ w, rule });
     }
-    const widthSpecified = rule.width !== undefined || rule.pos?.width !== undefined;
-    const heightSpecified = rule.height !== undefined || rule.pos?.height !== undefined;
-    const oldScale = w.getMonitor().getScaleFactor();
-    w.setBounds(pos);
+    w.setBounds(finalBounds);
     const newScale = w.getMonitor().getScaleFactor();
-    // Some monitors have different scale factors. When moving a window
-    // between monitors the first call changes the scale. Repeat the
-    // operation with adjusted bounds so the window keeps the same
-    // physical size on the target monitor.
     if (oldScale !== newScale) {
-      const scaleFix = oldScale / newScale;
-      const adjusted = { ...pos };
-      if (!widthSpecified) adjusted.width = Math.round(adjusted.width * scaleFix);
-      if (!heightSpecified) adjusted.height = Math.round(adjusted.height * scaleFix);
+      const adjusted = adjustBoundsForScale({ bounds: applyPos, oldScale, newScale, widthSpecified, heightSpecified });
       w.setBounds(adjusted);
     }
-    w.bringToTop();
+    const afterPlaceBounds = w.getBounds();
+    if (!isBoundsMatch(finalBounds, afterPlaceBounds))
+    {
+      console.error(`Window ${winName} not placed correctly, try again: ${JSON.stringify(afterPlaceBounds)} != ${JSON.stringify(finalBounds)}`);
+      w.setBounds(finalBounds);
+    }
+    if (!isBulk) w.bringToTop();
   } else if (config.debug) {
-    if (!pos) console.log('no position');
+    // if (!pos) console.log('no position');
     if (placed) console.log('window placed before');
   }
   if (rule.pin && !(await virtualDesktop.IsPinnedWindow(w.id))) {
@@ -166,6 +178,7 @@ async function placeWindows() {
   const t = Date.now();
   const config = getConfig();
   const mons = getMons();
+  const isBulk = true;
   if (config.debug) {
     console.log('mons:');
     console.log(JSON.stringify(mons));
@@ -173,17 +186,30 @@ async function placeWindows() {
     console.log('sortedMons:');
     console.log(sortedMons.map(m => `name: ${m.monitor}, size: ${m['monitor-width']}x${m['monitor-height']}, offset: ${m['left-coordinate']}x${m['top-coordinate']}`).join(',\n '));
   }
-  const placed = [];
   const wins = getWindows();
-  for (let w of wins) {
+  // Create an array of all window/rule combinations that need processing
+  const placementPromises = [];
+  
+  for (const w of wins) {
     const matchedRules = getMatchedRules(w);
-    for (let rule of matchedRules) {
+    for (const rule of matchedRules) {
       if (rule.onlyOnOpen) continue;
       rule.pos = parsePos(rule, mons);
-      const changes = await placeWindow({ w, rule });
-      if (changes.length > 0) placed.push(w);
+      // Push the promise to the array without awaiting it
+      placementPromises.push(placeWindow({ w, rule, isBulk })
+        .then(changes => ({ w, changes })) // Return window and changes if successful
+        .catch(error => {
+          console.error('Error placing window:', error);
+          return null; // Return null for failed placements
+        })
+      );
     }
   }
+  
+  // Wait for all placements to complete in parallel
+  const results = await Promise.all(placementPromises);
+  // Filter out null results (failed placements) and empty changes
+  const placed = results.filter(result => result && result.changes && result.changes.length > 0);
   console.log(`after placeWindows: ${Date.now() - t}`);
   return placed;
 }
