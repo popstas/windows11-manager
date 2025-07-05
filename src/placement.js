@@ -64,7 +64,17 @@ function parsePos(pos, mons) {
   return newPos;
 }
 
-async function placeWindow({ w, rule = {} }) {
+function isBoundsMatch(oldPos, newPos) {
+  for (let name in newPos) {
+    if (newPos[name] === undefined) continue;
+    const isExactlyPlaced = oldPos[name] == newPos[name];
+    const isPixelPlaced = Math.abs(oldPos[name] - newPos[name]) < 2;
+    if (!isExactlyPlaced && !isPixelPlaced) return false;
+  }
+  return true;
+}
+
+async function placeWindow({ w, rule = {}, isBulk = false }) {
   const config = getConfig();
   if (!w) return false;
   const baseName = path.basename(w.path);
@@ -86,31 +96,31 @@ async function placeWindow({ w, rule = {} }) {
   const oldScale = w.getMonitor().getScaleFactor();
   const targetMon = getMonitorByPoint(applyPos) || w.getMonitor();
   const newScaleCheck = targetMon.getScaleFactor();
-  const expectedBounds = adjustBoundsForScale({ bounds: applyPos, oldScale, newScale: newScaleCheck, widthSpecified, heightSpecified });
+  const finalBounds = adjustBoundsForScale({ bounds: applyPos, oldScale, newScale: newScaleCheck, widthSpecified, heightSpecified });
 
-  const isPlaced = () => {
-    for (let name in pos) {
-      if (pos[name] === undefined) continue;
-      if (oldPos[name] != expectedBounds[name]) return false;
-    }
-    return true;
-  };
+  const isPlaced = () => isBoundsMatch(oldPos, finalBounds);
   const placed = isPlaced();
   if (pos && !placed) {
     if (w.getBounds()['x'] >= 0) {
       if (config.debug) console.log(`Place ${getWindowInfo(w)} to ${JSON.stringify(applyPos)}\n`);
-      changes.push({ name: 'bounds', value: applyPos });
+      changes.push({ name: 'bounds', oldPos, value: applyPos });
       if (rule.fancyZones) addFancyZoneHistory({ w, rule });
     }
-    w.setBounds(applyPos);
+    w.setBounds(finalBounds);
     const newScale = w.getMonitor().getScaleFactor();
     if (oldScale !== newScale) {
       const adjusted = adjustBoundsForScale({ bounds: applyPos, oldScale, newScale, widthSpecified, heightSpecified });
       w.setBounds(adjusted);
     }
-    w.bringToTop();
+    const afterPlaceBounds = w.getBounds();
+    if (!isBoundsMatch(finalBounds, afterPlaceBounds))
+    {
+      console.error(`Window ${winName} not placed correctly, try again: ${JSON.stringify(afterPlaceBounds)} != ${JSON.stringify(finalBounds)}`);
+      w.setBounds(finalBounds);
+    }
+    if (!isBulk) w.bringToTop();
   } else if (config.debug) {
-    if (!pos) console.log('no position');
+    // if (!pos) console.log('no position');
     if (placed) console.log('window placed before');
   }
   if (rule.pin && !(await virtualDesktop.IsPinnedWindow(w.id))) {
@@ -168,6 +178,7 @@ async function placeWindows() {
   const t = Date.now();
   const config = getConfig();
   const mons = getMons();
+  const isBulk = true;
   if (config.debug) {
     console.log('mons:');
     console.log(JSON.stringify(mons));
@@ -182,8 +193,8 @@ async function placeWindows() {
     for (let rule of matchedRules) {
       if (rule.onlyOnOpen) continue;
       rule.pos = parsePos(rule, mons);
-      const changes = await placeWindow({ w, rule });
-      if (changes.length > 0) placed.push(w);
+      const changes = await placeWindow({ w, rule, isBulk });
+      if (changes.length > 0) placed.push({ w, changes });
     }
   }
   console.log(`after placeWindows: ${Date.now() - t}`);
