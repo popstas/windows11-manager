@@ -43,15 +43,18 @@ function fancyZonesToPos(opts) {
   const monBounds = {
     x: monitor['left-coordinate'],
     y: monitor['top-coordinate'],
-    width: monitor.width,
-    height: monitor.height,
+    width: monitor['work-area-width'],
+    height: monitor['work-area-height'],
   };
-  return {
+
+  const pos = {
     x: monBounds.x + zone.X,
     y: monBounds.y + zone.Y,
     width: zone.width,
     height: zone.height,
   };
+
+  return pos;
 }
 
 function addFancyZoneHistory({ w, rule }) {
