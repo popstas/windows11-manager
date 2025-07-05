@@ -2,7 +2,7 @@
   "name": "windows11-manager",
   "version": "0.2.1",
   "description": "Rules based manager of windows state for Windows 11: position, desktop, pin",
-  "main": "src/actions.js",
+  "main": "src/lib/index.js",
   "bin": "src/index.js",
   "dependencies": {
     "commander": "^9.4.1",
