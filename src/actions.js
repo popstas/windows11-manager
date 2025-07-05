@@ -528,8 +528,8 @@ function fancyZonesToPos(opts) {
   const monBounds = {
     x: monitor['left-coordinate'],
     y: monitor['top-coordinate'],
-    width: monitor.width,
-    height: monitor.height,
+    width: monitor['work-area-width'],
+    height: monitor['work-area-height'],
   };
 
   const pos = {
