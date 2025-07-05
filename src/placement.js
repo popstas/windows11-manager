@@ -6,6 +6,7 @@ const { getWindows, getMatchedRules, getWindowInfo, getWindow } = require('./win
 const { virtualDesktop } = require('./virtual-desktop');
 const fs = require('fs');
 const { exec } = require('child_process');
+const path = require('path');
 
 function parsePos(pos, mons) {
   const config = getConfig();
@@ -65,7 +66,9 @@ function parsePos(pos, mons) {
 async function placeWindow({ w, rule = {} }) {
   const config = getConfig();
   if (!w) return false;
-  if (config.debug) console.log(`trying to placeWindow: ${w.title}`);
+  const baseName = path.basename(w.path);
+  const winName = w.title || baseName;
+  if (config.debug) console.log(`trying to placeWindow: ${winName}`);
   const pos = rule.pos;
   const oldPos = w.getBounds();
   const changes = [];
@@ -94,7 +97,7 @@ async function placeWindow({ w, rule = {} }) {
     if (placed) console.log('window placed before');
   }
   if (rule.pin && !(await virtualDesktop.IsPinnedWindow(w.id))) {
-    console.log(`Pin ${w.title}`);
+    console.log(`Pin ${winName}`);
     virtualDesktop.PinWindow(w.id);
     changes.push({ name: 'pin', value: true });
   }
@@ -103,12 +106,12 @@ async function placeWindow({ w, rule = {} }) {
     try {
       const winDesktopNum = await virtualDesktop.GetWindowDesktopNumber(w.id);
       if (winDesktopNum != num) {
-        console.log(`Move ${w.title} to Desktop ${rule.desktop} (id: ${w.id}, process id: ${w.processId})`);
+        console.log(`Move ${winName} to Desktop ${rule.desktop} (id: ${w.id}, process id: ${w.processId})`);
         virtualDesktop.MoveWindowToDesktopNumber(w.id, num);
         changes.push({ name: 'desktop', value: num });
       }
     } catch (e) {
-      console.log(`Failed to place ${w.title} to Desktop ${rule.desktop}`);
+      console.log(`Failed to place ${winName} to Desktop ${rule.desktop}`);
     }
   }
   return changes;
