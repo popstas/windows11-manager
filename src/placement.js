@@ -186,17 +186,30 @@ async function placeWindows() {
     console.log('sortedMons:');
     console.log(sortedMons.map(m => `name: ${m.monitor}, size: ${m['monitor-width']}x${m['monitor-height']}, offset: ${m['left-coordinate']}x${m['top-coordinate']}`).join(',\n '));
   }
-  const placed = [];
   const wins = getWindows();
-  for (let w of wins) {
+  // Create an array of all window/rule combinations that need processing
+  const placementPromises = [];
+  
+  for (const w of wins) {
     const matchedRules = getMatchedRules(w);
-    for (let rule of matchedRules) {
+    for (const rule of matchedRules) {
       if (rule.onlyOnOpen) continue;
       rule.pos = parsePos(rule, mons);
-      const changes = await placeWindow({ w, rule, isBulk });
-      if (changes.length > 0) placed.push({ w, changes });
+      // Push the promise to the array without awaiting it
+      placementPromises.push(placeWindow({ w, rule, isBulk })
+        .then(changes => ({ w, changes })) // Return window and changes if successful
+        .catch(error => {
+          console.error('Error placing window:', error);
+          return null; // Return null for failed placements
+        })
+      );
     }
   }
+  
+  // Wait for all placements to complete in parallel
+  const results = await Promise.all(placementPromises);
+  // Filter out null results (failed placements) and empty changes
+  const placed = results.filter(result => result && result.changes && result.changes.length > 0);
   console.log(`after placeWindows: ${Date.now() - t}`);
   return placed;
 }
