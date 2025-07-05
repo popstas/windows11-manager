@@ -90,7 +90,15 @@ async function placeWindow({ w, rule = {} }) {
       changes.push({ name: 'bounds', value: pos });
       if (rule.fancyZones) addFancyZoneHistory({ w, rule });
     }
+    const oldScale = w.getMonitor().getScaleFactor();
     w.setBounds(pos);
+    const newScale = w.getMonitor().getScaleFactor();
+    // Some monitors have different scale factors. When moving a window
+    // between monitors the first call changes the scale, so we repeat
+    // the operation once more to ensure correct bounds.
+    if (oldScale !== newScale) {
+      w.setBounds(pos);
+    }
     w.bringToTop();
   } else if (config.debug) {
     if (!pos) console.log('no position');
