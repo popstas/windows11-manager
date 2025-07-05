@@ -90,7 +90,22 @@ async function placeWindow({ w, rule = {} }) {
       changes.push({ name: 'bounds', value: pos });
       if (rule.fancyZones) addFancyZoneHistory({ w, rule });
     }
+    const widthSpecified = rule.width !== undefined || rule.pos?.width !== undefined;
+    const heightSpecified = rule.height !== undefined || rule.pos?.height !== undefined;
+    const oldScale = w.getMonitor().getScaleFactor();
     w.setBounds(pos);
+    const newScale = w.getMonitor().getScaleFactor();
+    // Some monitors have different scale factors. When moving a window
+    // between monitors the first call changes the scale. Repeat the
+    // operation with adjusted bounds so the window keeps the same
+    // physical size on the target monitor.
+    if (oldScale !== newScale) {
+      const scaleFix = oldScale / newScale;
+      const adjusted = { ...pos };
+      if (!widthSpecified) adjusted.width = Math.round(adjusted.width * scaleFix);
+      if (!heightSpecified) adjusted.height = Math.round(adjusted.height * scaleFix);
+      w.setBounds(adjusted);
+    }
     w.bringToTop();
   } else if (config.debug) {
     if (!pos) console.log('no position');
