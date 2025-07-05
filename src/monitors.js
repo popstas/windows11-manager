@@ -31,6 +31,17 @@ function getMons() {
   return mons;
 }
 
+function getMonitorByPoint({ x, y }) {
+  const mons = getMons();
+  for (const mon of mons) {
+    if (!mon || !mon.bounds) continue;
+    const b = mon.bounds;
+    if (x >= b.x && x < b.x + b.width && y >= b.y && y < b.y + b.height) {
+      return mon;
+    }
+  }
+}
+
 function getMonitorNumByName(name) {
   const config = getConfig();
   for (let key in config.monitorsSize) {
@@ -64,6 +75,7 @@ module.exports = {
   getWindowsMonitors,
   getMonitor,
   getMons,
+  getMonitorByPoint,
   getMonitorNumByName,
   getSortedMonitors,
   getFancyZoneMonitor,

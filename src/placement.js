@@ -1,9 +1,10 @@
 const { windowManager } = require('node-window-manager');
 const { getConfig } = require('./config');
-const { getMons, getSortedMonitors } = require('./monitors');
+const { getMons, getSortedMonitors, getMonitorByPoint } = require('./monitors');
 const { fancyZonesToPos, addFancyZoneHistory } = require('./fancyzones');
 const { getWindows, getMatchedRules, getWindowInfo, getWindow } = require('./windows');
 const { virtualDesktop } = require('./virtual-desktop');
+const { adjustBoundsForScale } = require('./scale');
 const fs = require('fs');
 const { exec } = require('child_process');
 const path = require('path');
@@ -72,38 +73,39 @@ async function placeWindow({ w, rule = {} }) {
   const pos = rule.pos;
   const oldPos = w.getBounds();
   const changes = [];
+
+  let applyPos = { ...pos };
+  if (applyPos.width === undefined && applyPos.height === undefined && applyPos.x !== undefined && applyPos.y !== undefined) {
+    applyPos.width = oldPos.width;
+    applyPos.height = oldPos.height;
+  }
+
+  const widthSpecified = rule.width !== undefined || rule.pos?.width !== undefined;
+  const heightSpecified = rule.height !== undefined || rule.pos?.height !== undefined;
+
+  const oldScale = w.getMonitor().getScaleFactor();
+  const targetMon = getMonitorByPoint(applyPos) || w.getMonitor();
+  const newScaleCheck = targetMon.getScaleFactor();
+  const expectedBounds = adjustBoundsForScale({ bounds: applyPos, oldScale, newScale: newScaleCheck, widthSpecified, heightSpecified });
+
   const isPlaced = () => {
     for (let name in pos) {
       if (pos[name] === undefined) continue;
-      if (oldPos[name] != pos[name]) return false;
+      if (oldPos[name] != expectedBounds[name]) return false;
     }
     return true;
   };
   const placed = isPlaced();
   if (pos && !placed) {
-    if (pos.width === undefined && pos.height === undefined && pos.x !== undefined && pos.y !== undefined) {
-      pos.width = oldPos.width;
-      pos.height = oldPos.height;
-    }
     if (w.getBounds()['x'] >= 0) {
-      if (config.debug) console.log(`Place ${getWindowInfo(w)} to ${JSON.stringify(pos)}\n`);
-      changes.push({ name: 'bounds', value: pos });
+      if (config.debug) console.log(`Place ${getWindowInfo(w)} to ${JSON.stringify(applyPos)}\n`);
+      changes.push({ name: 'bounds', value: applyPos });
       if (rule.fancyZones) addFancyZoneHistory({ w, rule });
     }
-    const widthSpecified = rule.width !== undefined || rule.pos?.width !== undefined;
-    const heightSpecified = rule.height !== undefined || rule.pos?.height !== undefined;
-    const oldScale = w.getMonitor().getScaleFactor();
-    w.setBounds(pos);
+    w.setBounds(applyPos);
     const newScale = w.getMonitor().getScaleFactor();
-    // Some monitors have different scale factors. When moving a window
-    // between monitors the first call changes the scale. Repeat the
-    // operation with adjusted bounds so the window keeps the same
-    // physical size on the target monitor.
     if (oldScale !== newScale) {
-      const scaleFix = oldScale / newScale;
-      const adjusted = { ...pos };
-      if (!widthSpecified) adjusted.width = Math.round(adjusted.width * scaleFix);
-      if (!heightSpecified) adjusted.height = Math.round(adjusted.height * scaleFix);
+      const adjusted = adjustBoundsForScale({ bounds: applyPos, oldScale, newScale, widthSpecified, heightSpecified });
       w.setBounds(adjusted);
     }
     w.bringToTop();
