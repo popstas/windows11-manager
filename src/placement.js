@@ -2,7 +2,7 @@ const { windowManager } = require('node-window-manager');
 const { getConfig } = require('./config');
 const { getMons, getSortedMonitors } = require('./monitors');
 const { fancyZonesToPos, addFancyZoneHistory } = require('./fancyzones');
-const { getWindows, getMatchedRules, getWindowInfo } = require('./windows');
+const { getWindows, getMatchedRules, getWindowInfo, getWindow } = require('./windows');
 const { virtualDesktop } = require('./virtual-desktop');
 const fs = require('fs');
 const { exec } = require('child_process');
@@ -114,6 +114,15 @@ async function placeWindow({ w, rule = {} }) {
   return changes;
 }
 
+// rule - element of config.windows
+async function placeWindowByConfig(rule) {
+  const w = getWindow(rule);
+  const mons = getMons();
+  rule.pos = parsePos(rule, mons);
+  const isChanged = placeWindow({ w, rule });
+  return w;
+}
+
 async function placeWindowsByConfig(wins = [], opts = {}) {
   const config = getConfig();
   opts = { ...{ changeDesktop: true }, ...opts };
@@ -189,6 +198,7 @@ async function placeWindowOnOpen() {
 module.exports = {
   parsePos,
   placeWindow,
+  placeWindowByConfig,
   placeWindowsByConfig,
   placeWindows,
   placeWindowOnOpen,

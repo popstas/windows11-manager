@@ -100,6 +100,20 @@ function findWindow({ title }) {
   return findWindows({ title })[0];
 }
 
+// находит окно по параметрам
+// TODO: поддержка pathMatch, exclude
+function getWindow(rule) {
+  if (rule.titleMatch) {
+    return findWindow({ title: rule.titleMatch });
+  }
+  if (rule.window == 'current') {
+    return windowManager.getActiveWindow();
+  }
+  if (parseInt(rule.window)) {
+    return getWindows().find((w) => w.id == rule.window);
+  }
+}
+
 module.exports = {
   getWindows,
   getAppFromPath,
@@ -108,4 +122,5 @@ module.exports = {
   getWindowInfo,
   findWindows,
   findWindow,
+  getWindow,
 };
