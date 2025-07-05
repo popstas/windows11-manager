@@ -1,3 +1,15 @@
+# [0.3.0](https://github.com/popstas/windows11-manager/compare/v0.2.1...v0.3.0) (2025-07-05)
+
+
+### Bug Fixes
+
+* fancyZonesToPos for monitors with scaled resolution ([376c219](https://github.com/popstas/windows11-manager/commit/376c219cfc2cf03d42cad6908c7d68af57051426))
+* Fix monitor scaling when moving windows ([#3](https://github.com/popstas/windows11-manager/issues/3)) ([18ac3c8](https://github.com/popstas/windows11-manager/commit/18ac3c86fc7a08cd02f602a79839ad83fd6fc4d9))
+* log file name when no window title ([c8cf6aa](https://github.com/popstas/windows11-manager/commit/c8cf6aae5c6dfeaea9a9b1afed76b983d39c87da))
+* placement improvements ([#4](https://github.com/popstas/windows11-manager/issues/4)) ([2dbe598](https://github.com/popstas/windows11-manager/commit/2dbe5980689cc1094f7fd2ac063acd9c4a844f92))
+
+
+
 ## [0.2.1](https://github.com/popstas/windows11-manager/compare/v0.2.0...v0.2.1) (2025-06-16)
 
 
