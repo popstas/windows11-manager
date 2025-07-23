@@ -1,5 +1,6 @@
 const { program } = require('commander');
 const winMan = require('./lib');
+winMan.watchAppliedLayouts();
 
 start();
 

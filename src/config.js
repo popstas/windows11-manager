@@ -24,4 +24,30 @@ function reloadConfigs() {
   if (config.debug) console.log('Configuration reloaded');
   return config;
 }
-module.exports = { getConfig, reloadConfigs };
+const fs = require('fs');
+let lastAppliedLayoutsMtime = 0;
+let watcherStarted = false;
+
+function watchAppliedLayouts() {
+  if (watcherStarted) return;
+  watcherStarted = true;
+  setInterval(() => {
+    const config = getConfig();
+    if (!config.fancyZones?.path) return;
+    const file = `${config.fancyZones.path}/applied-layouts.json`;
+    fs.stat(file, (err, stats) => {
+      if (err) return;
+      const mtime = stats.mtimeMs;
+      if (!lastAppliedLayoutsMtime) {
+        lastAppliedLayoutsMtime = mtime;
+        return;
+      }
+      if (mtime !== lastAppliedLayoutsMtime) {
+        lastAppliedLayoutsMtime = mtime;
+        reloadConfigs();
+      }
+    });
+  }, 60000);
+}
+
+module.exports = { getConfig, reloadConfigs, watchAppliedLayouts };
