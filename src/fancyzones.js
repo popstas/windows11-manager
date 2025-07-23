@@ -58,7 +58,50 @@ function fancyZonesToPos(opts) {
 }
 
 function addFancyZoneHistory({ w, rule }) {
-  return; // TODO
+  const config = getConfig();
+  if (!config.fancyZones?.enabled) return;
+  const historyPath = `${config.fancyZones.path}/app-zone-history.json`;
+  let history;
+  try {
+    history = JSON.parse(fs.readFileSync(historyPath, 'utf8'));
+  } catch (e) {
+    history = { 'app-zone-history': [] };
+  }
+  if (!Array.isArray(history['app-zone-history'])) {
+    history['app-zone-history'] = [];
+  }
+
+  const list = history['app-zone-history'];
+  const idx = list.findIndex(item => item['app-path']?.toLowerCase() === w.path.toLowerCase());
+  if (idx !== -1) list.splice(idx, 1);
+
+  const info = getFancyZoneInfo(rule.fancyZones);
+  if (!info.monitor || !info.layout) {
+    fs.writeFileSync(historyPath, JSON.stringify(history));
+    return;
+  }
+
+  const device = {
+    monitor: info.monitor.monitor,
+    'monitor-instance': info.monitor['monitor-instance'],
+    'serial-number': info.monitor['serial-number'],
+    'monitor-number': info.monitor['monitor-number'],
+    'virtual-desktop': info.monitor['virtual-desktop'],
+  };
+
+  const entry = {
+    'app-path': w.path,
+    history: [
+      {
+        'zone-index-set': [rule.fancyZones.position - 1],
+        device,
+        'zoneset-uuid': info.layout.uuid,
+      },
+    ],
+  };
+
+  list.push(entry);
+  fs.writeFileSync(historyPath, JSON.stringify(history));
 }
 
 module.exports = { getFancyZoneMonitor, getFancyZoneInfo, fancyZonesToPos, addFancyZoneHistory };
