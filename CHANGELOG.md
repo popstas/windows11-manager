@@ -1,3 +1,13 @@
+## [0.3.1](https://github.com/popstas/windows11-manager/compare/v0.3.0...v0.3.1) (2025-10-18)
+
+
+### Features
+
+* implement addFancyZoneHistory ([#5](https://github.com/popstas/windows11-manager/issues/5)) ([cf5e247](https://github.com/popstas/windows11-manager/commit/cf5e247d749dd1f0966920da17b9d35ed1e646e7))
+* reload configs when FancyZones layout changes ([#6](https://github.com/popstas/windows11-manager/issues/6)) ([a979f48](https://github.com/popstas/windows11-manager/commit/a979f487ed979a72723829227f837d78c70d705c))
+
+
+
 # [0.3.0](https://github.com/popstas/windows11-manager/compare/v0.2.1...v0.3.0) (2025-07-05)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "windows11-manager",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Rules based manager of windows state for Windows 11: position, desktop, pin",
   "main": "src/lib/index.js",
   "bin": "src/index.js",
