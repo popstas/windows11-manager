@@ -56,6 +56,11 @@ const fancyZones = {
   path: 'C:/Users/popstas/AppData/Local/Microsoft/PowerToys/FancyZones', // TODO: detect
 };
 
+const monitorsGaps = {
+  // Example: reserve 10px at the bottom of monitor 2 for the taskbar
+  2: { position: 'bottom', gap: 10 },
+};
+
 const wallpapers = {
   0: 'd:/images/wallpapers/desktops/1.png',
   1: 'd:/images/wallpapers/desktops/2.png',
@@ -66,6 +71,7 @@ module.exports = {
   debug: false,
   windows,
   fancyZones,
+  monitorsGaps,
   wallpapers,
 
   virtualDesktopPath: __dirname +'/VirtualDesktop11.exe',
