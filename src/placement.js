@@ -75,6 +75,7 @@ function isBoundsMatch(oldPos, newPos) {
 }
 
 async function placeWindow({ w, rule = {}, isBulk = false }) {
+  const minWidth = 250;
   const config = getConfig();
   if (!w) return false;
   const baseName = path.basename(w.path);
@@ -83,6 +84,11 @@ async function placeWindow({ w, rule = {}, isBulk = false }) {
   const pos = rule.pos;
   const oldPos = w.getBounds();
   const changes = [];
+
+  if (oldPos.width < minWidth) {
+    console.log(`Window ${winName} is too small, skipping`);
+    return false;
+  }
 
   let applyPos = { ...pos };
   if (applyPos.width === undefined && applyPos.height === undefined && applyPos.x !== undefined && applyPos.y !== undefined) {
@@ -210,15 +216,28 @@ async function placeWindows() {
   const results = await Promise.all(placementPromises);
   // Filter out null results (failed placements) and empty changes
   const placed = results.filter(result => result && result.changes && result.changes.length > 0);
+  
+  // Clear references to help garbage collection
+  placementPromises.length = 0;
+  results.length = 0;
+  
   console.log(`after placeWindows: ${Date.now() - t}`);
   return placed;
 }
 
+let placeNewWindowsIntervalId = null;
+
 function startPlaceNewWindows() {
+  // Clear any existing interval first to prevent leaks
+  if (placeNewWindowsIntervalId !== null) {
+    clearInterval(placeNewWindowsIntervalId);
+    placeNewWindowsIntervalId = null;
+  }
+  
   const updateInterval = 500;
   const delay = 1000;
   let stored;
-  setInterval(async () => {
+  placeNewWindowsIntervalId = setInterval(async () => {
     const wins = getWindows();
     if (stored && stored.length < wins.length) {
       setTimeout(async () => {
@@ -234,6 +253,13 @@ function startPlaceNewWindows() {
   }, updateInterval);
 }
 
+function stopPlaceNewWindows() {
+  if (placeNewWindowsIntervalId !== null) {
+    clearInterval(placeNewWindowsIntervalId);
+    placeNewWindowsIntervalId = null;
+  }
+}
+
 async function placeWindowOnOpen() {
   console.log('Start new windows autoplacer');
   startPlaceNewWindows();
@@ -247,4 +273,5 @@ module.exports = {
   placeWindows,
   placeWindowOnOpen,
   startPlaceNewWindows,
+  stopPlaceNewWindows,
 };
