@@ -1,3 +1,12 @@
+## [0.3.2](https://github.com/popstas/windows11-manager/compare/v0.3.1...v0.3.2) (2026-02-16)
+
+
+### Bug Fixes
+
+* ignore small windows placement (context menus for obs, etc) ([a3b7daa](https://github.com/popstas/windows11-manager/commit/a3b7daae85e43706ace522a5a70b6dcae97371e3))
+
+
+
 ## [0.3.1](https://github.com/popstas/windows11-manager/compare/v0.3.0...v0.3.1) (2025-10-18)
 
 
