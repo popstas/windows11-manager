@@ -25,3 +25,25 @@ I use it with:
 ## Install
 - Copy [config.example.js](config.example.js) to config.js
 - See [examples](examples)
+
+## Tauri tray app
+
+The **tauri-app** subfolder contains a system tray application that wraps the CLI. It lets you place windows and run the autoplacer without using the terminal.
+
+### What it does
+- **Tray menu**: Place Windows, Start/Stop Autoplacer, Settings, Quit
+- **Place Windows**: Runs `node src place` in the configured project directory
+- **Autoplacer**: Starts or stops `node examples/autoplace-server.js` to automatically place new windows
+- **Global hotkey**: Ctrl+Alt+Shift+P triggers "Place Windows"
+- **Settings**: Project path, autoplacer interval, run on startup, notifications
+
+### Requirements
+- Rust toolchain and C++ build tools (Visual Studio "C++ build tools" workload on Windows)
+- Node.js and the main project configured (see [Install](#install))
+
+### Run
+```bash
+cd tauri-app
+npm install
+npm run tauri dev
+```

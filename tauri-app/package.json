@@ -1,0 +1,16 @@
+{
+  "name": "windows11-manager-tray",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-store": "^2",
+    "@tauri-apps/plugin-shell": "^2"
+  }
+}

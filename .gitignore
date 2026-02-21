@@ -1,5 +1,6 @@
 node_modules/
 config.js
+tauri-app/src-tauri/target/
 !/src/config.js
 /data/
 *.log

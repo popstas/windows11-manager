@@ -11,6 +11,7 @@ This repository contains a Node.js tool for managing window placement on Windows
 - **config.example.js** – copy this file to `config.js` and customise rules for your environment. Without `config.js` the CLI will fail.
 - **vendor/** – patched copy of [node-window-manager](https://github.com/sentialx/node-window-manager) used by the project.
 - **VirtualDesktop11.exe** – third party utility required for switching desktops and pinning windows. Only works on Windows.
+- **tauri-app/** – Tauri v2 system tray app that wraps the CLI (place windows, autoplacer). Runs `node src place` and `node examples/autoplace-server.js` via the shell plugin.
 
 ## Getting started
 
