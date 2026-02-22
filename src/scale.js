@@ -1,4 +1,4 @@
-function adjustBoundsForScale({ bounds, oldScale, newScale, widthSpecified = true, heightSpecified = true }) {
+export function adjustBoundsForScale({ bounds, oldScale, newScale, widthSpecified = true, heightSpecified = true }) {
   if (!bounds) return bounds;
   if (oldScale === undefined || newScale === undefined) return bounds;
   if (oldScale === newScale) return bounds;
@@ -8,5 +8,3 @@ function adjustBoundsForScale({ bounds, oldScale, newScale, widthSpecified = tru
   if (!heightSpecified && res.height !== undefined) res.height = Math.round(res.height * scaleFix);
   return res;
 }
-
-module.exports = { adjustBoundsForScale };

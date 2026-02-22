@@ -1,7 +1,7 @@
-const fs = require('fs');
-const { spawn, exec } = require('child_process');
-const { getConfig } = require('./config');
-const { getWindows } = require('./windows');
+import fs from 'node:fs';
+import { spawn, exec } from 'node:child_process';
+import { getConfig } from './config.js';
+import { getWindows } from './windows.js';
 
 function storeWindows() {
   const config = getConfig();
@@ -69,7 +69,7 @@ function openPaths(paths, wins) {
   const restoredPaths = [];
   if (paths && paths.length > 0) {
     for (let path of paths) {
-      if (wins.find(w => w.title == path)) continue;
+      if (wins.find(w => w.title === path)) continue;
       restoredPaths.push(path);
       exec(`start "" "${path}"`);
     }
@@ -91,4 +91,4 @@ function clearWindows() {
   fs.unlinkSync(config.store.path);
 }
 
-module.exports = { storeWindows, restoreWindows, openWindows, openPaths, openStore, clearWindows };
+export { storeWindows, restoreWindows, openWindows, openPaths, openStore, clearWindows };

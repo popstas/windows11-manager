@@ -1,13 +1,13 @@
-const { windowManager } = require('node-window-manager');
-const { getConfig } = require('./config');
-const { getMons, getSortedMonitors, getMonitorByPoint } = require('./monitors');
-const { fancyZonesToPos, addFancyZoneHistory } = require('./fancyzones');
-const { getWindows, getMatchedRules, getWindowInfo, getWindow } = require('./windows');
-const { virtualDesktop } = require('./virtual-desktop');
-const { adjustBoundsForScale } = require('./scale');
-const fs = require('fs');
-const { exec } = require('child_process');
-const path = require('path');
+import { windowManager } from 'node-window-manager';
+import { getConfig } from './config.js';
+import { getMons, getSortedMonitors, getMonitorByPoint } from './monitors.js';
+import { fancyZonesToPos, addFancyZoneHistory } from './fancyzones.js';
+import { getWindows, getMatchedRules, getWindowInfo, getWindow } from './windows.js';
+import { virtualDesktop } from './virtual-desktop.js';
+import { adjustBoundsForScale } from './scale.js';
+import fs from 'node:fs';
+import { exec } from 'node:child_process';
+import path from 'node:path';
 
 function parsePos(pos, mons) {
   const config = getConfig();
@@ -22,34 +22,34 @@ function parsePos(pos, mons) {
     if (!val) continue;
     const res = val.match(/^mon(\d+)\.(.*)$/);
     if (!res) continue;
-    const monNum = res[1];
+    const monNum = Number(res[1]);
     const oper = res[2];
     const mon = mons[monNum];
     if (!mon) { console.log(`Monitor not found for position: ${JSON.stringify(pos)}`); return false; }
     let third = (mon.bounds.width - config.panelWidth) / 3;
-    if (monNum == 2) third -= config.panelWidth;
+    if (monNum === 2) third -= config.panelWidth;
     switch (oper) {
       case 'top': newPos.y = mon.bounds.y; break;
       case 'right':
         newPos.x = mon.bounds.x + mon.bounds.width - newPos.width;
-        if (monNum == 1) newPos.x -= config.panelWidth;
-        if (monNum == 3) newPos.x += config.panelWidth;
+        if (monNum === 1) newPos.x -= config.panelWidth;
+        if (monNum === 3) newPos.x += config.panelWidth;
         break;
       case 'bottom':
         newPos.y = mon.bounds.y + mon.bounds.height - newPos.height;
-        if (monNum == 2) newPos.y -= config.panelHeight;
+        if (monNum === 2) newPos.y -= config.panelHeight;
         break;
       case 'left':
         newPos.x = mon.bounds.x;
-        if (monNum == 3) newPos.x += config.panelWidth;
+        if (monNum === 3) newPos.x += config.panelWidth;
         break;
       case 'x-2/3':
         newPos.x = mon.bounds.x + third * 1;
-        if (monNum == 3) newPos.x += config.panelWidth;
+        if (monNum === 3) newPos.x += config.panelWidth;
         newPos.x = parseInt(newPos.x); break;
       case 'x-3/3':
         newPos.x = mon.bounds.x + third * 2;
-        if (monNum == 3) newPos.x += config.panelWidth;
+        if (monNum === 3) newPos.x += config.panelWidth;
         newPos.x = parseInt(newPos.x); break;
       case 'width': newPos.width = mon.bounds.width; break;
       case 'halfWidth':
@@ -67,7 +67,7 @@ function parsePos(pos, mons) {
 function isBoundsMatch(oldPos, newPos) {
   for (let name in newPos) {
     if (newPos[name] === undefined) continue;
-    const isExactlyPlaced = oldPos[name] == newPos[name];
+    const isExactlyPlaced = oldPos[name] === newPos[name];
     const isPixelPlaced = Math.abs(oldPos[name] - newPos[name]) < 2;
     if (!isExactlyPlaced && !isPixelPlaced) return false;
   }
@@ -138,7 +138,7 @@ async function placeWindow({ w, rule = {}, isBulk = false }) {
     const num = rule.desktop - 1;
     try {
       const winDesktopNum = await virtualDesktop.GetWindowDesktopNumber(w.id);
-      if (winDesktopNum != num) {
+      if (Number(winDesktopNum) !== num) {
         console.log(`Move ${winName} to Desktop ${rule.desktop} (id: ${w.id}, process id: ${w.processId})`);
         virtualDesktop.MoveWindowToDesktopNumber(w.id, num);
         changes.push({ name: 'desktop', value: num });
@@ -170,7 +170,7 @@ async function placeWindowsByConfig(wins = [], opts = {}) {
       rule.pos = parsePos(rule, mons);
       const changes = await placeWindow({ w, rule });
       if (opts.changeDesktop && changes.length > 0) {
-        const desktopChanged = changes.find(c => c.name == 'desktop');
+        const desktopChanged = changes.find(c => c.name === 'desktop');
         if (desktopChanged) {
           console.log(`Change desktop to ${desktopChanged.value + 1}`);
           virtualDesktop.GoToDesktopNumber(desktopChanged.value);
@@ -195,7 +195,7 @@ async function placeWindows() {
   const wins = getWindows();
   // Create an array of all window/rule combinations that need processing
   const placementPromises = [];
-  
+
   for (const w of wins) {
     const matchedRules = getMatchedRules(w);
     for (const rule of matchedRules) {
@@ -211,16 +211,16 @@ async function placeWindows() {
       );
     }
   }
-  
+
   // Wait for all placements to complete in parallel
   const results = await Promise.all(placementPromises);
   // Filter out null results (failed placements) and empty changes
   const placed = results.filter(result => result && result.changes && result.changes.length > 0);
-  
+
   // Clear references to help garbage collection
   placementPromises.length = 0;
   results.length = 0;
-  
+
   console.log(`after placeWindows: ${Date.now() - t}`);
   return placed;
 }
@@ -233,7 +233,7 @@ function startPlaceNewWindows() {
     clearInterval(placeNewWindowsIntervalId);
     placeNewWindowsIntervalId = null;
   }
-  
+
   const updateInterval = 500;
   const delay = 1000;
   let stored;
@@ -265,7 +265,7 @@ async function placeWindowOnOpen() {
   startPlaceNewWindows();
 }
 
-module.exports = {
+export {
   parsePos,
   placeWindow,
   placeWindowByConfig,

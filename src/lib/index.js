@@ -1,11 +1,9 @@
-module.exports = {
-  ...require('../placement'),
-  ...require('../windows'),
-  ...require('../monitors'),
-  ...require('../fancyzones'),
-  ...require('../virtual-desktop'),
-  ...require('../store'),
-  ...require('../stats'),
-  ...require('../wallpapers'),
-  ...require('../config'),
-};
+export * from '../placement.js';
+export * from '../windows.js';
+export * from '../monitors.js';
+export * from '../fancyzones.js';
+export * from '../virtual-desktop.js';
+export * from '../store.js';
+export * from '../stats.js';
+export * from '../wallpapers.js';
+export * from '../config.js';

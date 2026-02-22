@@ -1,5 +1,5 @@
-const { virtualDesktop } = require('./virtual-desktop');
-const { getConfig } = require('./config');
+import { virtualDesktop } from './virtual-desktop.js';
+import { getConfig } from './config.js';
 
 function setWallpapers() {
   const config = getConfig();
@@ -10,4 +10,4 @@ function setWallpapers() {
   }
 }
 
-module.exports = { setWallpapers };
+export { setWallpapers };

@@ -1,5 +1,5 @@
 // Place windows by config rules
-const { placeWindows } = require('windows11-manager');
+import { placeWindows } from 'windows11-manager';
 
 async function start() {
   await placeWindows();

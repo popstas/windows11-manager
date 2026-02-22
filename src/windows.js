@@ -1,5 +1,5 @@
-const { windowManager } = require('node-window-manager');
-const { getConfig } = require('./config');
+import { windowManager } from 'node-window-manager';
+import { getConfig } from './config.js';
 
 function getAppFromPath(p) {
   const parts = p.split('\\');
@@ -106,15 +106,15 @@ function getWindow(rule) {
   if (rule.titleMatch) {
     return findWindow({ title: rule.titleMatch });
   }
-  if (rule.window == 'current') {
+  if (rule.window === 'current') {
     return windowManager.getActiveWindow();
   }
   if (parseInt(rule.window)) {
-    return getWindows().find((w) => w.id == rule.window);
+    return getWindows().find((w) => w.id === Number(rule.window));
   }
 }
 
-module.exports = {
+export {
   getWindows,
   getAppFromPath,
   isWindowMatchRule,

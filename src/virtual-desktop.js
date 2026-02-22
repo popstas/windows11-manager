@@ -1,5 +1,5 @@
-const { exec } = require('child_process');
-const { getConfig } = require('./config');
+import { exec } from 'node:child_process';
+import { getConfig } from './config.js';
 
 function vd11Command(args) {
   const vd11Path = getConfig().virtualDesktopPath;
@@ -34,4 +34,4 @@ const virtualDesktop = {
   setDesktopWallpaper(desktop, path) { console.log(`setDesktopWallpaper ${desktop}: ${path}`); return vd11Command(`gd:${desktop} wp:${path}`); },
 };
 
-module.exports = { vd11Command, virtualDesktop };
+export { vd11Command, virtualDesktop };

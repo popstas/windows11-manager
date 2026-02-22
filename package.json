@@ -17,5 +17,6 @@
     "release": "conventional-github-releaser -p angular && npm publish"
   },
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "type": "module"
 }

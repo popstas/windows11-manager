@@ -1,17 +1,22 @@
-const fs = require('fs');
-const os = require('os');
-const pathModule = require('path');
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
 
 function resolveConfigPath() {
   const candidates = [
-    pathModule.join(os.homedir(), '.config', 'windows11-manager.config.js'),
-    pathModule.join(process.cwd(), 'windows11-manager.config.js'),
-    pathModule.resolve(__dirname, '../config.js'),
+    path.join(os.homedir(), '.config', 'windows11-manager.config.js'),
+    path.join(process.cwd(), 'windows11-manager.config.js'),
+    path.resolve(__dirname, '../config.js'),
   ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return candidate;
   }
-  return pathModule.resolve(__dirname, '../config.js');
+  return path.resolve(__dirname, '../config.js');
 }
 
 let configPath = resolveConfigPath();
@@ -25,24 +30,10 @@ function getConfig() {
 
 function reloadConfigs() {
   const config = getConfig();
-  if (config.fancyZones?.path) {
-    try {
-      const files = ['applied-layouts.json','custom-layouts.json','app-zone-history.json'];
-      for (const file of files) {
-        const fp = require.resolve(`${config.fancyZones.path}/${file}`);
-        delete require.cache[fp];
-      }
-      require(`${config.fancyZones.path}/applied-layouts.json`);
-      require(`${config.fancyZones.path}/custom-layouts.json`);
-      require(`${config.fancyZones.path}/app-zone-history.json`);
-      if (config.debug) console.log('Reloaded FancyZones configuration files');
-    } catch(err) {
-      console.error(`Error reloading FancyZones configs: ${err.message}`);
-    }
-  }
   if (config.debug) console.log('Configuration reloaded');
   return config;
 }
+
 let lastAppliedLayoutsMtime = 0;
 let watcherStarted = false;
 
@@ -68,4 +59,4 @@ function watchAppliedLayouts() {
   }, 60000);
 }
 
-module.exports = { getConfig, reloadConfigs, watchAppliedLayouts };
+export { getConfig, reloadConfigs, watchAppliedLayouts };

@@ -1,5 +1,5 @@
 // Opened windows stats
-const { getStats } = require('windows11-manager');
+import { getStats } from 'windows11-manager';
 
 async function start() {
   console.log(getStats());

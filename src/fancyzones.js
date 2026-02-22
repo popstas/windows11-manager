@@ -1,6 +1,6 @@
-const fs = require('fs');
-const { getConfig } = require('./config');
-const { getFancyZoneMonitor } = require('./monitors');
+import fs from 'node:fs';
+import { getConfig } from './config.js';
+import { getFancyZoneMonitor } from './monitors.js';
 
 function getFancyZoneInfo(opts) {
   let monitor, layout, zone;
@@ -8,8 +8,8 @@ function getFancyZoneInfo(opts) {
   if (!opts.monitor) { console.log('fancyZones.monitor is required'); return false; }
   if (!opts.position) { console.log('fancyZones.position is required'); return false; }
   monitor = getFancyZoneMonitor(opts.monitor);
-  const appliedLayouts = require(`${config.fancyZones.path}/applied-layouts.json`)['applied-layouts'];
-  const customLayouts = require(`${config.fancyZones.path}/custom-layouts.json`)['custom-layouts'];
+  const appliedLayouts = JSON.parse(fs.readFileSync(`${config.fancyZones.path}/applied-layouts.json`, 'utf8'))['applied-layouts'];
+  const customLayouts = JSON.parse(fs.readFileSync(`${config.fancyZones.path}/custom-layouts.json`, 'utf8'))['custom-layouts'];
   if (monitor !== undefined) {
     const applied = appliedLayouts.find(lay => lay.device.monitor === monitor.monitor);
     if (!applied) { console.log(`layout not found: ${opts}`); return false; }
@@ -180,4 +180,4 @@ function addFancyZoneHistory({ w, rule }) {
   fs.writeFileSync(historyPath, JSON.stringify(history));
 }
 
-module.exports = { getFancyZoneMonitor, getFancyZoneInfo, fancyZonesToPos, addFancyZoneHistory };
+export { getFancyZoneMonitor, getFancyZoneInfo, fancyZonesToPos, addFancyZoneHistory };

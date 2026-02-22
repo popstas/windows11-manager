@@ -1,5 +1,5 @@
 // not work
-const { windowManager } = require("node-window-manager");
+import { windowManager } from "node-window-manager";
 
 function start() {
   windowManager.getActiveWindow();

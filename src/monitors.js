@@ -1,5 +1,6 @@
-const { windowManager } = require('node-window-manager');
-const { getConfig } = require('./config');
+import fs from 'node:fs';
+import { windowManager } from 'node-window-manager';
+import { getConfig } from './config.js';
 
 function getWindowsMonitors() {
   return windowManager.getMonitors().map(mon => {
@@ -16,7 +17,7 @@ function getMonitor(num) {
   const sorted = [];
   for (let n in config.monitorsSize) {
     const size = config.monitorsSize[n];
-    const found = mons.find(m => m.bounds.width == size.width && m.bounds.height == size.height);
+    const found = mons.find(m => m.bounds.width === size.width && m.bounds.height === size.height);
     if (found) sorted.push(found);
   }
   return sorted[ind];
@@ -45,13 +46,13 @@ function getMonitorByPoint({ x, y }) {
 function getMonitorNumByName(name) {
   const config = getConfig();
   for (let key in config.monitorsSize) {
-    if (config.monitorsSize[key].name == name) return parseInt(key);
+    if (config.monitorsSize[key].name === name) return parseInt(key);
   }
 }
 
 function getSortedMonitors() {
   const config = getConfig();
-  const editor = require(`${config.fancyZones.path}/editor-parameters.json`);
+  const editor = JSON.parse(fs.readFileSync(`${config.fancyZones.path}/editor-parameters.json`, 'utf8'));
   return editor.monitors.sort((a, b) => {
     const aByName = getMonitorNumByName(a.monitor);
     const bByName = getMonitorNumByName(b.monitor);
@@ -71,7 +72,7 @@ function getFancyZoneMonitor(num) {
   return sortedMons[num - 1];
 }
 
-module.exports = {
+export {
   getWindowsMonitors,
   getMonitor,
   getMons,

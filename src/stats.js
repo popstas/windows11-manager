@@ -1,5 +1,5 @@
-const { windowManager } = require('node-window-manager');
-const { getWindows, getAppFromPath } = require('./windows');
+import { windowManager } from 'node-window-manager';
+import { getWindows, getAppFromPath } from './windows.js';
 
 function getStats() {
   const wins = getWindows();
@@ -22,4 +22,4 @@ function getStats() {
   return stats;
 }
 
-module.exports = { getStats };
+export { getStats };

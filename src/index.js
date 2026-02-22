@@ -1,5 +1,5 @@
-const { program } = require('commander');
-const winMan = require('./lib');
+import { program } from 'commander';
+import * as winMan from './lib/index.js';
 winMan.watchAppliedLayouts();
 
 start();
