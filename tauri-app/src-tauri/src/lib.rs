@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::TrayIconBuilder,
+    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, State,
 };
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
@@ -31,6 +31,10 @@ impl Default for Settings {
 struct AppState {
     autoplacer_running: bool,
     autoplacer_child: Option<tauri_plugin_shell::process::CommandChild>,
+}
+
+struct TrayHolder {
+    _tray: tauri::tray::TrayIcon<tauri::Wry>,
 }
 
 #[tauri::command]
@@ -205,9 +209,18 @@ pub fn run() {
 
             let menu = Menu::with_items(app, &[&place_i, &auto_i, &settings_i, &quit_i])?;
 
-            let _tray = TrayIconBuilder::new()
+            let tray = TrayIconBuilder::new()
                 .menu(&menu)
-                .show_menu_on_left_click(true)
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(move |tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        ..
+                    } = event
+                    {
+                        place_windows(tray.app_handle());
+                    }
+                })
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "place" => {
                         place_windows(app);
@@ -241,6 +254,9 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            // Retain tray reference so it persists for app lifetime
+            app.manage(TrayHolder { _tray: tray });
+
             // Register global hotkey: Ctrl+Alt+Shift+P
             use tauri_plugin_global_shortcut::ShortcutState;
 
@@ -248,10 +264,12 @@ pub fn run() {
                 "Ctrl+Alt+Shift+P",
                 move |app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
+                        eprintln!("Hotkey Ctrl+Alt+Shift+P pressed");
                         place_windows(app);
                     }
                 },
             )?;
+            eprintln!("Global hotkey Ctrl+Alt+Shift+P registered");
 
             Ok(())
         })
