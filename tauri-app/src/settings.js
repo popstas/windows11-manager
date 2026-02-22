@@ -27,6 +27,7 @@ form.addEventListener('submit', async (e) => {
 
   try {
     await invoke('save_settings', { settings });
+    status.style.color = '#a6e3a1';
     status.textContent = 'Saved!';
     setTimeout(() => { status.textContent = ''; }, 2000);
   } catch (e) {

@@ -20,7 +20,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            project_path: String::new(),
+            project_path: "c:/projects/js/windows11-manager".to_string(),
             autoplacer_interval: 0,
             run_on_startup: false,
             show_notifications: false,
