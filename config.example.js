@@ -1,3 +1,11 @@
+// Config file search order:
+// 1. ~/.config/windows11-manager.config.js (user home config)
+// 2. ./windows11-manager.config.js (current working directory)
+// 3. ../config.js (project root fallback)
+//
+// Note: when using ~/.config/ location, use absolute paths for things like
+// virtualDesktopPath, since __dirname will point to ~/.config/
+
 // you can define popular placement templates
 const mon1RightHalf = {
   fancyZones: {

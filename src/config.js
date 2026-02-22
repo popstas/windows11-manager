@@ -1,7 +1,26 @@
-const path = '../config.js';
+const fs = require('fs');
+const os = require('os');
+const pathModule = require('path');
+
+function resolveConfigPath() {
+  const candidates = [
+    pathModule.join(os.homedir(), '.config', 'windows11-manager.config.js'),
+    pathModule.join(process.cwd(), 'windows11-manager.config.js'),
+    pathModule.resolve(__dirname, '../config.js'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return pathModule.resolve(__dirname, '../config.js');
+}
+
+let configPath = resolveConfigPath();
+
 function getConfig() {
-  delete require.cache[require.resolve(path)];
-  return require(path);
+  delete require.cache[require.resolve(configPath)];
+  const config = require(configPath);
+  if (config.debug) console.log('Config loaded from:', configPath);
+  return config;
 }
 
 function reloadConfigs() {
@@ -24,7 +43,6 @@ function reloadConfigs() {
   if (config.debug) console.log('Configuration reloaded');
   return config;
 }
-const fs = require('fs');
 let lastAppliedLayoutsMtime = 0;
 let watcherStarted = false;
 
