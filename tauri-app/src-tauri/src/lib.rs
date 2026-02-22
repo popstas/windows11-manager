@@ -92,7 +92,8 @@ fn get_project_path(app: &tauri::AppHandle) -> String {
 fn place_windows(app: &tauri::AppHandle) {
     let project_path = get_project_path(app);
     if project_path.is_empty() {
-        eprintln!("Project path not configured");
+        eprintln!("Project path not configured, opening settings");
+        open_settings_window(app);
         return;
     }
 
@@ -123,7 +124,8 @@ fn place_windows(app: &tauri::AppHandle) {
 fn toggle_autoplacer(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
     let project_path = get_project_path(app);
     if project_path.is_empty() {
-        eprintln!("Project path not configured");
+        eprintln!("Project path not configured, opening settings");
+        open_settings_window(app);
         return;
     }
 
@@ -166,7 +168,7 @@ fn open_settings_window(app: &tauri::AppHandle) {
         return;
     }
 
-    let _window = tauri::WebviewWindowBuilder::new(
+    match tauri::WebviewWindowBuilder::new(
         app,
         "settings",
         tauri::WebviewUrl::App("index.html".into()),
@@ -175,7 +177,11 @@ fn open_settings_window(app: &tauri::AppHandle) {
     .inner_size(480.0, 400.0)
     .resizable(false)
     .center()
-    .build();
+    .build()
+    {
+        Ok(_) => {}
+        Err(e) => eprintln!("Failed to open settings window: {}", e),
+    }
 }
 
 pub fn run() {
