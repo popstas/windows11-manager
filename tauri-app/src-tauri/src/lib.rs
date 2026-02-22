@@ -5,7 +5,9 @@ use tauri::{
     tray::TrayIconBuilder,
     Emitter, Manager, State,
 };
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tauri_plugin_shell::ShellExt;
+use tauri_plugin_store::StoreExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
@@ -144,7 +146,7 @@ fn toggle_autoplacer(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>)
             .spawn();
 
         match result {
-            Ok(child) => {
+            Ok((_rx, child)) => {
                 app_state.autoplacer_child = Some(child);
                 app_state.autoplacer_running = true;
                 println!("Autoplacer started");
