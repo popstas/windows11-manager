@@ -1,4 +1,34 @@
-## [0.3.5](https://github.com/popstas/windows11-manager/compare/v0.3.4...v0.3.5) (2026-02-23)
+## [0.3.5](https://github.com/popstas/windows11-manager/compare/v0.4.0...v0.3.5) (2026-02-23)
+
+
+### Bug Fixes
+
+* **tray:** Restart (Store) completes and reboots ([a81c23a](https://github.com/popstas/windows11-manager/commit/a81c23ac0064c8922747c8c52f58071e529eae9d))
+
+
+### Features
+
+* **tray:** add Restart with Store, Sleep, and Shutdown power menu items ([92b6a8d](https://github.com/popstas/windows11-manager/commit/92b6a8da7053c9b625d3e51fb83efc3540a90936))
+
+
+
+# [0.4.0](https://github.com/popstas/windows11-manager/compare/v0.3.4...v0.4.0) (2026-02-23)
+
+
+### Bug Fixes
+
+* **dashboard:** prevent infinite loading hang ([d001615](https://github.com/popstas/windows11-manager/commit/d001615d532c845ad534c9418480ed289e53834d))
+* resolve dashboard loading and double tray icon bugs ([8966e1b](https://github.com/popstas/windows11-manager/commit/8966e1bfd137099be4054f0039848425f18224a4))
+* **tauri:** run MQTT and WS server on Tauri runtime ([1897e20](https://github.com/popstas/windows11-manager/commit/1897e20cd1014865bd1e80f531463e090ba4397d))
+
+
+### Features
+
+* add place command via CLI and HTTP ([7126e1f](https://github.com/popstas/windows11-manager/commit/7126e1f0b72f3cc08f4670c91d1f33e998a02bf3))
+* **dashboard:** add main dashboard window opened on tray icon click ([af83414](https://github.com/popstas/windows11-manager/commit/af8341400b0432338478cc4d4266f959b6618e94))
+* **mqtt:** add MQTT client for remote control ([2abe9c2](https://github.com/popstas/windows11-manager/commit/2abe9c26612fc32576e25e35270e448a0acbd740))
+* **mqtt:** move MQTT to Rust with WS bridge ([3092d04](https://github.com/popstas/windows11-manager/commit/3092d042d279bfb525e6deb563fbd36585f8e12a))
+* **tray:** keep app running in tray when windows are closed ([3b62097](https://github.com/popstas/windows11-manager/commit/3b62097f4cdcb7bf1f265381d0f04ce3924a9957))
 
 
 
