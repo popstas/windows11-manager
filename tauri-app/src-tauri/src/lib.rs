@@ -433,6 +433,12 @@ pub fn run() {
             let mqtt_toggle_i =
                 MenuItem::with_id(app, "mqtt_toggle", "Start MQTT", true, None::<&str>)?;
             let sep2 = PredefinedMenuItem::separator(app)?;
+            let restart_store_i =
+                MenuItem::with_id(app, "restart_store", "Restart (Store)", true, None::<&str>)?;
+            let sleep_i = MenuItem::with_id(app, "sleep", "Sleep", true, None::<&str>)?;
+            let shutdown_i =
+                MenuItem::with_id(app, "shutdown", "Shutdown", true, None::<&str>)?;
+            let sep3 = PredefinedMenuItem::separator(app)?;
             let settings_i =
                 MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
             let exit_i = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
@@ -446,6 +452,10 @@ pub fn run() {
                     &mqtt_status_i,
                     &mqtt_toggle_i,
                     &sep2,
+                    &restart_store_i,
+                    &sleep_i,
+                    &shutdown_i,
+                    &sep3,
                     &settings_i,
                     &exit_i,
                 ],
@@ -500,6 +510,61 @@ pub fn run() {
                             "MQTT: Starting..."
                         } else {
                             "MQTT: Off"
+                        });
+                    }
+                    "restart_store" => {
+                        let project_path = get_project_path(app);
+                        if project_path.is_empty() {
+                            eprintln!("Project path not configured");
+                            return;
+                        }
+                        let app_handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            println!("--- Restart (Store): saving positions ---");
+                            let shell = app_handle.shell();
+                            let output = shell
+                                .command("node")
+                                .args(["src", "store"])
+                                .current_dir(&project_path)
+                                .output()
+                                .await;
+                            match output {
+                                Ok(out) if out.status.success() => {
+                                    println!("Store done, restarting...");
+                                    let _ = shell
+                                        .command("shutdown")
+                                        .args(["/r", "/t", "0"])
+                                        .output()
+                                        .await;
+                                }
+                                Ok(out) => {
+                                    let stderr = String::from_utf8_lossy(&out.stderr);
+                                    eprintln!("Store failed: {}", stderr);
+                                }
+                                Err(e) => eprintln!("Store command error: {}", e),
+                            }
+                        });
+                    }
+                    "sleep" => {
+                        let app_handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let shell = app_handle.shell();
+                            let _ = shell
+                                .command("rundll32.exe")
+                                .args(["powrprof.dll,SetSuspendState", "0,1,0"])
+                                .output()
+                                .await;
+                        });
+                    }
+                    "shutdown" => {
+                        let app_handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let shell = app_handle.shell();
+                            let _ = shell
+                                .command("shutdown")
+                                .args(["/s", "/t", "0"])
+                                .output()
+                                .await;
                         });
                     }
                     "settings" => {
