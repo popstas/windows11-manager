@@ -10,7 +10,7 @@
     "wql-process-monitor": "^3.0.2"
   },
   "scripts": {
-    "build": "npm run build --prefix tauri-app && node -e \"require('fs').cpSync('tauri-app/src-tauri/target/release/bundle','dist',{recursive:true})\"",
+    "build": "npm run build --prefix tauri-app && node -e \"import('fs').then(fs=>fs.cpSync('tauri-app/src-tauri/target/release/bundle','dist',{recursive:true}))\"",
     "start": "node src",
     "version": "npm run changelog && git add CHANGELOG.md",
     "postversion": "git push && npm run release",
