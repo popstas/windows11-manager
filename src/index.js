@@ -7,7 +7,10 @@ start();
 async function start() {
   program.option('--first');
 
-  program.command('place').action(winMan.placeWindows);
+  program
+    .command('place')
+    .option('-v, --verbose', 'verbose placement logging')
+    .action((options) => winMan.placeWindows({ verbose: options.verbose }));
   program.command('store').action(winMan.storeWindows);
   program.command('restore').action(winMan.restoreWindows);
 

@@ -6,8 +6,20 @@ import { getWindows, getMatchedRules, getWindowInfo, getWindow } from './windows
 import { virtualDesktop } from './virtual-desktop.js';
 import { adjustBoundsForScale } from './scale.js';
 import fs from 'node:fs';
-import { exec } from 'node:child_process';
 import path from 'node:path';
+
+const LOG_FILE = path.join(process.cwd(), 'data', 'windows11-manager.log');
+
+function verboseLog(message) {
+  const line = `${new Date().toISOString()} ${message}`;
+  console.log(line);
+  try {
+    fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
+    fs.appendFileSync(LOG_FILE, line + '\n');
+  } catch (e) {
+    console.error('Failed to write log file:', e.message);
+  }
+}
 
 function parsePos(pos, mons) {
   const config = getConfig();
@@ -74,13 +86,14 @@ function isBoundsMatch(oldPos, newPos) {
   return true;
 }
 
-async function placeWindow({ w, rule = {}, isBulk = false }) {
+async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
   const minWidth = 250;
   const config = getConfig();
+  const debugLog = config.debug || verbose;
   if (!w) return false;
   const baseName = path.basename(w.path);
   const winName = w.title || baseName;
-  if (config.debug) console.log(`trying to placeWindow: ${winName}`);
+  if (debugLog) console.log(`trying to placeWindow: ${winName}`);
   const pos = rule.pos;
   const oldPos = w.getBounds();
   const changes = [];
@@ -108,7 +121,8 @@ async function placeWindow({ w, rule = {}, isBulk = false }) {
   const placed = isPlaced();
   if (pos && !placed) {
     if (w.getBounds()['x'] >= 0) {
-      if (config.debug) console.log(`Place ${getWindowInfo(w)} to ${JSON.stringify(applyPos)}\n`);
+      if (debugLog) console.log(`Place ${getWindowInfo(w)} to ${JSON.stringify(applyPos)}\n`);
+      verboseLog(`Place ${getWindowInfo(w)} from ${JSON.stringify(oldPos)} to ${JSON.stringify(finalBounds)}`);
       changes.push({ name: 'bounds', oldPos, value: applyPos });
       if (rule.fancyZones) addFancyZoneHistory({ w, rule });
     }
@@ -125,7 +139,7 @@ async function placeWindow({ w, rule = {}, isBulk = false }) {
       w.setBounds(finalBounds);
     }
     if (!isBulk) w.bringToTop();
-  } else if (config.debug) {
+  } else if (debugLog) {
     // if (!pos) console.log('no position');
     if (placed) console.log('window placed before');
   }
@@ -180,12 +194,14 @@ async function placeWindowsByConfig(wins = [], opts = {}) {
   }
 }
 
-async function placeWindows() {
+async function placeWindows(opts = {}) {
   const t = Date.now();
   const config = getConfig();
+  const verbose = opts.verbose === true;
+  const debugLog = config.debug || verbose;
   const mons = getMons();
   const isBulk = true;
-  if (config.debug) {
+  if (debugLog) {
     console.log('mons:');
     console.log(JSON.stringify(mons));
     const sortedMons = getSortedMonitors();
@@ -202,7 +218,7 @@ async function placeWindows() {
       if (rule.onlyOnOpen) continue;
       rule.pos = parsePos(rule, mons);
       // Push the promise to the array without awaiting it
-      placementPromises.push(placeWindow({ w, rule, isBulk })
+      placementPromises.push(placeWindow({ w, rule, isBulk, verbose })
         .then(changes => ({ w, changes })) // Return window and changes if successful
         .catch(error => {
           console.error('Error placing window:', error);
@@ -214,14 +230,20 @@ async function placeWindows() {
 
   // Wait for all placements to complete in parallel
   const results = await Promise.all(placementPromises);
-  // Filter out null results (failed placements) and empty changes
-  const placed = results.filter(result => result && result.changes && result.changes.length > 0);
+  const totalAttempts = results.length;
+  const failed = results.filter((r) => r === null).length;
+  const placed = results.filter(
+    (result) => result && result.changes && result.changes.length > 0
+  );
 
   // Clear references to help garbage collection
   placementPromises.length = 0;
   results.length = 0;
 
-  console.log(`after placeWindows: ${Date.now() - t}`);
+  const duration = Date.now() - t;
+  console.log(
+    `placeWindows: ${placed.length} placed, ${totalAttempts} processed, ${failed} failed, ${duration}ms`
+  );
   return placed;
 }
 

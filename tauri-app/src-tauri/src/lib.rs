@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, State,
 };
@@ -103,24 +103,36 @@ fn place_windows(app: &tauri::AppHandle) {
 
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
+        println!("--- Place Windows ---");
         let shell = app_handle.shell();
         let output = shell
             .command("node")
-            .args(["src", "place"])
+            .args(["src", "place", "--verbose"])
             .current_dir(&project_path)
             .output()
             .await;
 
         match output {
             Ok(out) => {
+                let exit_code = out.status.code().unwrap_or(-1);
                 if !out.stdout.is_empty() {
-                    println!("place: {}", String::from_utf8_lossy(&out.stdout));
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    for line in stdout.lines() {
+                        println!("  {}", line);
+                    }
                 }
                 if !out.stderr.is_empty() {
-                    eprintln!("place stderr: {}", String::from_utf8_lossy(&out.stderr));
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    for line in stderr.lines() {
+                        eprintln!("  {}", line);
+                    }
                 }
+                println!("--- Done (exit: {}) ---", exit_code);
             }
-            Err(e) => eprintln!("Failed to place windows: {}", e),
+            Err(e) => {
+                eprintln!("Failed to place windows: {}", e);
+                println!("--- Done (error) ---");
+            }
         }
     });
 }
@@ -205,9 +217,10 @@ pub fn run() {
                 MenuItem::with_id(app, "autoplacer", "Start Autoplacer", true, None::<&str>)?;
             let settings_i =
                 MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
-            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let exit_i = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
+            let sep = PredefinedMenuItem::separator(app)?;
 
-            let menu = Menu::with_items(app, &[&place_i, &auto_i, &settings_i, &quit_i])?;
+            let menu = Menu::with_items(app, &[&place_i, &auto_i, &settings_i, &sep, &exit_i])?;
 
             let tray = TrayIconBuilder::new()
                 .menu(&menu)
@@ -241,7 +254,7 @@ pub fn run() {
                     "settings" => {
                         open_settings_window(app);
                     }
-                    "quit" => {
+                    "exit" => {
                         // Kill autoplacer if running
                         let state = app.state::<Mutex<AppState>>();
                         let mut s = state.lock().unwrap();
@@ -260,7 +273,7 @@ pub fn run() {
             // Register global hotkey: Ctrl+Alt+Shift+P
             use tauri_plugin_global_shortcut::ShortcutState;
 
-            app.global_shortcut().on_shortcut(
+            if let Err(e) = app.global_shortcut().on_shortcut(
                 "Ctrl+Alt+Shift+P",
                 move |app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
@@ -268,8 +281,9 @@ pub fn run() {
                         place_windows(app);
                     }
                 },
-            )?;
-            eprintln!("Global hotkey Ctrl+Alt+Shift+P registered");
+            ) {
+                eprintln!("Could not register hotkey Ctrl+Alt+Shift+P: {} (already in use?)", e);
+            }
 
             Ok(())
         })
