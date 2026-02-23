@@ -33,13 +33,16 @@ impl MqttHandle {
     }
 }
 
+/// Returns the MQTT handle and a future that runs the event loop. Spawn the future
+/// with `tauri::async_runtime::spawn` (Tauri's runtime); do not use `tokio::spawn`
+/// as there may be no Tokio reactor in the current context.
 pub fn start_mqtt(
     host: String,
     port: u16,
     username: String,
     password: String,
     topic: String,
-) -> MqttHandle {
+) -> (MqttHandle, impl std::future::Future<Output = ()> + Send) {
     let (command_tx, _) = broadcast::channel::<String>(64);
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     let status = Arc::new(TokioMutex::new(MqttStatus::Disconnected));
@@ -58,8 +61,7 @@ pub fn start_mqtt(
 
     let subscribe_topic = format!("{}/#", topic);
 
-    tokio::spawn(async move {
-        // Subscribe
+    let future = async move {
         if let Err(e) = client
             .subscribe(&subscribe_topic, QoS::AtMostOnce)
             .await
@@ -85,7 +87,7 @@ pub fn start_mqtt(
                         }
                         Ok(Event::Incoming(Packet::Publish(publish))) => {
                             let full_topic = publish.topic.clone();
-                            let prefix_len = topic.len() + 1; // topic + "/"
+                            let prefix_len = topic.len() + 1;
                             if full_topic.len() > prefix_len {
                                 let subtopic = &full_topic[prefix_len..];
                                 let payload = String::from_utf8_lossy(&publish.payload).to_string();
@@ -101,18 +103,19 @@ pub fn start_mqtt(
                         Err(e) => {
                             eprintln!("MQTT error: {}", e);
                             *st.lock().await = MqttStatus::Reconnecting;
-                            // rumqttc auto-reconnects, small delay to avoid busy loop
                             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         }
                     }
                 }
             }
         }
-    });
+    };
 
-    MqttHandle {
+    let handle = MqttHandle {
         status,
         command_tx,
         shutdown_tx: Some(shutdown_tx),
-    }
+    };
+
+    (handle, future)
 }

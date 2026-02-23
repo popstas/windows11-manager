@@ -16,10 +16,15 @@ impl WsServerHandle {
     }
 }
 
-pub fn start_ws_server(port: u16, command_tx: broadcast::Sender<String>) -> WsServerHandle {
+/// Returns the handle and a future that runs the server. Spawn the future with
+/// `tauri::async_runtime::spawn` so it runs on Tauri's runtime.
+pub fn start_ws_server(
+    port: u16,
+    command_tx: broadcast::Sender<String>,
+) -> (WsServerHandle, impl std::future::Future<Output = ()> + Send) {
     let (shutdown_tx, mut shutdown_rx) = oneshot::channel::<()>();
 
-    tokio::spawn(async move {
+    let future = async move {
         let addr = format!("127.0.0.1:{}", port);
         let listener = match TcpListener::bind(&addr).await {
             Ok(l) => {
@@ -43,7 +48,7 @@ pub fn start_ws_server(port: u16, command_tx: broadcast::Sender<String>) -> WsSe
                         Ok((stream, peer)) => {
                             println!("WS client connected: {}", peer);
                             let mut rx = command_tx.subscribe();
-                            tokio::spawn(async move {
+                            tauri::async_runtime::spawn(async move {
                                 let ws_stream = match accept_async(stream).await {
                                     Ok(ws) => ws,
                                     Err(e) => {
@@ -70,8 +75,8 @@ pub fn start_ws_server(port: u16, command_tx: broadcast::Sender<String>) -> WsSe
                                         }
                                         ws_msg = stream.next() => {
                                             match ws_msg {
-                                                Some(Ok(_)) => {} // ignore client messages
-                                                _ => break, // disconnect
+                                                Some(Ok(_)) => {}
+                                                _ => break,
                                             }
                                         }
                                     }
@@ -86,9 +91,11 @@ pub fn start_ws_server(port: u16, command_tx: broadcast::Sender<String>) -> WsSe
                 }
             }
         }
-    });
+    };
 
-    WsServerHandle {
+    let handle = WsServerHandle {
         shutdown_tx: Some(shutdown_tx),
-    }
+    };
+
+    (handle, future)
 }

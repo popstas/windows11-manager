@@ -295,15 +295,18 @@ fn start_mqtt_service(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>
         return;
     }
 
-    let mqtt_handle = mqtt::start_mqtt(
+    let (mqtt_handle, mqtt_future) = mqtt::start_mqtt(
         settings.mqtt_host,
         settings.mqtt_port,
         settings.mqtt_username,
         settings.mqtt_password,
         settings.mqtt_topic,
     );
+    tauri::async_runtime::spawn(mqtt_future);
 
-    let ws_handle = ws_server::start_ws_server(settings.ws_port, mqtt_handle.command_tx.clone());
+    let (ws_handle, ws_future) =
+        ws_server::start_ws_server(settings.ws_port, mqtt_handle.command_tx.clone());
+    tauri::async_runtime::spawn(ws_future);
 
     // Spawn Node.js WS client
     let shell = app.shell();
