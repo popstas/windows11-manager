@@ -1,7 +1,7 @@
 {
   "$schema": "./gen/schemas/desktop-schema.json",
   "productName": "windows11-manager",
-  "version": "0.1.0",
+  "version": "0.3.5",
   "identifier": "com.windows11-manager.tray",
   "build": {
     "frontendDist": "../src"
@@ -20,7 +20,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

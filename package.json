@@ -12,7 +12,7 @@
   "scripts": {
     "build": "npm run build --prefix tauri-app && node -e \"import('fs').then(fs=>fs.cpSync('tauri-app/src-tauri/target/release/bundle','dist',{recursive:true}))\"",
     "start": "node src",
-    "version": "npm run changelog && git add CHANGELOG.md",
+    "version": "npm run changelog && node -e \"const fs=require('fs');const v=process.env.npm_package_version;for(const f of['tauri-app/package.json','tauri-app/src-tauri/tauri.conf.json']){const j=JSON.parse(fs.readFileSync(f,'utf8'));j.version=v;fs.writeFileSync(f,JSON.stringify(j,null,2)+'\\n')}let c=fs.readFileSync('tauri-app/src-tauri/Cargo.toml','utf8');c=c.replace(/^version = \\\".*\\\"/m,'version = \\\"'+v+'\\\"');fs.writeFileSync('tauri-app/src-tauri/Cargo.toml',c)\" && git add CHANGELOG.md tauri-app/package.json tauri-app/src-tauri/tauri.conf.json tauri-app/src-tauri/Cargo.toml",
     "postversion": "git push --follow-tags && npm run release",
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s -r 0",
     "release": "conventional-github-releaser -p angular && npm publish"

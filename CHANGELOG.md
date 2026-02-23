@@ -1,3 +1,7 @@
+## [0.3.5](https://github.com/popstas/windows11-manager/compare/v0.3.4...v0.3.5) (2026-02-23)
+
+
+
 ## [0.3.4](https://github.com/popstas/windows11-manager/compare/v0.3.3...v0.3.4) (2026-02-23)
 
 
