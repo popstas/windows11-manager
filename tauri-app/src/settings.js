@@ -10,6 +10,13 @@ async function loadSettings() {
     document.getElementById('autoplacer_interval').value = settings.autoplacer_interval;
     document.getElementById('run_on_startup').checked = settings.run_on_startup;
     document.getElementById('show_notifications').checked = settings.show_notifications;
+    document.getElementById('mqtt_enabled').checked = settings.mqtt_enabled;
+    document.getElementById('mqtt_host').value = settings.mqtt_host;
+    document.getElementById('mqtt_port').value = settings.mqtt_port;
+    document.getElementById('mqtt_username').value = settings.mqtt_username;
+    document.getElementById('mqtt_password').value = settings.mqtt_password;
+    document.getElementById('mqtt_topic').value = settings.mqtt_topic;
+    document.getElementById('ws_port').value = settings.ws_port;
   } catch (e) {
     console.error('Failed to load settings:', e);
   }
@@ -23,6 +30,13 @@ form.addEventListener('submit', async (e) => {
     autoplacer_interval: parseInt(document.getElementById('autoplacer_interval').value, 10) || 0,
     run_on_startup: document.getElementById('run_on_startup').checked,
     show_notifications: document.getElementById('show_notifications').checked,
+    mqtt_enabled: document.getElementById('mqtt_enabled').checked,
+    mqtt_host: document.getElementById('mqtt_host').value,
+    mqtt_port: parseInt(document.getElementById('mqtt_port').value, 10) || 1883,
+    mqtt_username: document.getElementById('mqtt_username').value,
+    mqtt_password: document.getElementById('mqtt_password').value,
+    mqtt_topic: document.getElementById('mqtt_topic').value,
+    ws_port: parseInt(document.getElementById('ws_port').value, 10) || 9721,
   };
 
   try {
