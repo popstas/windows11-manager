@@ -13,8 +13,18 @@ async function start() {
     .command('place')
     .option('-v, --verbose', 'verbose placement logging')
     .action((options) => winMan.placeWindows({ verbose: options.verbose }));
-  program.command('store').action(winMan.storeWindows);
-  program.command('restore').action(winMan.restoreWindows);
+  program
+    .command('store')
+    .action(() => {
+      winMan.storeWindows();
+      process.exit(0);
+    });
+  program
+    .command('restore')
+    .action(async () => {
+      await winMan.restoreWindows();
+      process.exit(0);
+    });
 
   program
     .command('place-window')

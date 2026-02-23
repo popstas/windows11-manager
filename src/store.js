@@ -6,6 +6,8 @@ import { getWindows } from './windows.js';
 function storeWindows() {
   const config = getConfig();
   const wins = getWindows();
+  console.error('[store] saving positions: %d windows total', wins.length);
+  console.error('[store] store path: %s', config.store.path);
   const matchList = { ...config.store.matchList };
   const matchedWins = wins.filter(w => {
     for (let i in matchList) {
@@ -24,8 +26,17 @@ function storeWindows() {
     const isPath = fs.existsSync(title) && fs.statSync(title).isDirectory();
     return isPath;
   });
+  console.error('[store] matched windows: %d', matchedWins.length);
+  console.error('[store] stored paths (explorer): %d', storedPaths.length);
+  if (matchedWins.length) {
+    matchedWins.forEach((w, i) => console.error('[store]   window[%d]: %s', i, w.path));
+  }
+  if (storedPaths.length) {
+    storedPaths.forEach((p, i) => console.error('[store]   path[%d]: %s', i, p));
+  }
   const store = { windows: matchedWins, paths: storedPaths };
   fs.writeFileSync(config.store.path, JSON.stringify(store));
+  console.error('[store] wrote %s', config.store.path);
 }
 
 async function restoreWindows() {

@@ -521,28 +521,59 @@ pub fn run() {
                         let app_handle = app.clone();
                         tauri::async_runtime::spawn(async move {
                             println!("--- Restart (Store): saving positions ---");
+                            println!("  project_path: {}", project_path);
                             let shell = app_handle.shell();
-                            let output = shell
-                                .command("node")
-                                .args(["src", "store"])
-                                .current_dir(&project_path)
+                            let store_result = tokio::time::timeout(
+                                std::time::Duration::from_secs(15),
+                                shell
+                                    .command("node")
+                                    .args(["src/index.js", "store"])
+                                    .current_dir(&project_path)
+                                    .output(),
+                            )
+                            .await;
+                            let output = match store_result {
+                                Ok(Ok(out)) => out,
+                                Ok(Err(e)) => {
+                                    eprintln!("Store command error (node not running): {}", e);
+                                    eprintln!("  Hint: ensure node is in PATH when running the app");
+                                    return;
+                                }
+                                Err(_) => {
+                                    eprintln!("Store command timed out after 15s");
+                                    return;
+                                }
+                            };
+                            let exit_code = output.status.code().unwrap_or(-1);
+                            let stdout = String::from_utf8_lossy(&output.stdout);
+                            let stderr = String::from_utf8_lossy(&output.stderr);
+                            if !stdout.trim().is_empty() {
+                                println!("  stdout: {}", stdout.trim());
+                            }
+                            if !stderr.trim().is_empty() {
+                                eprintln!("  stderr: {}", stderr.trim());
+                            }
+                            if !output.status.success() {
+                                eprintln!("Store failed (exit {}): check config.js and project path", exit_code);
+                                return;
+                            }
+                            println!("Store done (exit {}), restarting...", exit_code);
+                            #[cfg(windows)]
+                            let shutdown_cmd = format!(
+                                "{}\\System32\\shutdown.exe",
+                                std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".into())
+                            );
+                            #[cfg(not(windows))]
+                            let shutdown_cmd = "shutdown".to_string();
+                            let restart_result = shell
+                                .command(&shutdown_cmd)
+                                .args(["/r", "/t", "0"])
                                 .output()
                                 .await;
-                            match output {
-                                Ok(out) if out.status.success() => {
-                                    println!("Store done, restarting...");
-                                    let _ = shell
-                                        .command("shutdown")
-                                        .args(["/r", "/t", "0"])
-                                        .output()
-                                        .await;
-                                }
-                                Ok(out) => {
-                                    let stderr = String::from_utf8_lossy(&out.stderr);
-                                    eprintln!("Store failed: {}", stderr);
-                                }
-                                Err(e) => eprintln!("Store command error: {}", e),
+                            if let Err(e) = restart_result {
+                                eprintln!("Shutdown command error: {}", e);
                             }
+                            let _ = app_handle.exit(0);
                         });
                     }
                     "sleep" => {
