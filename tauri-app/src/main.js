@@ -13,7 +13,10 @@ async function loadDashboard() {
   document.getElementById('log-section').hidden = true;
 
   try {
-    const raw = await invoke('get_dashboard_data');
+    const raw = await Promise.race([
+      invoke('get_dashboard_data'),
+      new Promise((_, reject) => setTimeout(() => reject('Request timed out'), 15000)),
+    ]);
     const data = JSON.parse(raw);
     loading.hidden = true;
 

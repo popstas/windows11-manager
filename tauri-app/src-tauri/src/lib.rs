@@ -152,13 +152,17 @@ async fn get_dashboard_data(app: tauri::AppHandle) -> Result<String, String> {
     }
 
     let shell = app.shell();
-    let output = shell
-        .command("node")
-        .args(["src", "dashboard"])
-        .current_dir(&project_path)
-        .output()
-        .await
-        .map_err(|e| e.to_string())?;
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        shell
+            .command("node")
+            .args(["src", "dashboard"])
+            .current_dir(&project_path)
+            .output(),
+    )
+    .await
+    .map_err(|_| "Dashboard command timed out after 10s".to_string())?
+    .map_err(|e| e.to_string())?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

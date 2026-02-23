@@ -62,6 +62,7 @@ async function start() {
     }
 
     console.log(JSON.stringify({ stats, store, configPath: cfgPath, configContent, logTail }));
+    process.exit(0);
   });
 
   program.parse();
