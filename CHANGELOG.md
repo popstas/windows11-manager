@@ -1,3 +1,23 @@
+## [0.3.3](https://github.com/popstas/windows11-manager/compare/v0.3.2...v0.3.3) (2026-02-23)
+
+
+### Bug Fixes
+
+* **tauri:** fix compilation errors and add missing icon files ([93349fe](https://github.com/popstas/windows11-manager/commit/93349fe96b2e8dcb2f69a90ddac053f074ad006b))
+* **tauri:** fix settings save by enabling withGlobalTauri and set default project path ([859c66d](https://github.com/popstas/windows11-manager/commit/859c66da1f8ff4605382df2ac5cb4978cd8a566e))
+* **tauri:** fix settings window and open it on missing project path ([24b941e](https://github.com/popstas/windows11-manager/commit/24b941e8d61928348f47f38e3b758aa65bc04e95))
+* **tauri:** fix tray icon click on Windows 11 ([48d3ac8](https://github.com/popstas/windows11-manager/commit/48d3ac802ebbce9e917e467cafd36e96d3022b51))
+
+
+### Features
+
+* **ci:** add GitHub Actions release workflow and fix Windows build ([284d82b](https://github.com/popstas/windows11-manager/commit/284d82b3a2a47c287d91145a450ff5a551e2609b))
+* **config:** support loading config from multiple locations ([ec986ba](https://github.com/popstas/windows11-manager/commit/ec986ba294969307d8ae211d8fe570f87c9a961e))
+* **place:** verbose output and placement history ([250f71f](https://github.com/popstas/windows11-manager/commit/250f71f61e366f689c0d7e51e402be28481f64fe))
+* **tauri:** add tray app with Place Windows and Autoplacer ([65474c2](https://github.com/popstas/windows11-manager/commit/65474c21f8a26ce8b8dafcb6e5d4139ee58744b9))
+
+
+
 ## [0.3.2](https://github.com/popstas/windows11-manager/compare/v0.3.1...v0.3.2) (2026-02-16)
 
 
