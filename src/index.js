@@ -64,10 +64,5 @@ async function start() {
     console.log(JSON.stringify({ stats, store, configPath: cfgPath, configContent, logTail }));
   });
 
-  program.command('mqtt').action(async () => {
-    const { startMqtt } = await import('./mqtt.js');
-    startMqtt();
-  });
-
   program.parse();
 }
