@@ -24,6 +24,7 @@ let configPath = resolveConfigPath();
 function getConfig() {
   delete require.cache[require.resolve(configPath)];
   const config = require(configPath);
+  config._configPath = configPath;
   if (config.debug) console.log('Config loaded from:', configPath);
   return config;
 }

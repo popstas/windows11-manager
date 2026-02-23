@@ -86,6 +86,31 @@ async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), 
     Ok(())
 }
 
+#[tauri::command]
+async fn get_dashboard_data(app: tauri::AppHandle) -> Result<String, String> {
+    let project_path = get_project_path(&app);
+    if project_path.is_empty() {
+        return Err("Project path not configured".to_string());
+    }
+
+    let shell = app.shell();
+    let output = shell
+        .command("node")
+        .args(["src", "dashboard"])
+        .current_dir(&project_path)
+        .output()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Dashboard command failed: {}", stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    Ok(stdout.trim().to_string())
+}
+
 fn get_project_path(app: &tauri::AppHandle) -> String {
     let store = app.store("settings.json").ok();
     store
@@ -177,6 +202,28 @@ fn toggle_autoplacer(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>)
     let _ = app.emit("autoplacer-toggled", app_state.autoplacer_running);
 }
 
+fn open_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_focus();
+        return;
+    }
+
+    match tauri::WebviewWindowBuilder::new(
+        app,
+        "main",
+        tauri::WebviewUrl::App("main.html".into()),
+    )
+    .title("windows11-manager")
+    .inner_size(700.0, 600.0)
+    .resizable(true)
+    .center()
+    .build()
+    {
+        Ok(_) => {}
+        Err(e) => eprintln!("Failed to open main window: {}", e),
+    }
+}
+
 fn open_settings_window(app: &tauri::AppHandle) {
     // If settings window already exists, focus it
     if let Some(window) = app.get_webview_window("settings") {
@@ -209,7 +256,7 @@ pub fn run() {
             autoplacer_running: false,
             autoplacer_child: None,
         }))
-        .invoke_handler(tauri::generate_handler![get_settings, save_settings])
+        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data])
         .setup(|app| {
             // Build tray menu
             let place_i = MenuItem::with_id(app, "place", "Place Windows", true, None::<&str>)?;
@@ -231,7 +278,7 @@ pub fn run() {
                         ..
                     } = event
                     {
-                        place_windows(tray.app_handle());
+                        open_main_window(tray.app_handle());
                     }
                 })
                 .on_menu_event(move |app, event| match event.id.as_ref() {

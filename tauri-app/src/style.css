@@ -83,3 +83,102 @@ button:hover {
   color: #a6e3a1;
   font-size: 13px;
 }
+
+/* Dashboard styles */
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.dashboard-header h1 {
+  margin-bottom: 0;
+}
+
+.section {
+  margin-bottom: 20px;
+}
+
+.section h2 {
+  font-size: 15px;
+  color: #89b4fa;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #313244;
+  padding-bottom: 4px;
+}
+
+.stat-row {
+  margin-bottom: 4px;
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.stats-table th,
+.stats-table td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid #313244;
+}
+
+.stats-table th {
+  color: #a6adc8;
+  font-weight: 500;
+}
+
+.code-block {
+  background: #313244;
+  border: 1px solid #45475a;
+  border-radius: 6px;
+  padding: 10px;
+  font-family: "Cascadia Code", "Fira Code", monospace;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.log-block {
+  color: #a6adc8;
+}
+
+.config-path {
+  font-size: 12px;
+  color: #a6adc8;
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+details {
+  margin-top: 4px;
+}
+
+details summary {
+  cursor: pointer;
+  color: #cba6f7;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+details summary:hover {
+  color: #b4befe;
+}
+
+.loading {
+  color: #a6adc8;
+  padding: 20px 0;
+}
+
+.error {
+  color: #f38ba8;
+  padding: 10px;
+  background: #31324466;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}

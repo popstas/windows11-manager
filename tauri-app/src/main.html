@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>windows11-manager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="dashboard">
+    <div class="dashboard-header">
+      <h1>Dashboard</h1>
+      <button id="refresh-btn">Refresh</button>
+    </div>
+
+    <div id="loading" class="loading">Loading...</div>
+    <div id="error" class="error" hidden></div>
+
+    <section class="section" id="stats-section" hidden>
+      <h2>Window Stats</h2>
+      <div id="stats-content"></div>
+    </section>
+
+    <section class="section" id="store-section" hidden>
+      <h2>Store</h2>
+      <pre id="store-content" class="code-block"></pre>
+    </section>
+
+    <section class="section" id="config-section" hidden>
+      <h2>Config</h2>
+      <div class="config-path" id="config-path"></div>
+      <details>
+        <summary>Config content</summary>
+        <pre id="config-content" class="code-block"></pre>
+      </details>
+    </section>
+
+    <section class="section" id="log-section" hidden>
+      <h2>Log Tail</h2>
+      <pre id="log-content" class="code-block log-block"></pre>
+    </section>
+  </div>
+  <script type="module" src="main.js"></script>
+</body>
+</html>
