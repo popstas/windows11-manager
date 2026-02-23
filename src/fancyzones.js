@@ -5,6 +5,7 @@ import { getFancyZoneMonitor } from './monitors.js';
 function getFancyZoneInfo(opts) {
   let monitor, layout, zone;
   const config = getConfig();
+  opts = { ...opts, monitor: Number(opts.monitor), position: Number(opts.position) };
   if (!opts.monitor) { console.log('fancyZones.monitor is required'); return false; }
   if (!opts.position) { console.log('fancyZones.position is required'); return false; }
   monitor = getFancyZoneMonitor(opts.monitor);

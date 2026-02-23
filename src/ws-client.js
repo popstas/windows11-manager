@@ -14,35 +14,44 @@ function connect() {
   });
 
   ws.on('message', async (data) => {
+    const raw = data.toString();
+    console.log(`WS raw message: ${raw}`);
     try {
-      const { command, payload } = JSON.parse(data.toString());
-      console.log(`WS ${command}: ${payload}`);
+      const parsed = JSON.parse(raw);
+      const { command, payload } = parsed;
+      console.log(`WS command=${command}, payload type=${typeof payload}`);
 
       switch (command) {
         case 'place': {
-          const rule = JSON.parse(payload);
+          const rule = typeof payload === 'string' ? JSON.parse(payload) : payload;
+          console.log(`WS place rule: ${JSON.stringify(rule)}`);
           await placeWindowByConfig(rule);
+          console.log(`WS place completed`);
           break;
         }
         case 'placeAll':
           await placeWindows();
+          console.log(`WS placeAll completed`);
           break;
         case 'store':
           await storeWindows();
+          console.log(`WS store completed`);
           break;
         case 'restore':
           await restoreWindows();
+          console.log(`WS restore completed`);
           break;
         case 'desktop': {
-          const { number } = JSON.parse(payload);
-          virtualDesktop.GoToDesktopNumber(number - 1);
+          const desktopPayload = typeof payload === 'string' ? JSON.parse(payload) : payload;
+          virtualDesktop.GoToDesktopNumber(desktopPayload.number - 1);
+          console.log(`WS desktop switch to ${desktopPayload.number}`);
           break;
         }
         default:
           console.log(`WS unknown command: ${command}`);
       }
     } catch (err) {
-      console.error(`WS error handling message:`, err.message);
+      console.error(`WS error handling message: ${err.message}\n  raw: ${raw}\n  stack: ${err.stack}`);
     }
   });
 

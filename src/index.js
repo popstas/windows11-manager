@@ -16,6 +16,27 @@ async function start() {
   program.command('store').action(winMan.storeWindows);
   program.command('restore').action(winMan.restoreWindows);
 
+  program
+    .command('place-window')
+    .option('--window <window>', 'window title or "current"', 'current')
+    .option('--monitor <monitor>', 'monitor number', '1')
+    .option('--position <position>', 'zone position number', '1')
+    .action(async (options) => {
+      const rule = {
+        window: options.window,
+        fancyZones: { monitor: options.monitor, position: options.position },
+      };
+      await winMan.placeWindowByConfig(rule);
+    });
+
+  program
+    .command('http-server')
+    .option('--port <port>', 'HTTP server port', '9722')
+    .action(async (options) => {
+      const { startHttpServer } = await import('./http-server.js');
+      startHttpServer(Number(options.port));
+    });
+
   program.command('stats').action(() => {
     const stats = winMan.getStats();
     console.log(stats);
