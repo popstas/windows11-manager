@@ -1,5 +1,5 @@
 node_modules/
-config.js
+config.cjs
 dist/
 tauri-app/src-tauri/target/
 tauri-app/src-tauri/gen/schemas/windows-schema.json

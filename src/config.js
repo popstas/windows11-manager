@@ -11,12 +11,12 @@ function resolveConfigPath() {
   const candidates = [
     path.join(os.homedir(), '.config', 'windows11-manager.config.js'),
     path.join(process.cwd(), 'windows11-manager.config.js'),
-    path.resolve(__dirname, '../config.js'),
+    path.resolve(__dirname, '../config.cjs'),
   ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return candidate;
   }
-  return path.resolve(__dirname, '../config.js');
+  return path.resolve(__dirname, '../config.cjs');
 }
 
 let configPath = resolveConfigPath();

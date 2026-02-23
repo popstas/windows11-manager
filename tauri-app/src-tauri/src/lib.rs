@@ -453,6 +453,7 @@ pub fn run() {
             let mqtt_toggle_i_auto = mqtt_toggle_i.clone();
 
             let tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().cloned().unwrap())
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(move |tray, event| {
