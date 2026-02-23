@@ -568,15 +568,9 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event {
-                // Kill all child processes on exit
-                let state = app.state::<Mutex<AppState>>();
-                let mut s = state.lock().unwrap();
-                if let Some(child) = s.autoplacer_child.take() {
-                    let _ = child.kill();
-                }
-                stop_mqtt_state(&mut s);
+        .run(|_app, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                api.prevent_exit();
             }
         });
 }
