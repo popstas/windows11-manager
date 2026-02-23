@@ -6,6 +6,7 @@
   "bin": "src/index.js",
   "dependencies": {
     "commander": "^9.4.1",
+    "mqtt": "^5.15.0",
     "node-window-manager": "file:./vendor/node-window-manager",
     "wql-process-monitor": "^3.0.2"
   },

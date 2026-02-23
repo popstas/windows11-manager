@@ -82,6 +82,14 @@ module.exports = {
   monitorsGaps,
   wallpapers,
 
+  mqtt: {
+    host: 'mqtt://mqtt.popstas.ru',
+    port: 1883,
+    username: 'popstas',
+    password: 'password',
+    topic: 'home/room/pc/windows',
+  },
+
   virtualDesktopPath: __dirname +'/VirtualDesktop11.exe',
   store: {
     path: './data/windows-store.json',

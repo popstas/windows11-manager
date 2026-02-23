@@ -7,3 +7,4 @@ export * from '../store.js';
 export * from '../stats.js';
 export * from '../wallpapers.js';
 export * from '../config.js';
+export * from '../mqtt.js';
