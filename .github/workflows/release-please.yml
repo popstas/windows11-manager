@@ -26,8 +26,10 @@ jobs:
 
       - name: Sync Tauri version to release PR
         if: steps.release.outputs.pr != ''
+        env:
+          PR_NUMBER: ${{ fromJSON(steps.release.outputs.pr).number }}
         run: |
-          gh pr checkout ${{ steps.release.outputs.pr }}
+          gh pr checkout $PR_NUMBER
           node scripts/sync-tauri-version.js
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
