@@ -22,11 +22,14 @@ jobs:
         id: release
         with:
           config-file: .github/release-please-config.json
+          manifest-file: .release-please-manifest.json
+          target-branch: master
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Sync Tauri version to release PR
         if: steps.release.outputs.pr != ''
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ fromJSON(steps.release.outputs.pr).number }}
         run: |
           gh pr checkout $PR_NUMBER
