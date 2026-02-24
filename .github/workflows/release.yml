@@ -16,16 +16,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          registry-url: 'https://registry.npmjs.org'
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Install dependencies
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install Tauri dependencies
         working-directory: tauri-app
         run: npm install
 
       - name: Build Tauri app
         working-directory: tauri-app
         run: npx tauri build
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2

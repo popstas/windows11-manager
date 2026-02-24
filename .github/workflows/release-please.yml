@@ -1,0 +1,36 @@
+name: Release Please
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      pr: ${{ steps.release.outputs.pr }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: .github/release-please-config.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync Tauri version to release PR
+        if: steps.release.outputs.pr != ''
+        run: |
+          gh pr checkout ${{ steps.release.outputs.pr }}
+          node scripts/sync-tauri-version.js
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add tauri-app/package.json tauri-app/src-tauri/tauri.conf.json tauri-app/src-tauri/Cargo.toml
+          git diff --staged --quiet || git commit -m "chore: sync tauri-app version"
+          git push origin HEAD || true
