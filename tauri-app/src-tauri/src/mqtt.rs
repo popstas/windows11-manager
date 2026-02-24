@@ -1,3 +1,4 @@
+use log::{error, info};
 use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
 use std::sync::Arc;
 use tokio::sync::{broadcast, oneshot, Mutex as TokioMutex};
@@ -66,7 +67,7 @@ pub fn start_mqtt(
             .subscribe(&subscribe_topic, QoS::AtMostOnce)
             .await
         {
-            eprintln!("MQTT subscribe error: {}", e);
+            error!("MQTT subscribe error: {}", e);
         }
 
         let mut shutdown_rx = shutdown_rx;
@@ -74,7 +75,7 @@ pub fn start_mqtt(
         loop {
             tokio::select! {
                 _ = &mut shutdown_rx => {
-                    println!("MQTT shutdown signal received");
+                    info!("MQTT shutdown signal received");
                     let _ = client.disconnect().await;
                     *st.lock().await = MqttStatus::Disconnected;
                     break;
@@ -82,7 +83,7 @@ pub fn start_mqtt(
                 poll_result = eventloop.poll() => {
                     match poll_result {
                         Ok(Event::Incoming(Packet::ConnAck(_))) => {
-                            println!("MQTT connected to {}:{}", host, port);
+                            info!("MQTT connected to {}:{}", host, port);
                             *st.lock().await = MqttStatus::Connected;
                         }
                         Ok(Event::Incoming(Packet::Publish(publish))) => {
@@ -95,13 +96,13 @@ pub fn start_mqtt(
                                     "command": subtopic,
                                     "payload": payload,
                                 });
-                                println!("MQTT {}: {}", subtopic, payload);
+                                info!("MQTT {}: {}", subtopic, payload);
                                 let _ = cmd_tx.send(msg.to_string());
                             }
                         }
                         Ok(_) => {}
                         Err(e) => {
-                            eprintln!("MQTT error: {}", e);
+                            error!("MQTT error: {}", e);
                             *st.lock().await = MqttStatus::Reconnecting;
                             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         }

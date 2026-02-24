@@ -1,6 +1,8 @@
+mod logging;
 mod mqtt;
 mod ws_server;
 
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{
@@ -204,14 +206,14 @@ fn load_settings_from_store(app: &tauri::AppHandle) -> Settings {
 fn place_windows(app: &tauri::AppHandle) {
     let project_path = get_project_path(app);
     if project_path.is_empty() {
-        eprintln!("Project path not configured, opening settings");
+        warn!("Project path not configured, opening settings");
         open_settings_window(app);
         return;
     }
 
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        println!("--- Place Windows ---");
+        info!("--- Place Windows ---");
         let shell = app_handle.shell();
         let output = shell
             .command("node")
@@ -226,20 +228,20 @@ fn place_windows(app: &tauri::AppHandle) {
                 if !out.stdout.is_empty() {
                     let stdout = String::from_utf8_lossy(&out.stdout);
                     for line in stdout.lines() {
-                        println!("  {}", line);
+                        info!("  {}", line);
                     }
                 }
                 if !out.stderr.is_empty() {
                     let stderr = String::from_utf8_lossy(&out.stderr);
                     for line in stderr.lines() {
-                        eprintln!("  {}", line);
+                        warn!("  {}", line);
                     }
                 }
-                println!("--- Done (exit: {}) ---", exit_code);
+                info!("--- Done (exit: {}) ---", exit_code);
             }
             Err(e) => {
-                eprintln!("Failed to place windows: {}", e);
-                println!("--- Done (error) ---");
+                error!("Failed to place windows: {}", e);
+                info!("--- Done (error) ---");
             }
         }
     });
@@ -248,7 +250,7 @@ fn place_windows(app: &tauri::AppHandle) {
 fn toggle_autoplacer(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
     let project_path = get_project_path(app);
     if project_path.is_empty() {
-        eprintln!("Project path not configured, opening settings");
+        warn!("Project path not configured, opening settings");
         open_settings_window(app);
         return;
     }
@@ -261,7 +263,7 @@ fn toggle_autoplacer(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>)
             let _ = child.kill();
         }
         app_state.autoplacer_running = false;
-        println!("Autoplacer stopped");
+        info!("Autoplacer stopped");
     } else {
         // Start autoplacer
         let shell = app.shell();
@@ -275,9 +277,9 @@ fn toggle_autoplacer(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>)
             Ok((_rx, child)) => {
                 app_state.autoplacer_child = Some(child);
                 app_state.autoplacer_running = true;
-                println!("Autoplacer started");
+                info!("Autoplacer started");
             }
-            Err(e) => eprintln!("Failed to start autoplacer: {}", e),
+            Err(e) => error!("Failed to start autoplacer: {}", e),
         }
     }
 
@@ -288,13 +290,13 @@ fn toggle_autoplacer(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>)
 fn start_mqtt_service(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
     let settings = load_settings_from_store(app);
     if settings.mqtt_host.is_empty() || settings.mqtt_topic.is_empty() {
-        eprintln!("MQTT host or topic not configured");
+        warn!("MQTT host or topic not configured");
         return;
     }
 
     let project_path = get_project_path(app);
     if project_path.is_empty() {
-        eprintln!("Project path not configured, opening settings");
+        warn!("Project path not configured, opening settings");
         open_settings_window(app);
         return;
     }
@@ -326,13 +328,13 @@ fn start_mqtt_service(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>
         Ok((_rx, child)) => {
             app_state.ws_client_child = Some(child);
         }
-        Err(e) => eprintln!("Failed to start WS client: {}", e),
+        Err(e) => error!("Failed to start WS client: {}", e),
     }
 
     app_state.mqtt_handle = Some(mqtt_handle);
     app_state.ws_handle = Some(ws_handle);
     app_state.mqtt_running = true;
-    println!("MQTT service started");
+    info!("MQTT service started");
 }
 
 fn stop_mqtt_service(state: &State<'_, Mutex<AppState>>) {
@@ -351,7 +353,7 @@ fn stop_mqtt_state(app_state: &mut AppState) {
         mq.stop();
     }
     app_state.mqtt_running = false;
-    println!("MQTT service stopped");
+    info!("MQTT service stopped");
 }
 
 fn toggle_mqtt(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
@@ -381,7 +383,7 @@ fn open_main_window(app: &tauri::AppHandle) {
     .build()
     {
         Ok(_) => {}
-        Err(e) => eprintln!("Failed to open main window: {}", e),
+        Err(e) => error!("Failed to open main window: {}", e),
     }
 }
 
@@ -404,7 +406,7 @@ fn open_settings_window(app: &tauri::AppHandle) {
     .build()
     {
         Ok(_) => {}
-        Err(e) => eprintln!("Failed to open settings window: {}", e),
+        Err(e) => error!("Failed to open settings window: {}", e),
     }
 }
 
@@ -423,6 +425,9 @@ pub fn run() {
         }))
         .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data])
         .setup(|app| {
+            let project_path = get_project_path(&app.handle());
+            logging::init(&project_path);
+
             // Build tray menu
             let place_i = MenuItem::with_id(app, "place", "Place Windows", true, None::<&str>)?;
             let auto_i =
@@ -515,13 +520,13 @@ pub fn run() {
                     "restart_store" => {
                         let project_path = get_project_path(app);
                         if project_path.is_empty() {
-                            eprintln!("Project path not configured");
+                            warn!("Project path not configured");
                             return;
                         }
                         let app_handle = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            println!("--- Restart (Store): saving positions ---");
-                            println!("  project_path: {}", project_path);
+                            info!("--- Restart (Store): saving positions ---");
+                            info!("  project_path: {}", project_path);
                             let shell = app_handle.shell();
                             let store_result = tokio::time::timeout(
                                 std::time::Duration::from_secs(15),
@@ -535,12 +540,12 @@ pub fn run() {
                             let output = match store_result {
                                 Ok(Ok(out)) => out,
                                 Ok(Err(e)) => {
-                                    eprintln!("Store command error (node not running): {}", e);
-                                    eprintln!("  Hint: ensure node is in PATH when running the app");
+                                    error!("Store command error (node not running): {}", e);
+                                    warn!("  Hint: ensure node is in PATH when running the app");
                                     return;
                                 }
                                 Err(_) => {
-                                    eprintln!("Store command timed out after 15s");
+                                    error!("Store command timed out after 15s");
                                     return;
                                 }
                             };
@@ -548,16 +553,16 @@ pub fn run() {
                             let stdout = String::from_utf8_lossy(&output.stdout);
                             let stderr = String::from_utf8_lossy(&output.stderr);
                             if !stdout.trim().is_empty() {
-                                println!("  stdout: {}", stdout.trim());
+                                info!("  stdout: {}", stdout.trim());
                             }
                             if !stderr.trim().is_empty() {
-                                eprintln!("  stderr: {}", stderr.trim());
+                                warn!("  stderr: {}", stderr.trim());
                             }
                             if !output.status.success() {
-                                eprintln!("Store failed (exit {}): check config.js and project path", exit_code);
+                                error!("Store failed (exit {}): check config.js and project path", exit_code);
                                 return;
                             }
-                            println!("Store done (exit {}), restarting...", exit_code);
+                            info!("Store done (exit {}), restarting...", exit_code);
                             #[cfg(windows)]
                             let shutdown_cmd = format!(
                                 "{}\\System32\\shutdown.exe",
@@ -571,7 +576,7 @@ pub fn run() {
                                 .output()
                                 .await;
                             if let Err(e) = restart_result {
-                                eprintln!("Shutdown command error: {}", e);
+                                error!("Shutdown command error: {}", e);
                             }
                             let _ = app_handle.exit(0);
                         });
@@ -652,12 +657,12 @@ pub fn run() {
                 "Ctrl+Alt+Shift+P",
                 move |app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
-                        eprintln!("Hotkey Ctrl+Alt+Shift+P pressed");
+                        info!("Hotkey Ctrl+Alt+Shift+P pressed");
                         place_windows(app);
                     }
                 },
             ) {
-                eprintln!("Could not register hotkey Ctrl+Alt+Shift+P: {} (already in use?)", e);
+                warn!("Could not register hotkey Ctrl+Alt+Shift+P: {} (already in use?)", e);
             }
 
             Ok(())

@@ -21,3 +21,6 @@ rumqttc = "0.24"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "net", "macros"] }
 tokio-tungstenite = "0.24"
 futures-util = "0.3"
+log = "0.4"
+fern = "0.7"
+chrono = "0.4"
