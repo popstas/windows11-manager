@@ -26,11 +26,18 @@ jobs:
           target-branch: master
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Get release PR number
+        if: steps.release.outputs.pr != ''
+        id: pr
+        env:
+          PR_JSON: ${{ steps.release.outputs.pr }}
+        run: echo "number=$(echo "$PR_JSON" | jq -r '.number')" >> $GITHUB_OUTPUT
+
       - name: Sync Tauri version to release PR
         if: steps.release.outputs.pr != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ fromJSON(steps.release.outputs.pr).number }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
           gh pr checkout $PR_NUMBER
           node scripts/sync-tauri-version.js
