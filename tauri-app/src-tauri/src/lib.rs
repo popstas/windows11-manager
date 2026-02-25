@@ -203,21 +203,21 @@ fn load_settings_from_store(app: &tauri::AppHandle) -> Settings {
     }
 }
 
-fn place_windows(app: &tauri::AppHandle) {
+fn run_node_command(app: &tauri::AppHandle, args: &[&str], label: &str) {
     let project_path = get_project_path(app);
     if project_path.is_empty() {
-        warn!("Project path not configured, opening settings");
-        open_settings_window(app);
+        warn!("Project path not configured");
         return;
     }
-
     let app_handle = app.clone();
+    let label = label.to_string();
+    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     tauri::async_runtime::spawn(async move {
-        info!("--- Place Windows ---");
+        info!("--- {} ---", label);
         let shell = app_handle.shell();
         let output = shell
             .command("node")
-            .args(["src", "place", "--verbose"])
+            .args(&args)
             .current_dir(&project_path)
             .output()
             .await;
@@ -240,11 +240,21 @@ fn place_windows(app: &tauri::AppHandle) {
                 info!("--- Done (exit: {}) ---", exit_code);
             }
             Err(e) => {
-                error!("Failed to place windows: {}", e);
+                error!("Failed to run {}: {}", label, e);
                 info!("--- Done (error) ---");
             }
         }
     });
+}
+
+fn place_windows(app: &tauri::AppHandle) {
+    let project_path = get_project_path(app);
+    if project_path.is_empty() {
+        warn!("Project path not configured, opening settings");
+        open_settings_window(app);
+        return;
+    }
+    run_node_command(app, &["src", "place", "--verbose"], "Place Windows");
 }
 
 fn toggle_autoplacer(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
@@ -430,6 +440,15 @@ pub fn run() {
 
             // Build tray menu
             let place_i = MenuItem::with_id(app, "place", "Place Windows", true, None::<&str>)?;
+            let store_i =
+                MenuItem::with_id(app, "store", "Store Windows", true, None::<&str>)?;
+            let restore_i =
+                MenuItem::with_id(app, "restore", "Restore Windows", true, None::<&str>)?;
+            let clear_i =
+                MenuItem::with_id(app, "clear", "Clear Stored Windows", true, None::<&str>)?;
+            let open_default_i =
+                MenuItem::with_id(app, "open_default", "Open Default Apps", true, None::<&str>)?;
+            let sep0 = PredefinedMenuItem::separator(app)?;
             let auto_i =
                 MenuItem::with_id(app, "autoplacer", "Start Autoplacer", true, None::<&str>)?;
             let sep1 = PredefinedMenuItem::separator(app)?;
@@ -440,10 +459,14 @@ pub fn run() {
             let sep2 = PredefinedMenuItem::separator(app)?;
             let restart_store_i =
                 MenuItem::with_id(app, "restart_store", "Restart (Store)", true, None::<&str>)?;
+            let restart_i =
+                MenuItem::with_id(app, "restart", "Restart", true, None::<&str>)?;
             let sleep_i = MenuItem::with_id(app, "sleep", "Sleep", true, None::<&str>)?;
             let shutdown_i =
                 MenuItem::with_id(app, "shutdown", "Shutdown", true, None::<&str>)?;
             let sep3 = PredefinedMenuItem::separator(app)?;
+            let reload_i =
+                MenuItem::with_id(app, "reload", "Reload Configs", true, None::<&str>)?;
             let settings_i =
                 MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
             let exit_i = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
@@ -452,15 +475,22 @@ pub fn run() {
                 app,
                 &[
                     &place_i,
+                    &store_i,
+                    &restore_i,
+                    &clear_i,
+                    &open_default_i,
+                    &sep0,
                     &auto_i,
                     &sep1,
                     &mqtt_status_i,
                     &mqtt_toggle_i,
                     &sep2,
                     &restart_store_i,
+                    &restart_i,
                     &sleep_i,
                     &shutdown_i,
                     &sep3,
+                    &reload_i,
                     &settings_i,
                     &exit_i,
                 ],
@@ -487,6 +517,21 @@ pub fn run() {
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "place" => {
                         place_windows(app);
+                    }
+                    "store" => {
+                        run_node_command(app, &["src/index.js", "store"], "Store Windows");
+                    }
+                    "restore" => {
+                        run_node_command(app, &["src/index.js", "restore"], "Restore Windows");
+                    }
+                    "clear" => {
+                        run_node_command(app, &["src/index.js", "clear"], "Clear Stored Windows");
+                    }
+                    "open_default" => {
+                        run_node_command(app, &["src/index.js", "open-default"], "Open Default Apps");
+                    }
+                    "reload" => {
+                        run_node_command(app, &["src/index.js", "reload"], "Reload Configs");
                     }
                     "autoplacer" => {
                         let state = app.state::<Mutex<AppState>>();
@@ -577,6 +622,29 @@ pub fn run() {
                                 .await;
                             if let Err(e) = restart_result {
                                 error!("Shutdown command error: {}", e);
+                            }
+                            let _ = app_handle.exit(0);
+                        });
+                    }
+                    "restart" => {
+                        let app_handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            info!("--- Restart ---");
+                            let shell = app_handle.shell();
+                            #[cfg(windows)]
+                            let shutdown_cmd = format!(
+                                "{}\\System32\\shutdown.exe",
+                                std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".into())
+                            );
+                            #[cfg(not(windows))]
+                            let shutdown_cmd = "shutdown".to_string();
+                            let result = shell
+                                .command(&shutdown_cmd)
+                                .args(["/r", "/t", "0"])
+                                .output()
+                                .await;
+                            if let Err(e) = result {
+                                error!("Restart command error: {}", e);
                             }
                             let _ = app_handle.exit(0);
                         });

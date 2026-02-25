@@ -11,7 +11,7 @@ This repository contains a Node.js tool for managing window placement on Windows
 - **config.example.js** – copy this file to `config.js` and customise rules for your environment. Without `config.js` the CLI will fail.
 - **vendor/** – patched copy of [node-window-manager](https://github.com/sentialx/node-window-manager) used by the project.
 - **VirtualDesktop11.exe** – third party utility required for switching desktops and pinning windows. Only works on Windows.
-- **tauri-app/** – Tauri v2 system tray app that wraps the CLI (place windows, autoplacer). Runs `node src place` and `node examples/autoplace-server.js` via the shell plugin.
+- **tauri-app/** – Tauri v2 system tray app that wraps the CLI (place windows, store, restore, autoplacer, MQTT). Runs node commands via the `tauri-plugin-shell` shell plugin. All tray menu logic is in `tauri-app/src-tauri/src/lib.rs`.
 
 ## Getting started
 
@@ -21,10 +21,30 @@ This repository contains a Node.js tool for managing window placement on Windows
    - `place` – apply rules and reposition windows.
    - `store` – save currently opened windows.
    - `restore` – reopen stored windows.
+   - `clear` – delete stored windows file.
+   - `reload` – reload config files.
+   - `open-default` – open apps defined in `config.store.default`.
    - `stats` – print window statistics.
+   - `dashboard` – print JSON with stats, store, config, and log tail.
 4. Look into the `examples` directory for additional usage samples.
 
 There are no automated tests at the moment. Functionality heavily depends on a Windows 11 environment with FancyZones enabled, so many scripts will not work on other platforms.
+
+## Tauri app architecture
+
+- **lib.rs** — main entry point: tray menu, event handlers, settings, MQTT/WS lifecycle.
+- **logging.rs** — file logging with `fern`.
+- **mqtt.rs** — MQTT client (rumqttc).
+- **ws_server.rs** — WebSocket server bridging MQTT commands to node.
+- Use `run_node_command(app, &[args], "Label")` helper to spawn node CLI commands from Rust with logging.
+- Settings stored via `tauri-plugin-store` in `settings.json` (project_path, MQTT config, etc.).
+- Build: `cd tauri-app/src-tauri && . "$HOME/.cargo/env" && cargo build`.
+
+## Key lib exports (src/lib/)
+
+- `src/store.js` exports: `storeWindows`, `restoreWindows`, `openWindows`, `openPaths`, `openStore`, `clearWindows`
+- `src/config.js` exports: `getConfig`, `reloadConfigs`, `watchAppliedLayouts`
+- `src/placement.js` exports: `placeWindows`, `placeWindowByConfig`
 
 ## Next steps
 

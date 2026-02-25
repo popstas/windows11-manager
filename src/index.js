@@ -26,6 +26,26 @@ async function start() {
       process.exit(0);
     });
 
+  program.command('clear').action(() => {
+    winMan.clearWindows();
+    process.exit(0);
+  });
+
+  program.command('reload').action(() => {
+    winMan.reloadConfigs();
+    process.exit(0);
+  });
+
+  program.command('open-default').action(() => {
+    const config = winMan.getConfig();
+    const stored = config?.store?.default;
+    if (stored) {
+      if (stored.apps) stored.windows = stored.apps.map(p => ({ path: p }));
+      winMan.openStore(stored);
+    }
+    process.exit(0);
+  });
+
   program
     .command('place-window')
     .option('--window <window>', 'window title or "current"', 'current')
