@@ -139,14 +139,15 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
       w.setBounds(finalBounds);
     }
     if (!isBulk) w.bringToTop();
-  } else if (debugLog) {
-    // if (!pos) console.log('no position');
-    if (placed) console.log('window placed before');
+  } else if (verbose) {
+    if (placed) console.log(`Already placed: ${winName}`);
   }
   if (rule.pin && !(await virtualDesktop.IsPinnedWindow(w.id))) {
     console.log(`Pin ${winName}`);
     virtualDesktop.PinWindow(w.id);
     changes.push({ name: 'pin', value: true });
+  } else if (rule.pin && verbose) {
+    console.log(`Already pinned: ${winName}`);
   }
   if (rule.desktop) {
     const num = rule.desktop - 1;
@@ -156,6 +157,8 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
         console.log(`Move ${winName} to Desktop ${rule.desktop} (id: ${w.id}, process id: ${w.processId})`);
         virtualDesktop.MoveWindowToDesktopNumber(w.id, num);
         changes.push({ name: 'desktop', value: num });
+      } else if (verbose) {
+        console.log(`Already on desktop ${rule.desktop}: ${winName}`);
       }
     } catch (e) {
       console.log(`Failed to place ${winName} to Desktop ${rule.desktop}`);
