@@ -1,6 +1,6 @@
 {
   "name": "windows11-manager-tray",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "scripts": {
     "tauri": "tauri",
