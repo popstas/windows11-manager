@@ -27,6 +27,9 @@ pub struct Settings {
     pub mqtt_password: String,
     pub mqtt_topic: String,
     pub ws_port: u16,
+    pub restore_on_start: bool,
+    pub store_before_exit: bool,
+    pub timeout_before_open: u32,
 }
 
 impl Default for Settings {
@@ -43,6 +46,9 @@ impl Default for Settings {
             mqtt_password: String::new(),
             mqtt_topic: String::new(),
             ws_port: 9721,
+            restore_on_start: true,
+            store_before_exit: true,
+            timeout_before_open: 5,
         }
     }
 }
@@ -113,6 +119,18 @@ async fn get_settings(app: tauri::AppHandle) -> Result<Settings, String> {
             .get("ws_port")
             .and_then(|v| v.as_u64())
             .unwrap_or(defaults.ws_port as u64) as u16,
+        restore_on_start: store
+            .get("restore_on_start")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
+        store_before_exit: store
+            .get("store_before_exit")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
+        timeout_before_open: store
+            .get("timeout_before_open")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(5) as u32,
     };
 
     Ok(settings)
@@ -141,6 +159,9 @@ async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), 
     store.set("mqtt_password", serde_json::json!(settings.mqtt_password));
     store.set("mqtt_topic", serde_json::json!(settings.mqtt_topic));
     store.set("ws_port", serde_json::json!(settings.ws_port));
+    store.set("restore_on_start", serde_json::json!(settings.restore_on_start));
+    store.set("store_before_exit", serde_json::json!(settings.store_before_exit));
+    store.set("timeout_before_open", serde_json::json!(settings.timeout_before_open));
     store.save().map_err(|e| e.to_string())?;
 
     Ok(())
@@ -200,6 +221,9 @@ fn load_settings_from_store(app: &tauri::AppHandle) -> Settings {
         mqtt_password: store.get("mqtt_password").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.mqtt_password),
         mqtt_topic: store.get("mqtt_topic").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.mqtt_topic),
         ws_port: store.get("ws_port").and_then(|v| v.as_u64()).unwrap_or(defaults.ws_port as u64) as u16,
+        restore_on_start: store.get("restore_on_start").and_then(|v| v.as_bool()).unwrap_or(true),
+        store_before_exit: store.get("store_before_exit").and_then(|v| v.as_bool()).unwrap_or(true),
+        timeout_before_open: store.get("timeout_before_open").and_then(|v| v.as_u64()).unwrap_or(5) as u32,
     }
 }
 
@@ -675,6 +699,8 @@ pub fn run() {
                         open_settings_window(app);
                     }
                     "exit" => {
+                        let settings = load_settings_from_store(app);
+                        let app_handle = app.clone();
                         // Kill all child processes
                         let state = app.state::<Mutex<AppState>>();
                         let mut s = state.lock().unwrap();
@@ -682,7 +708,39 @@ pub fn run() {
                             let _ = child.kill();
                         }
                         stop_mqtt_state(&mut s);
-                        app.exit(0);
+                        drop(s);
+
+                        if settings.store_before_exit {
+                            let project_path = get_project_path(app);
+                            if !project_path.is_empty() {
+                                tauri::async_runtime::spawn(async move {
+                                    info!("--- Store Windows (exit) ---");
+                                    let shell = app_handle.shell();
+                                    let result = tokio::time::timeout(
+                                        std::time::Duration::from_secs(15),
+                                        shell
+                                            .command("node")
+                                            .args(["src/index.js", "store"])
+                                            .current_dir(&project_path)
+                                            .output(),
+                                    )
+                                    .await;
+                                    match result {
+                                        Ok(Ok(out)) => {
+                                            let exit_code = out.status.code().unwrap_or(-1);
+                                            info!("--- Store done (exit: {}) ---", exit_code);
+                                        }
+                                        Ok(Err(e)) => error!("Store before exit failed: {}", e),
+                                        Err(_) => error!("Store before exit timed out after 15s"),
+                                    }
+                                    app_handle.exit(0);
+                                });
+                            } else {
+                                app_handle.exit(0);
+                            }
+                        } else {
+                            app_handle.exit(0);
+                        }
                     }
                     _ => {}
                 })
@@ -699,6 +757,11 @@ pub fn run() {
                 // Update menu texts for auto-started MQTT
                 let _ = mqtt_toggle_i_auto.set_text("Stop MQTT");
                 let _ = mqtt_status_i_auto.set_text("MQTT: Starting...");
+            }
+
+            // Restore windows on start if enabled
+            if settings.restore_on_start {
+                run_node_command(&app.handle(), &["src/index.js", "restore", "--verbose"], "Restore Windows (startup)");
             }
 
             // Spawn background task to poll MQTT status every 2s

@@ -34,6 +34,26 @@
       </label>
     </div>
 
+    <div class="field checkbox">
+      <label>
+        <input type="checkbox" id="restore_on_start">
+        Restore windows on start
+      </label>
+    </div>
+
+    <div class="field checkbox">
+      <label>
+        <input type="checkbox" id="store_before_exit">
+        Store windows before exit
+      </label>
+    </div>
+
+    <div class="field">
+      <label for="timeout_before_open">Timeout before open apps (seconds)</label>
+      <input type="number" id="timeout_before_open" min="0" value="5">
+      <small>Delay before opening default apps after restore. 0 = no delay.</small>
+    </div>
+
     <hr>
     <h2>MQTT</h2>
 

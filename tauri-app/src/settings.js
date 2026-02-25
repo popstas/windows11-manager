@@ -10,6 +10,9 @@ async function loadSettings() {
     document.getElementById('autoplacer_interval').value = settings.autoplacer_interval;
     document.getElementById('run_on_startup').checked = settings.run_on_startup;
     document.getElementById('show_notifications').checked = settings.show_notifications;
+    document.getElementById('restore_on_start').checked = settings.restore_on_start;
+    document.getElementById('store_before_exit').checked = settings.store_before_exit;
+    document.getElementById('timeout_before_open').value = settings.timeout_before_open;
     document.getElementById('mqtt_enabled').checked = settings.mqtt_enabled;
     document.getElementById('mqtt_host').value = settings.mqtt_host;
     document.getElementById('mqtt_port').value = settings.mqtt_port;
@@ -30,6 +33,9 @@ form.addEventListener('submit', async (e) => {
     autoplacer_interval: parseInt(document.getElementById('autoplacer_interval').value, 10) || 0,
     run_on_startup: document.getElementById('run_on_startup').checked,
     show_notifications: document.getElementById('show_notifications').checked,
+    restore_on_start: document.getElementById('restore_on_start').checked,
+    store_before_exit: document.getElementById('store_before_exit').checked,
+    timeout_before_open: parseInt(document.getElementById('timeout_before_open').value, 10) || 5,
     mqtt_enabled: document.getElementById('mqtt_enabled').checked,
     mqtt_host: document.getElementById('mqtt_host').value,
     mqtt_port: parseInt(document.getElementById('mqtt_port').value, 10) || 1883,
