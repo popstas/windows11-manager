@@ -23,6 +23,13 @@ async function loadSettings() {
   } catch (e) {
     console.error('Failed to load settings:', e);
   }
+  try {
+    const version = await invoke('get_app_version');
+    const el = document.getElementById('app-version');
+    if (el) el.textContent = 'Version ' + version;
+  } catch (e) {
+    console.error('Failed to load version:', e);
+  }
 }
 
 form.addEventListener('submit', async (e) => {

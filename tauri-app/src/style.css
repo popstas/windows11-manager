@@ -18,6 +18,12 @@ h1 {
   color: #cba6f7;
 }
 
+.app-version {
+  font-size: 12px;
+  color: #6c7086;
+  margin-bottom: 16px;
+}
+
 .field {
   margin-bottom: 16px;
 }

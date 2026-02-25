@@ -137,6 +137,11 @@ async fn get_settings(app: tauri::AppHandle) -> Result<Settings, String> {
 }
 
 #[tauri::command]
+async fn get_app_version(app: tauri::AppHandle) -> Result<String, String> {
+    Ok(app.package_info().version.to_string())
+}
+
+#[tauri::command]
 async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), String> {
     let store = app
         .store("settings.json")
@@ -457,7 +462,7 @@ pub fn run() {
             ws_handle: None,
             ws_client_child: None,
         }))
-        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data])
+        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version])
         .setup(|app| {
             let project_path = get_project_path(&app.handle());
             logging::init(&project_path);
