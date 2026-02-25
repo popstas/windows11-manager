@@ -27,6 +27,9 @@ jobs:
         working-directory: tauri-app
         run: npm install
 
+      - name: Sync version to Tauri app
+        run: npm run version-sync
+
       - name: Build Tauri app
         working-directory: tauri-app
         run: npx tauri build
