@@ -140,7 +140,7 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
     }
     if (!isBulk) w.bringToTop();
   } else if (verbose) {
-    if (placed) console.log(`Already placed: ${winName}`);
+    if (placed) verboseLog(`Already placed: ${winName}`);
   }
   if (rule.pin && !(await virtualDesktop.IsPinnedWindow(w.id))) {
     console.log(`Pin ${winName}`);
@@ -214,9 +214,11 @@ async function placeWindows(opts = {}) {
   const wins = getWindows();
   // Create an array of all window/rule combinations that need processing
   const placementPromises = [];
+  let matchedCount = 0;
 
   for (const w of wins) {
     const matchedRules = getMatchedRules(w);
+    if (matchedRules.length > 0) matchedCount++;
     for (const rule of matchedRules) {
       if (rule.onlyOnOpen) continue;
       rule.pos = parsePos(rule, mons);
@@ -231,6 +233,8 @@ async function placeWindows(opts = {}) {
     }
   }
 
+  if (verbose) verboseLog(`Found ${wins.length} windows, ${matchedCount} matched rules`);
+
   // Wait for all placements to complete in parallel
   const results = await Promise.all(placementPromises);
   const totalAttempts = results.length;
@@ -244,7 +248,7 @@ async function placeWindows(opts = {}) {
   results.length = 0;
 
   const duration = Date.now() - t;
-  console.log(
+  verboseLog(
     `placeWindows: ${placed.length} placed, ${totalAttempts} processed, ${failed} failed, ${duration}ms`
   );
   return placed;
