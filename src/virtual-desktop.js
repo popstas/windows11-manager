@@ -1,8 +1,12 @@
 import { exec } from 'node:child_process';
-import { getConfig } from './config.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(__dirname, '..');
+const vd11Path = path.join(projectRoot, 'VirtualDesktop11.exe');
 
 function vd11Command(args) {
-  const vd11Path = getConfig().virtualDesktopPath;
   const cmd = `${vd11Path} ${args}`;
   return new Promise((resolve) => {
     exec(cmd, (error, stdout, stderr) => {

@@ -3,8 +3,8 @@
 // 2. ./windows11-manager.config.js (current working directory)
 // 3. ../config.js (project root fallback)
 //
-// Note: when using ~/.config/ location, use absolute paths for things like
-// virtualDesktopPath, since __dirname will point to ~/.config/
+// Note: VirtualDesktop11.exe is always resolved from the project root (where
+// the app/source lives), not from config. No virtualDesktopPath option.
 
 // you can define popular placement templates
 const mon1RightHalf = {
@@ -90,7 +90,6 @@ module.exports = {
     topic: 'home/room/pc/windows',
   },
 
-  virtualDesktopPath: __dirname +'/VirtualDesktop11.exe',
   store: {
     path: './data/windows-store.json',
 

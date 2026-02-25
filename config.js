@@ -609,7 +609,6 @@ module.exports = {
   fancyZones,
   wallpapers,
 
-  virtualDesktopPath: __dirname +'/VirtualDesktop11.exe',
   store: {
     path: 'd:/projects/js/windows-mqtt/data/windows-store.json',
     matchList: [
