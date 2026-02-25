@@ -21,6 +21,7 @@ async function start() {
     });
   program
     .command('restore')
+    .option('-v, --verbose', 'verbose logging')
     .action(async () => {
       await winMan.restoreWindows();
       process.exit(0);
