@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Syncs version from root package.json to tauri-app package.json,
- * tauri.conf.json, and Cargo.toml.
+ * tauri.conf.json, Cargo.toml, and .release-please-manifest.json.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,6 +17,7 @@ const files = [
   ['tauri-app/package.json', (c) => { const j = JSON.parse(c); j.version = v; return JSON.stringify(j, null, 2) + '\n'; }],
   ['tauri-app/src-tauri/tauri.conf.json', (c) => { const j = JSON.parse(c); j.version = v; return JSON.stringify(j, null, 2) + '\n'; }],
   ['tauri-app/src-tauri/Cargo.toml', (c) => c.replace(/^version = ".*"/m, `version = "${v}"`)],
+  ['.release-please-manifest.json', (c) => { const j = JSON.parse(c); j['.'] = v; return JSON.stringify(j) + '\n'; }],
 ];
 
 for (const [rel, updater] of files) {

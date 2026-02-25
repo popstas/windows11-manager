@@ -11,6 +11,7 @@
     "ws": "^8.19.0"
   },
   "scripts": {
+    "version": "node scripts/sync-tauri-version.js",
     "build": "npm run build --prefix tauri-app && node -e \"import('fs').then(fs=>fs.cpSync('tauri-app/src-tauri/target/release/bundle','dist',{recursive:true}))\"",
     "start": "node src",
     "version-sync": "node scripts/sync-tauri-version.js",
