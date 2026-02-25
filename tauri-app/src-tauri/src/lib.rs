@@ -699,6 +699,13 @@ pub fn run() {
                         open_settings_window(app);
                     }
                     "exit" => {
+                        info!("=== Exit requested ===");
+                        // Force-exit watchdog: if graceful shutdown hangs, force terminate after 5s
+                        std::thread::spawn(|| {
+                            std::thread::sleep(std::time::Duration::from_secs(5));
+                            error!("Force exit: graceful shutdown timed out after 5s");
+                            std::process::exit(1);
+                        });
                         let settings = load_settings_from_store(app);
                         let app_handle = app.clone();
                         // Kill all child processes
@@ -733,12 +740,15 @@ pub fn run() {
                                         Ok(Err(e)) => error!("Store before exit failed: {}", e),
                                         Err(_) => error!("Store before exit timed out after 15s"),
                                     }
+                                    info!("Exiting after store...");
                                     app_handle.exit(0);
                                 });
                             } else {
+                                info!("Exiting (no project path)...");
                                 app_handle.exit(0);
                             }
                         } else {
+                            info!("Exiting (store disabled)...");
                             app_handle.exit(0);
                         }
                     }
