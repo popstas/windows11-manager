@@ -56,8 +56,25 @@ function fancyZonesToPos(opts) {
   };
 
   applyMonitorGaps({ pos, monBounds, opts });
+  applyMonitorsOffset({ pos, opts });
 
   return pos;
+}
+
+function applyMonitorsOffset({ pos, opts }) {
+  const config = getConfig();
+  const offset = config?.monitorsOffset?.[opts.monitor];
+  if (!offset) return;
+
+  const left = Number(offset.left) || 0;
+  const right = Number(offset.right) || 0;
+  const top = Number(offset.top) || 0;
+  const bottom = Number(offset.bottom) || 0;
+
+  pos.x += left;
+  pos.y += top;
+  pos.width = Math.max(0, pos.width - left - right);
+  pos.height = Math.max(0, pos.height - top - bottom);
 }
 
 function applyMonitorGaps({ pos, monBounds, opts }) {

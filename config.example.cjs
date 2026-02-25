@@ -69,6 +69,11 @@ const monitorsGaps = {
   2: { position: 'bottom', gap: 10 },
 };
 
+// Per-monitor pixel insets (e.g. -5 to -10px left/right for bezel correction)
+const monitorsOffset = {
+  // 2: { left: 5, right: 10 },
+};
+
 const wallpapers = {
   0: 'd:/images/wallpapers/desktops/1.png',
   1: 'd:/images/wallpapers/desktops/2.png',
@@ -80,6 +85,7 @@ module.exports = {
   windows,
   fancyZones,
   monitorsGaps,
+  monitorsOffset,
   wallpapers,
 
   mqtt: {
