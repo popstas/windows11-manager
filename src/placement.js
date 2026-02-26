@@ -107,6 +107,7 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
   const pos = rule.pos;
   const oldPos = w.getBounds();
   const changes = [];
+  const skipped = [];
 
   if (oldPos.width < minWidth) {
     console.log(`Window ${winName} is too small, skipping`);
@@ -153,15 +154,15 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
       w.setBounds(finalBounds);
     }
     if (!isBulk) w.bringToTop();
-  } else if (verbose) {
-    if (placed) verboseLogFileOnly(`Already placed: ${winName}`);
+  } else if (placed) {
+    skipped.push({ name: 'bounds' });
   }
   if (rule.pin && !(await virtualDesktop.IsPinnedWindow(w.id))) {
     console.log(`Pin ${winName}`);
     virtualDesktop.PinWindow(w.id);
     changes.push({ name: 'pin', value: true });
-  } else if (rule.pin && verbose) {
-    verboseLogFileOnly(`Already pinned: ${winName}`);
+  } else if (rule.pin) {
+    skipped.push({ name: 'pin' });
   }
   if (rule.desktop) {
     const num = rule.desktop - 1;
@@ -171,14 +172,14 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
         console.log(`Move ${winName} to Desktop ${rule.desktop} (id: ${w.id}, process id: ${w.processId})`);
         virtualDesktop.MoveWindowToDesktopNumber(w.id, num);
         changes.push({ name: 'desktop', value: num });
-      } else if (verbose) {
-        verboseLogFileOnly(`Already on desktop ${rule.desktop}: ${winName}`);
+      } else {
+        skipped.push({ name: 'desktop' });
       }
     } catch (e) {
       console.log(`Failed to place ${winName} to Desktop ${rule.desktop}`);
     }
   }
-  return changes;
+  return { changes, skipped };
 }
 
 // rule - element of config.windows
@@ -199,7 +200,8 @@ async function placeWindowsByConfig(wins = [], opts = {}) {
     const mons = getMons();
     for (let rule of matchedRules) {
       rule.pos = parsePos(rule, mons);
-      const changes = await placeWindow({ w, rule });
+      const result = await placeWindow({ w, rule });
+      const changes = result ? result.changes : [];
       if (opts.changeDesktop && changes.length > 0) {
         const desktopChanged = changes.find(c => c.name === 'desktop');
         if (desktopChanged) {
@@ -238,7 +240,7 @@ async function placeWindows(opts = {}) {
       rule.pos = parsePos(rule, mons);
       // Push the promise to the array without awaiting it
       placementPromises.push(placeWindow({ w, rule, isBulk, verbose })
-        .then(changes => ({ w, changes })) // Return window and changes if successful
+        .then(result => ({ w, changes: result ? result.changes : [], skipped: result ? result.skipped : [] }))
         .catch(error => {
           console.error('Error placing window:', error);
           return null; // Return null for failed placements
@@ -256,6 +258,9 @@ async function placeWindows(opts = {}) {
   const placed = results.filter(
     (result) => result && result.changes && result.changes.length > 0
   );
+  const skippedCount = results.filter(
+    (result) => result && result.skipped && result.skipped.length > 0 && (!result.changes || result.changes.length === 0)
+  ).length;
 
   // Clear references to help garbage collection
   placementPromises.length = 0;
@@ -263,7 +268,7 @@ async function placeWindows(opts = {}) {
 
   const duration = Date.now() - t;
   verboseLog(
-    `placeWindows: ${placed.length} placed, ${totalAttempts} processed, ${failed} failed, ${duration}ms`
+    `placeWindows: ${placed.length} placed, ${skippedCount} skipped, ${totalAttempts} processed, ${failed} failed, ${duration}ms`
   );
   return placed;
 }
