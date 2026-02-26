@@ -21,6 +21,16 @@ function verboseLog(message) {
   }
 }
 
+function verboseLogFileOnly(message) {
+  const line = `${new Date().toISOString()} ${message}`;
+  try {
+    fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
+    fs.appendFileSync(LOG_FILE, line + '\n');
+  } catch (e) {
+    console.error('Failed to write log file:', e.message);
+  }
+}
+
 function parsePos(pos, mons) {
   const config = getConfig();
   if (!pos) return false;
@@ -93,7 +103,7 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
   if (!w) return false;
   const baseName = path.basename(w.path);
   const winName = w.title || baseName;
-  if (debugLog) console.log(`trying to placeWindow: ${winName}`);
+  if (debugLog) verboseLogFileOnly(`trying to placeWindow: ${winName}`);
   const pos = rule.pos;
   const oldPos = w.getBounds();
   const changes = [];
@@ -122,7 +132,11 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
   if (pos && !placed) {
     if (w.getBounds()['x'] >= 0) {
       if (debugLog) console.log(`Place ${getWindowInfo(w)} to ${JSON.stringify(applyPos)}\n`);
-      verboseLog(`Place ${getWindowInfo(w)} from ${JSON.stringify(oldPos)} to ${JSON.stringify(finalBounds)}`);
+      const ruleFields = {};
+      for (const key of ['titleMatch', 'pathMatch', 'fancyZones', 'desktop', 'pin', 'single', 'exclude']) {
+        if (rule[key] !== undefined) ruleFields[key] = rule[key];
+      }
+      verboseLog(`Place ${getWindowInfo(w)} rule=${JSON.stringify(ruleFields)} from ${JSON.stringify(oldPos)} to ${JSON.stringify(finalBounds)}`);
       changes.push({ name: 'bounds', oldPos, value: applyPos });
       if (rule.fancyZones) addFancyZoneHistory({ w, rule });
     }
@@ -140,14 +154,14 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
     }
     if (!isBulk) w.bringToTop();
   } else if (verbose) {
-    if (placed) verboseLog(`Already placed: ${winName}`);
+    if (placed) verboseLogFileOnly(`Already placed: ${winName}`);
   }
   if (rule.pin && !(await virtualDesktop.IsPinnedWindow(w.id))) {
     console.log(`Pin ${winName}`);
     virtualDesktop.PinWindow(w.id);
     changes.push({ name: 'pin', value: true });
   } else if (rule.pin && verbose) {
-    console.log(`Already pinned: ${winName}`);
+    verboseLogFileOnly(`Already pinned: ${winName}`);
   }
   if (rule.desktop) {
     const num = rule.desktop - 1;
@@ -158,7 +172,7 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
         virtualDesktop.MoveWindowToDesktopNumber(w.id, num);
         changes.push({ name: 'desktop', value: num });
       } else if (verbose) {
-        console.log(`Already on desktop ${rule.desktop}: ${winName}`);
+        verboseLogFileOnly(`Already on desktop ${rule.desktop}: ${winName}`);
       }
     } catch (e) {
       console.log(`Failed to place ${winName} to Desktop ${rule.desktop}`);
