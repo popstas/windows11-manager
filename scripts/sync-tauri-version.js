@@ -17,6 +17,7 @@ const files = [
   ['tauri-app/package.json', (c) => { const j = JSON.parse(c); j.version = v; return JSON.stringify(j, null, 2) + '\n'; }],
   ['tauri-app/src-tauri/tauri.conf.json', (c) => { const j = JSON.parse(c); j.version = v; return JSON.stringify(j, null, 2) + '\n'; }],
   ['tauri-app/src-tauri/Cargo.toml', (c) => c.replace(/^version = ".*"/m, `version = "${v}"`)],
+  ['tauri-app/src-tauri/Cargo.lock', (c) => c.replace(/^version = ".*"/m, `version = "${v}"`)],
   ['.release-please-manifest.json', (c) => { const j = JSON.parse(c); j['.'] = v; return JSON.stringify(j) + '\n'; }],
 ];
 
