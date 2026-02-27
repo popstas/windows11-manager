@@ -131,7 +131,10 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
   const isPlaced = () => isBoundsMatch(oldPos, finalBounds);
   const placed = isPlaced();
   if (pos && !placed) {
-    if (w.getBounds()['x'] >= 0) {
+    if (w.getBounds()['x'] < 0) {
+      verboseLogFileOnly(`Skip offscreen ${winName}: x=${w.getBounds().x}`);
+      skipped.push({ name: 'bounds' });
+    } else {
       if (debugLog) console.log(`Place ${getWindowInfo(w)} to ${JSON.stringify(applyPos)}\n`);
       const ruleFields = {};
       for (const key of ['titleMatch', 'pathMatch', 'fancyZones', 'desktop', 'pin', 'single', 'exclude']) {
@@ -140,28 +143,37 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
       verboseLog(`Place ${getWindowInfo(w)} rule=${JSON.stringify(ruleFields)} from ${JSON.stringify(oldPos)} to ${JSON.stringify(finalBounds)}`);
       changes.push({ name: 'bounds', oldPos, value: applyPos });
       if (rule.fancyZones) addFancyZoneHistory({ w, rule });
-    }
-    w.setBounds(finalBounds);
-    const newScale = w.getMonitor().getScaleFactor();
-    if (oldScale !== newScale) {
-      const adjusted = adjustBoundsForScale({ bounds: applyPos, oldScale, newScale, widthSpecified, heightSpecified });
-      w.setBounds(adjusted);
-    }
-    const afterPlaceBounds = w.getBounds();
-    if (!isBoundsMatch(finalBounds, afterPlaceBounds))
-    {
-      console.error(`Window ${winName} not placed correctly, try again: ${JSON.stringify(afterPlaceBounds)} != ${JSON.stringify(finalBounds)}`);
       w.setBounds(finalBounds);
+      const newScale = w.getMonitor().getScaleFactor();
+      if (oldScale !== newScale) {
+        const adjusted = adjustBoundsForScale({ bounds: applyPos, oldScale, newScale, widthSpecified, heightSpecified });
+        w.setBounds(adjusted);
+      }
+      const afterPlaceBounds = w.getBounds();
+      if (!isBoundsMatch(finalBounds, afterPlaceBounds))
+      {
+        console.error(`Window ${winName} not placed correctly, try again: ${JSON.stringify(afterPlaceBounds)} != ${JSON.stringify(finalBounds)}`);
+        w.setBounds(finalBounds);
+      }
+      if (!isBulk) w.bringToTop();
     }
-    if (!isBulk) w.bringToTop();
   } else if (placed) {
+    if (debugLog) verboseLogFileOnly(`Skip ${winName}: bounds already match`);
     skipped.push({ name: 'bounds' });
+  }
+  if (!pos && !rule.pin && !rule.desktop) {
+    if (debugLog) verboseLogFileOnly(`Skip ${winName}: no pos/pin/desktop in rule`);
+    return { changes, skipped };
+  }
+  if (!pos && (rule.fancyZones || rule.x !== undefined || rule.y !== undefined)) {
+    if (debugLog) verboseLogFileOnly(`parsePos returned false for ${winName}`);
   }
   if (rule.pin && !(await virtualDesktop.IsPinnedWindow(w.id))) {
     console.log(`Pin ${winName}`);
     virtualDesktop.PinWindow(w.id);
     changes.push({ name: 'pin', value: true });
   } else if (rule.pin) {
+    if (debugLog) verboseLogFileOnly(`Skip pin for ${winName}: already pinned`);
     skipped.push({ name: 'pin' });
   }
   if (rule.desktop) {
@@ -173,6 +185,7 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
         virtualDesktop.MoveWindowToDesktopNumber(w.id, num);
         changes.push({ name: 'desktop', value: num });
       } else {
+        if (debugLog) verboseLogFileOnly(`Skip desktop for ${winName}: already on desktop ${rule.desktop}`);
         skipped.push({ name: 'desktop' });
       }
     } catch (e) {
@@ -193,15 +206,28 @@ async function placeWindowByConfig(rule) {
 
 async function placeWindowsByConfig(wins = [], opts = {}) {
   const config = getConfig();
+  const debugLog = config.debug;
   opts = { ...{ changeDesktop: true }, ...opts };
+  let placedCount = 0;
+  let skippedCount = 0;
+  let processedCount = 0;
   for (let w of wins) {
     const matchedRules = getMatchedRules(w);
     if (matchedRules.length === 0) continue;
+    const winName = w.title || path.basename(w.path);
+    if (debugLog) verboseLogFileOnly(`placeWindowsByConfig: matched ${winName} with ${matchedRules.length} rule(s)`);
     const mons = getMons();
     for (let rule of matchedRules) {
       rule.pos = parsePos(rule, mons);
+      if (!rule.pos && (rule.fancyZones || rule.x !== undefined || rule.y !== undefined)) {
+        if (debugLog) verboseLogFileOnly(`placeWindowsByConfig: parsePos returned false for ${winName}`);
+      }
       const result = await placeWindow({ w, rule });
+      processedCount++;
       const changes = result ? result.changes : [];
+      const skipped = result ? result.skipped : [];
+      if (changes.length > 0) placedCount++;
+      if (skipped.length > 0 && changes.length === 0) skippedCount++;
       if (opts.changeDesktop && changes.length > 0) {
         const desktopChanged = changes.find(c => c.name === 'desktop');
         if (desktopChanged) {
@@ -211,6 +237,7 @@ async function placeWindowsByConfig(wins = [], opts = {}) {
       }
     }
   }
+  if (debugLog) verboseLogFileOnly(`placeWindowsByConfig: ${placedCount} placed, ${skippedCount} skipped, ${processedCount} processed (${wins.length} windows)`);
 }
 
 async function placeWindows(opts = {}) {
@@ -234,10 +261,16 @@ async function placeWindows(opts = {}) {
 
   for (const w of wins) {
     const matchedRules = getMatchedRules(w);
-    if (matchedRules.length > 0) matchedCount++;
+    if (matchedRules.length > 0) {
+      matchedCount++;
+      if (debugLog) verboseLogFileOnly(`placeWindows: matched ${w.title || path.basename(w.path)} with ${matchedRules.length} rule(s)`);
+    }
     for (const rule of matchedRules) {
       if (rule.onlyOnOpen) continue;
       rule.pos = parsePos(rule, mons);
+      if (!rule.pos && (rule.fancyZones || rule.x !== undefined || rule.y !== undefined)) {
+        if (debugLog) verboseLogFileOnly(`placeWindows: parsePos returned false for ${w.title || path.basename(w.path)}`);
+      }
       // Push the promise to the array without awaiting it
       placementPromises.push(placeWindow({ w, rule, isBulk, verbose })
         .then(result => ({ w, changes: result ? result.changes : [], skipped: result ? result.skipped : [] }))
@@ -288,11 +321,14 @@ function startPlaceNewWindows() {
   placeNewWindowsIntervalId = setInterval(async () => {
     const wins = getWindows();
     if (stored && stored.length < wins.length) {
+      const newWins = wins.filter(w => !stored.find(st => st.id === w.id));
+      verboseLogFileOnly(`Autoplacer: detected ${newWins.length} new window(s): ${newWins.map(w => w.title || path.basename(w.path)).join(', ')}`);
+      stored = wins; // prevent re-trigger on next tick
       setTimeout(async () => {
-        const wins = getWindows();
-        const newWins = wins.filter(w => !stored.find(st => st.id === w.id));
-        const changeDesktop = newWins.length === 1;
-        await placeWindowsByConfig(newWins, { changeDesktop });
+        const currentWins = getWindows();
+        const winsToPlace = currentWins.filter(w => newWins.find(nw => nw.id === w.id));
+        verboseLogFileOnly(`Autoplacer: placing ${winsToPlace.length} window(s) after ${delay}ms delay`);
+        await placeWindowsByConfig(winsToPlace, { changeDesktop: winsToPlace.length === 1 });
         stored = getWindows();
       }, delay);
     } else {
