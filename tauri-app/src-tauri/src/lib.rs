@@ -256,6 +256,14 @@ fn run_node_command(app: &tauri::AppHandle, args: &[&str], label: &str) {
                 let exit_code = out.status.code().unwrap_or(-1);
                 if !out.stdout.is_empty() {
                     let stdout = String::from_utf8_lossy(&out.stdout);
+                    // Show summary line prominently first
+                    for line in stdout.lines() {
+                        if line.contains("placeWindows:") {
+                            let summary = line.splitn(2, "placeWindows:").last().unwrap_or(line);
+                            info!("--- placeWindows:{} ---", summary);
+                        }
+                    }
+                    // Then show all verbose output
                     for line in stdout.lines() {
                         info!("  {}", line);
                     }
