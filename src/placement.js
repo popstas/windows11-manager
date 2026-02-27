@@ -300,7 +300,7 @@ async function placeWindows(opts = {}) {
   results.length = 0;
 
   const duration = Date.now() - t;
-  verboseLog(
+  console.log(
     `placeWindows: ${placed.length} placed, ${skippedCount} skipped, ${totalAttempts} processed, ${failed} failed, ${duration}ms`
   );
   return placed;
