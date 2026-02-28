@@ -5,6 +5,7 @@ import { getWindows, getMatchedRules, getWindowInfo, getWindow } from './windows
 import { virtualDesktop } from './virtual-desktop.js';
 import { adjustBoundsForScale } from './scale.js';
 import { isBoundsMatch } from './geometry.js';
+import { parsePosFromRule } from './placement-helpers.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -35,55 +36,14 @@ function parsePos(pos, mons) {
   const config = getConfig();
   if (!pos) return false;
   if (pos.fancyZones) return fancyZonesToPos(pos.fancyZones);
-  const newPos = {};
-  for (let name of ['width','height','x','y']) {
-    if (['x','y'].includes(name) && pos[name] === undefined) return false;
-    newPos[name] = pos[name];
-    const val = newPos[name];
-    if (parseInt(val)) continue;
-    if (!val) continue;
-    const res = val.match(/^mon(\d+)\.(.*)$/);
-    if (!res) continue;
-    const monNum = Number(res[1]);
-    const oper = res[2];
-    const mon = mons[monNum];
-    if (!mon) { console.log(`Monitor not found for position: ${JSON.stringify(pos)}`); return false; }
-    let third = (mon.bounds.width - config.panelWidth) / 3;
-    if (monNum === 2) third -= config.panelWidth;
-    switch (oper) {
-      case 'top': newPos.y = mon.bounds.y; break;
-      case 'right':
-        newPos.x = mon.bounds.x + mon.bounds.width - newPos.width;
-        if (monNum === 1) newPos.x -= config.panelWidth;
-        if (monNum === 3) newPos.x += config.panelWidth;
-        break;
-      case 'bottom':
-        newPos.y = mon.bounds.y + mon.bounds.height - newPos.height;
-        if (monNum === 2) newPos.y -= config.panelHeight;
-        break;
-      case 'left':
-        newPos.x = mon.bounds.x;
-        if (monNum === 3) newPos.x += config.panelWidth;
-        break;
-      case 'x-2/3':
-        newPos.x = mon.bounds.x + third * 1;
-        if (monNum === 3) newPos.x += config.panelWidth;
-        newPos.x = parseInt(newPos.x); break;
-      case 'x-3/3':
-        newPos.x = mon.bounds.x + third * 2;
-        if (monNum === 3) newPos.x += config.panelWidth;
-        newPos.x = parseInt(newPos.x); break;
-      case 'width': newPos.width = mon.bounds.width; break;
-      case 'halfWidth':
-        newPos.width = (mon.bounds.width - config.panelWidth) / 2;
-        newPos.width = parseInt(newPos.width); break;
-      case 'thirdWidth':
-        newPos.width = (mon.bounds.width - config.panelWidth) / 3;
-        newPos.width = parseInt(newPos.width); break;
-      case 'height': newPos.height = mon.bounds.height; break;
-    }
-  }
-  return newPos;
+  const result = parsePosFromRule({
+    rule: pos,
+    mons,
+    panelWidth: config.panelWidth,
+    panelHeight: config.panelHeight,
+  });
+  if (result && result.fancyZones) return fancyZonesToPos(result.fancyZones);
+  return result;
 }
 
 async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
@@ -339,6 +299,7 @@ async function placeWindowOnOpen() {
   startPlaceNewWindows();
 }
 
+export { parsePosFromRule, resolveMonitorRelativePos } from './placement-helpers.js';
 export {
   parsePos,
   placeWindow,

@@ -1,32 +1,31 @@
 import { windowManager } from 'node-window-manager';
 import { getConfig } from './config.js';
 import { getAppFromPath, isWindowMatchRule } from './window-match.js';
+import { matchRules, isWindowExcluded } from './windows-helpers.js';
+
+const EXCLUDED_TITLES = [
+  'Default IME',
+  'Program Manager',
+  'GlowWindow_',
+  'Переключение задач',
+];
+
+const EXCLUDED_PATHS = [
+  'TextInputHost.exe',
+  'LogiOverlay.exe',
+];
 
 function getWindows() {
-  const excludedTitles = [
-    'Default IME',
-    'Program Manager',
-    'GlowWindow_',
-    'Переключение задач',
-  ];
-  const excludedPaths = [
-    'TextInputHost.exe',
-    'LogiOverlay.exe',
-  ];
   const windows = windowManager.getWindows();
   const list = [];
-  for (let window of windows) {
+  for (const window of windows) {
     if (!window.isVisible()) continue;
-    let isExcluded = false;
-    for (let title of excludedTitles) {
-      if (window.getTitle().includes(title)) isExcluded = true;
-    }
-    if (isExcluded) continue;
-    isExcluded = false;
-    for (let path of excludedPaths) {
-      if (window.path.includes(path)) isExcluded = true;
-    }
-    if (isExcluded) continue;
+    if (isWindowExcluded({
+      title: window.getTitle(),
+      path: window.path,
+      excludedTitles: EXCLUDED_TITLES,
+      excludedPaths: EXCLUDED_PATHS,
+    })) continue;
     const title = window.getTitle();
     if (title) {
       window.title = title;
@@ -38,10 +37,7 @@ function getWindows() {
 
 function getMatchedRules(w) {
   const config = getConfig();
-  const rules = config.windows.filter(rule => isWindowMatchRule(w, rule));
-  const single = rules.find(rule => rule.single);
-  if (single) return [single];
-  return rules;
+  return matchRules(w, config.windows);
 }
 
 function getWindowInfo(w) {
@@ -88,6 +84,7 @@ function getWindow(rule) {
   }
 }
 
+export { matchRules, isWindowExcluded } from './windows-helpers.js';
 export {
   getWindows,
   getAppFromPath,

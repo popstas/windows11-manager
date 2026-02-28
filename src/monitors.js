@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { windowManager } from 'node-window-manager';
 import { getConfig } from './config.js';
+import { findMonitorByPoint, findMonitorNumByName, sortMonitors } from './monitors-helpers.js';
 
 function getWindowsMonitors() {
   return windowManager.getMonitors().map(mon => {
@@ -15,7 +16,7 @@ function getMonitor(num) {
   const ind = config.monitors[num];
   const mons = getWindowsMonitors();
   const sorted = [];
-  for (let n in config.monitorsSize) {
+  for (const n in config.monitorsSize) {
     const size = config.monitorsSize[n];
     const found = mons.find(m => m.bounds.width === size.width && m.bounds.height === size.height);
     if (found) sorted.push(found);
@@ -26,45 +27,25 @@ function getMonitor(num) {
 function getMons() {
   const config = getConfig();
   const mons = [{}];
-  for (let i in config.monitorsSize) {
+  for (const i in config.monitorsSize) {
     mons.push(getMonitor(i));
   }
   return mons;
 }
 
 function getMonitorByPoint({ x, y }) {
-  const mons = getMons();
-  for (const mon of mons) {
-    if (!mon || !mon.bounds) continue;
-    const b = mon.bounds;
-    if (x >= b.x && x < b.x + b.width && y >= b.y && y < b.y + b.height) {
-      return mon;
-    }
-  }
+  return findMonitorByPoint(getMons(), { x, y });
 }
 
 function getMonitorNumByName(name) {
   const config = getConfig();
-  for (let key in config.monitorsSize) {
-    if (config.monitorsSize[key].name === name) return parseInt(key);
-  }
+  return findMonitorNumByName(config.monitorsSize, name);
 }
 
 function getSortedMonitors() {
   const config = getConfig();
   const editor = JSON.parse(fs.readFileSync(`${config.fancyZones.path}/editor-parameters.json`, 'utf8'));
-  return editor.monitors.sort((a, b) => {
-    const aByName = getMonitorNumByName(a.monitor);
-    const bByName = getMonitorNumByName(b.monitor);
-    if (aByName !== undefined && bByName !== undefined) return aByName - bByName;
-    const yOffset = b['top-coordinate'] - a['top-coordinate'];
-    if (Math.abs(yOffset) > 1000) {
-      if (yOffset > 0) return -1;
-      if (yOffset < 0) return 1;
-      return 0;
-    }
-    return a['left-coordinate'] - b['left-coordinate'];
-  });
+  return sortMonitors(editor.monitors, config.monitorsSize);
 }
 
 function getFancyZoneMonitor(num) {
@@ -72,6 +53,7 @@ function getFancyZoneMonitor(num) {
   return sortedMons[num - 1];
 }
 
+export { findMonitorByPoint, findMonitorNumByName, sortMonitors } from './monitors-helpers.js';
 export {
   getWindowsMonitors,
   getMonitor,

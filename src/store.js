@@ -2,24 +2,14 @@ import fs from 'node:fs';
 import { spawn, exec } from 'node:child_process';
 import { getConfig } from './config.js';
 import { getWindows } from './windows.js';
+import { filterWindowsToRestore, filterPathsToRestore, matchStoredWindows } from './store-helpers.js';
 
 function storeWindows() {
   const config = getConfig();
   const wins = getWindows();
   console.error('[store] saving positions: %d windows total', wins.length);
   console.error('[store] store path: %s', config.store.path);
-  const matchList = { ...config.store.matchList };
-  const matchedWins = wins.filter(w => {
-    for (let i in matchList) {
-      const matchPath = matchList[i];
-      const reg = new RegExp(matchPath.replace('.', '\\.'), 'i');
-      if (reg.test(w.path)) {
-        delete matchList[i];
-        return true;
-      }
-    }
-    return false;
-  });
+  const matchedWins = matchStoredWindows(wins, config.store.matchList);
   const explorerWins = wins.filter(win => win.path.includes('explorer.exe'));
   const explorerTitles = explorerWins.map(win => win.title);
   const storedPaths = explorerTitles.filter(title => {
@@ -50,26 +40,20 @@ async function restoreWindows() {
 }
 
 function openWindows(storedWins, wins) {
+  const toOpen = filterWindowsToRestore(storedWins, wins);
   const restored = [];
-  for (let storedWin of storedWins) {
-    if (wins.find(w => w.path === storedWin.path)) continue;
-    restored.push(storedWin);
-    let args = [];
-    const res = storedWin.path.match(/\.exe (.*)$/);
-    if (res) {
-      storedWin.path = storedWin.path.replace(/\.exe.*/, '.exe');
-      args = res[1].split(' ');
-    }
-    if (!fs.existsSync(storedWin.path)) continue;
+  for (const item of toOpen) {
+    if (!fs.existsSync(item.path)) continue;
     try {
-      const subprocess = spawn(storedWin.path, args, { detached: true, stdio: 'ignore' });
+      const subprocess = spawn(item.path, item.args, { detached: true, stdio: 'ignore' });
       subprocess.on('error', err => {
-        console.log(`Error while opening ${storedWin.path}`);
+        console.log(`Error while opening ${item.path}`);
         console.log(err.message);
       });
       subprocess.unref();
+      restored.push(item);
     } catch (e) {
-      console.log(`Error while opening ${storedWin.path}`);
+      console.log(`Error while opening ${item.path}`);
       console.log(e.message);
     }
   }
@@ -77,15 +61,11 @@ function openWindows(storedWins, wins) {
 }
 
 function openPaths(paths, wins) {
-  const restoredPaths = [];
-  if (paths && paths.length > 0) {
-    for (let path of paths) {
-      if (wins.find(w => w.title === path)) continue;
-      restoredPaths.push(path);
-      exec(`start "" "${path}"`);
-    }
+  const toOpen = filterPathsToRestore(paths ?? [], wins);
+  for (const p of toOpen) {
+    exec(`start "" "${p}"`);
   }
-  return restoredPaths;
+  return toOpen;
 }
 
 function openStore(store) {
@@ -102,4 +82,5 @@ function clearWindows() {
   fs.unlinkSync(config.store.path);
 }
 
+export { filterWindowsToRestore, filterPathsToRestore, matchStoredWindows } from './store-helpers.js';
 export { storeWindows, restoreWindows, openWindows, openPaths, openStore, clearWindows };

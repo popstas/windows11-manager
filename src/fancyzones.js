@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { getConfig } from './config.js';
 import { getFancyZoneMonitor } from './monitors.js';
-import { applyMonitorGaps, applyMonitorsOffset } from './geometry.js';
+import { calcFancyZonePos } from './fancyzones-helpers.js';
 
 function getFancyZoneInfo(opts) {
   let monitor, layout, zone;
@@ -48,19 +48,13 @@ function fancyZonesToPos(opts) {
     width: monitor['work-area-width'],
     height: monitor['work-area-height'],
   };
-
-  const pos = {
-    x: monBounds.x + zone.X,
-    y: monBounds.y + zone.Y,
-    width: zone.width,
-    height: zone.height,
-  };
-
   const config = getConfig();
-  applyMonitorGaps({ pos, monBounds, monitorGaps: config?.monitorsGaps?.[opts.monitor] });
-  applyMonitorsOffset({ pos, offset: config?.monitorsOffset?.[opts.monitor] });
-
-  return pos;
+  return calcFancyZonePos({
+    zone,
+    monBounds,
+    monitorGaps: config?.monitorsGaps?.[opts.monitor],
+    monitorsOffset: config?.monitorsOffset?.[opts.monitor],
+  });
 }
 
 function addFancyZoneHistory({ w, rule }) {
@@ -110,4 +104,5 @@ function addFancyZoneHistory({ w, rule }) {
   fs.writeFileSync(historyPath, JSON.stringify(history));
 }
 
+export { calcFancyZonePos } from './fancyzones-helpers.js';
 export { getFancyZoneMonitor, getFancyZoneInfo, fancyZonesToPos, addFancyZoneHistory };
