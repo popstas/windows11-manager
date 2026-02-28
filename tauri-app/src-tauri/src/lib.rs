@@ -690,22 +690,42 @@ pub fn run() {
                         let app_handle = app.clone();
                         tauri::async_runtime::spawn(async move {
                             let shell = app_handle.shell();
-                            let _ = shell
+                            #[cfg(windows)]
+                            let result = shell
                                 .command("rundll32.exe")
                                 .args(["powrprof.dll,SetSuspendState", "0,1,0"])
                                 .output()
                                 .await;
+                            #[cfg(not(windows))]
+                            let result = shell
+                                .command("systemctl")
+                                .args(["suspend"])
+                                .output()
+                                .await;
+                            if let Err(e) = result {
+                                error!("Sleep command error: {}", e);
+                            }
                         });
                     }
                     "shutdown" => {
                         let app_handle = app.clone();
                         tauri::async_runtime::spawn(async move {
                             let shell = app_handle.shell();
-                            let _ = shell
+                            #[cfg(windows)]
+                            let result = shell
                                 .command("shutdown")
                                 .args(["/s", "/t", "0"])
                                 .output()
                                 .await;
+                            #[cfg(not(windows))]
+                            let result = shell
+                                .command("shutdown")
+                                .args(["-h", "now"])
+                                .output()
+                                .await;
+                            if let Err(e) = result {
+                                error!("Shutdown command error: {}", e);
+                            }
                         });
                     }
                     "settings" => {
