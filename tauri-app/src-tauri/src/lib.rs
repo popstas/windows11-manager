@@ -518,6 +518,8 @@ pub fn run() {
             let sleep_i = MenuItem::with_id(app, "sleep", "Sleep", true, None::<&str>)?;
             let shutdown_i =
                 MenuItem::with_id(app, "shutdown", "Shutdown", true, None::<&str>)?;
+            let wallpapers_i =
+                MenuItem::with_id(app, "wallpapers", "Set Wallpapers", true, None::<&str>)?;
             let sep3 = PredefinedMenuItem::separator(app)?;
             let reload_i =
                 MenuItem::with_id(app, "reload", "Reload Configs", true, None::<&str>)?;
@@ -543,6 +545,7 @@ pub fn run() {
                     &restart_i,
                     &sleep_i,
                     &shutdown_i,
+                    &wallpapers_i,
                     &sep3,
                     &reload_i,
                     &settings_i,
@@ -583,6 +586,9 @@ pub fn run() {
                     }
                     "open_default" => {
                         run_node_command(app, &["src/index.js", "open-default"], "Open Default Apps");
+                    }
+                    "wallpapers" => {
+                        run_node_command(app, &["src/index.js", "wallpapers"], "Set Wallpapers");
                     }
                     "reload" => {
                         run_node_command(app, &["src/index.js", "reload"], "Reload Configs");

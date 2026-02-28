@@ -37,6 +37,11 @@ async function start() {
     process.exit(0);
   });
 
+  program.command('wallpapers').action(async () => {
+    await winMan.setWallpapers();
+    process.exit(0);
+  });
+
   program.command('open-default').action(() => {
     const config = winMan.getConfig();
     const stored = config?.store?.default;
