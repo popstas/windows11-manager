@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { getConfig } from './config.js';
 import { getFancyZoneMonitor } from './monitors.js';
-import { getGapOverlap } from './geometry.js';
+import { applyMonitorGaps, applyMonitorsOffset } from './geometry.js';
 
 function getFancyZoneInfo(opts) {
   let monitor, layout, zone;
@@ -56,51 +56,11 @@ function fancyZonesToPos(opts) {
     height: zone.height,
   };
 
-  applyMonitorGaps({ pos, monBounds, opts });
-  applyMonitorsOffset({ pos, opts });
+  const config = getConfig();
+  applyMonitorGaps({ pos, monBounds, monitorGaps: config?.monitorsGaps?.[opts.monitor] });
+  applyMonitorsOffset({ pos, offset: config?.monitorsOffset?.[opts.monitor] });
 
   return pos;
-}
-
-function applyMonitorsOffset({ pos, opts }) {
-  const config = getConfig();
-  const offset = config?.monitorsOffset?.[opts.monitor];
-  if (!offset) return;
-
-  const left = Number(offset.left) || 0;
-  const right = Number(offset.right) || 0;
-  const top = Number(offset.top) || 0;
-  const bottom = Number(offset.bottom) || 0;
-
-  pos.x += left;
-  pos.y += top;
-  pos.width = Math.max(0, pos.width - left - right);
-  pos.height = Math.max(0, pos.height - top - bottom);
-}
-
-function applyMonitorGaps({ pos, monBounds, opts }) {
-  const config = getConfig();
-  const monitorGaps = config?.monitorsGaps?.[opts.monitor];
-  if (!monitorGaps) return;
-
-  const gaps = Array.isArray(monitorGaps) ? monitorGaps : [monitorGaps];
-  for (const gap of gaps) {
-    if (!gap || typeof gap.gap !== 'number' || gap.gap <= 0) continue;
-    const overlap = getGapOverlap({ pos, monBounds, gap });
-    if (!overlap) continue;
-
-    if (gap.position === 'bottom') {
-      pos.height = Math.max(0, pos.height - overlap.height);
-    } else if (gap.position === 'top') {
-      pos.y += overlap.height;
-      pos.height = Math.max(0, pos.height - overlap.height);
-    } else if (gap.position === 'left') {
-      pos.x += overlap.width;
-      pos.width = Math.max(0, pos.width - overlap.width);
-    } else if (gap.position === 'right') {
-      pos.width = Math.max(0, pos.width - overlap.width);
-    }
-  }
 }
 
 function addFancyZoneHistory({ w, rule }) {
