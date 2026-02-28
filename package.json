@@ -5,7 +5,7 @@
   "main": "src/lib/index.js",
   "bin": "src/index.js",
   "dependencies": {
-    "commander": "^12.0.0",
+    "commander": "^14.0.3",
     "node-window-manager": "file:./vendor/node-window-manager",
     "wql-process-monitor": "^3.0.2",
     "ws": "^8.19.0"
@@ -19,6 +19,5 @@
   },
   "author": "",
   "license": "ISC",
-  "type": "module",
-  "devDependencies": {}
+  "type": "module"
 }

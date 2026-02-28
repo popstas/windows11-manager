@@ -117,5 +117,6 @@ async function start() {
     process.exit(0);
   });
 
+  program.allowExcessArguments();
   program.parse();
 }
