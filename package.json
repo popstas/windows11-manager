@@ -17,7 +17,15 @@
     "build": "npm run version-sync && npm run build --prefix tauri-app && node -e \"import('fs').then(fs=>fs.cpSync('tauri-app/src-tauri/target/release/bundle','dist',{recursive:true}))\"",
     "start": "node src",
     "version-sync": "node scripts/sync-tauri-version.js",
-    "dev": "npm run tauri dev --verbose --prefix tauri-app"
+    "dev": "npm run tauri dev --verbose --prefix tauri-app",
+    "test": "vitest run",
+    "lint": "eslint src/"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "globals": "^17.3.0",
+    "vitest": "^3.0.0"
   },
   "author": "",
   "license": "ISC",

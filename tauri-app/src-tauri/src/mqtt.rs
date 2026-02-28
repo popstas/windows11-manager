@@ -120,3 +120,15 @@ pub fn start_mqtt(
 
     (handle, future)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mqtt_status_labels() {
+        assert_eq!(MqttStatus::Disconnected.label(), "MQTT: Off");
+        assert_eq!(MqttStatus::Connected.label(), "MQTT: Connected");
+        assert_eq!(MqttStatus::Reconnecting.label(), "MQTT: Reconnecting");
+    }
+}

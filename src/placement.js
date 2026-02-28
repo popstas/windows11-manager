@@ -1,10 +1,10 @@
-import { windowManager } from 'node-window-manager';
 import { getConfig } from './config.js';
 import { getMons, getSortedMonitors, getMonitorByPoint } from './monitors.js';
 import { fancyZonesToPos, addFancyZoneHistory } from './fancyzones.js';
 import { getWindows, getMatchedRules, getWindowInfo, getWindow } from './windows.js';
 import { virtualDesktop } from './virtual-desktop.js';
 import { adjustBoundsForScale } from './scale.js';
+import { isBoundsMatch } from './geometry.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -84,16 +84,6 @@ function parsePos(pos, mons) {
     }
   }
   return newPos;
-}
-
-function isBoundsMatch(oldPos, newPos) {
-  for (let name in newPos) {
-    if (newPos[name] === undefined) continue;
-    const isExactlyPlaced = oldPos[name] === newPos[name];
-    const isPixelPlaced = Math.abs(oldPos[name] - newPos[name]) < 2;
-    if (!isExactlyPlaced && !isPixelPlaced) return false;
-  }
-  return true;
 }
 
 async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
@@ -200,7 +190,7 @@ async function placeWindowByConfig(rule) {
   const w = getWindow(rule);
   const mons = getMons();
   rule.pos = parsePos(rule, mons);
-  const isChanged = placeWindow({ w, rule });
+  await placeWindow({ w, rule });
   return w;
 }
 

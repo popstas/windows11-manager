@@ -7,9 +7,27 @@ on:
     branches: [master]
 
 jobs:
-  build:
+  node-lint-test:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --ignore-optional
+
+      - name: Lint
+        run: npx eslint src/
+
+      - name: Test
+        run: npx vitest run
+
+  rust-check:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -30,6 +48,8 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -41,5 +61,11 @@ jobs:
           npm install
           cd tauri-app && npm install
 
-      - name: Build Tauri (compile check)
+      - name: Build
         run: cd tauri-app/src-tauri && cargo build
+
+      - name: Clippy
+        run: cd tauri-app/src-tauri && cargo clippy -- -D warnings
+
+      - name: Test
+        run: cd tauri-app/src-tauri && cargo test

@@ -44,7 +44,7 @@ async function restoreWindows() {
   let store;
   try {
     store = JSON.parse(fs.readFileSync(config.store.path, 'utf8'));
-  } catch (e) {}
+  } catch { /* file may not exist */ }
   if (!store) return;
   openStore(store);
 }

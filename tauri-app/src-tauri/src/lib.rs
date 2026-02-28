@@ -53,6 +53,23 @@ impl Default for Settings {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_default_values() {
+        let s = Settings::default();
+        assert_eq!(s.mqtt_port, 1883);
+        assert_eq!(s.ws_port, 9721);
+        assert!(!s.mqtt_enabled);
+        assert!(s.restore_on_start);
+        assert!(s.store_before_exit);
+        assert_eq!(s.autoplacer_interval, 0);
+        assert_eq!(s.timeout_before_open, 5);
+    }
+}
+
 struct AppState {
     autoplacer_running: bool,
     autoplacer_child: Option<tauri_plugin_shell::process::CommandChild>,
@@ -472,7 +489,7 @@ pub fn run() {
         }))
         .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version])
         .setup(|app| {
-            let project_path = get_project_path(&app.handle());
+            let project_path = get_project_path(app.handle());
             logging::init(&project_path);
 
             // Build tray menu
@@ -660,7 +677,7 @@ pub fn run() {
                             if let Err(e) = restart_result {
                                 error!("Shutdown command error: {}", e);
                             }
-                            let _ = app_handle.exit(0);
+                            app_handle.exit(0);
                         });
                     }
                     "restart" => {
@@ -683,7 +700,7 @@ pub fn run() {
                             if let Err(e) = result {
                                 error!("Restart command error: {}", e);
                             }
-                            let _ = app_handle.exit(0);
+                            app_handle.exit(0);
                         });
                     }
                     "sleep" => {
@@ -793,10 +810,10 @@ pub fn run() {
             app.manage(TrayHolder { _tray: tray });
 
             // Auto-start MQTT if enabled
-            let settings = load_settings_from_store(&app.handle());
+            let settings = load_settings_from_store(app.handle());
             if settings.mqtt_enabled {
                 let state = app.state::<Mutex<AppState>>();
-                start_mqtt_service(&app.handle(), &state);
+                start_mqtt_service(app.handle(), &state);
                 // Update menu texts for auto-started MQTT
                 let _ = mqtt_toggle_i_auto.set_text("Stop MQTT");
                 let _ = mqtt_status_i_auto.set_text("MQTT: Starting...");
@@ -804,7 +821,7 @@ pub fn run() {
 
             // Restore windows on start if enabled
             if settings.restore_on_start {
-                run_node_command(&app.handle(), &["src/index.js", "restore", "--verbose"], "Restore Windows (startup)");
+                run_node_command(app.handle(), &["src/index.js", "restore", "--verbose"], "Restore Windows (startup)");
             }
 
             // Spawn background task to poll MQTT status every 2s
