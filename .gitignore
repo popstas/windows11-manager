@@ -6,3 +6,6 @@ tauri-app/src-tauri/gen/schemas/windows-schema.json
 !/src/config.js
 /data/
 *.log
+
+# ralphex progress logs
+.ralphex/progress/
