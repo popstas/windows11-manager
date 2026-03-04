@@ -22,7 +22,7 @@ async function loadDashboard() {
     loading.hidden = true;
 
     renderApps(data.apps);
-    renderStats(data.stats, data.matchList);
+    renderStats(data.stats, data.matchList, data.apps);
     renderStore(data.store);
     renderConfig(data.configPath, data.configContent);
     renderLog(data.logTail);
@@ -52,7 +52,7 @@ function renderApps(apps) {
   content.innerHTML = html;
 }
 
-function renderStats(stats, matchList) {
+function renderStats(stats, matchList, apps) {
   const section = document.getElementById('stats-section');
   const content = document.getElementById('stats-content');
   section.hidden = false;
@@ -72,15 +72,26 @@ function renderStats(stats, matchList) {
   const runningApps = stats.byApp ? Object.keys(stats.byApp) : [];
   const allApps = [...new Set([...matchSet, ...runningApps])].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 
+  const iconMap = {};
+  if (apps) {
+    for (const a of apps) {
+      if (a.icon) iconMap[a.name] = a.icon;
+    }
+  }
+
   if (allApps.length) {
-    html += '<table class="stats-table"><thead><tr><th>Autorun</th><th>App</th><th>Count</th></tr></thead><tbody>';
+    html += '<table class="stats-table"><thead><tr><th>Autorun</th><th></th><th>App</th><th>Count</th></tr></thead><tbody>';
     for (const app of allApps) {
       const isInMatchList = matchSet.has(app);
       const isRunning = stats.byApp && stats.byApp[app];
       const count = isRunning ? stats.byApp[app].count : '';
       const displayName = app.replace(/\.exe$/i, '');
       const nameClass = isRunning ? ' class="app-running"' : '';
-      html += `<tr><td><input type="checkbox" class="autorun-checkbox" data-app="${escapeHtml(app)}"${isInMatchList ? ' checked' : ''}></td><td${nameClass}>${escapeHtml(displayName)}</td><td>${count}</td></tr>`;
+      const iconSrc = iconMap[app];
+      const iconHtml = iconSrc
+        ? `<img class="stats-icon" src="${iconSrc}" alt="">`
+        : '<div class="stats-icon stats-icon-placeholder"></div>';
+      html += `<tr><td><input type="checkbox" class="autorun-checkbox" data-app="${escapeHtml(app)}"${isInMatchList ? ' checked' : ''}></td><td>${iconHtml}</td><td${nameClass}>${escapeHtml(displayName)}</td><td>${count}</td></tr>`;
     }
     html += '</tbody></table>';
   }
