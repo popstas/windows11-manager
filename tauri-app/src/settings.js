@@ -12,6 +12,7 @@ async function loadSettings() {
     document.getElementById('show_notifications').checked = settings.show_notifications;
     document.getElementById('restore_on_start').checked = settings.restore_on_start;
     document.getElementById('store_before_exit').checked = settings.store_before_exit;
+    document.getElementById('store_interval').value = settings.store_interval;
     document.getElementById('timeout_before_open').value = settings.timeout_before_open;
     document.getElementById('mqtt_enabled').checked = settings.mqtt_enabled;
     document.getElementById('mqtt_host').value = settings.mqtt_host;
@@ -42,6 +43,7 @@ form.addEventListener('submit', async (e) => {
     show_notifications: document.getElementById('show_notifications').checked,
     restore_on_start: document.getElementById('restore_on_start').checked,
     store_before_exit: document.getElementById('store_before_exit').checked,
+    store_interval: parseInt(document.getElementById('store_interval').value, 10) || 0,
     timeout_before_open: parseInt(document.getElementById('timeout_before_open').value, 10) || 5,
     mqtt_enabled: document.getElementById('mqtt_enabled').checked,
     mqtt_host: document.getElementById('mqtt_host').value,
