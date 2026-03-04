@@ -16,6 +16,6 @@
     "global-shortcut:default",
     "global-shortcut:allow-register",
     "store:default",
-    "shell:allow-open"
+    "opener:default"
   ]
 }

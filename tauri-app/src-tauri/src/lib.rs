@@ -551,6 +551,7 @@ fn open_settings_window(app: &tauri::AppHandle) {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -660,7 +661,7 @@ pub fn run() {
                         let state = app.state::<Mutex<AppState>>();
                         let url = state.lock().unwrap().update_download_url.clone();
                         if let Some(url) = url {
-                            let _ = app.shell().open(&url, None::<tauri_plugin_shell::open::Program>);
+                            let _ = tauri_plugin_opener::open_url(app, &url);
                         }
                     }
                     "place" => {
