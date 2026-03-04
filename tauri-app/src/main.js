@@ -7,6 +7,7 @@ const refreshBtn = document.getElementById('refresh-btn');
 async function loadDashboard() {
   loading.hidden = false;
   error.hidden = true;
+  document.getElementById('apps-section').hidden = true;
   document.getElementById('stats-section').hidden = true;
   document.getElementById('store-section').hidden = true;
   document.getElementById('config-section').hidden = true;
@@ -20,6 +21,7 @@ async function loadDashboard() {
     const data = JSON.parse(raw);
     loading.hidden = true;
 
+    renderApps(data.apps);
     renderStats(data.stats);
     renderStore(data.store);
     renderConfig(data.configPath, data.configContent);
@@ -29,6 +31,25 @@ async function loadDashboard() {
     error.hidden = false;
     error.textContent = 'Error: ' + e;
   }
+}
+
+function renderApps(apps) {
+  const section = document.getElementById('apps-section');
+  const content = document.getElementById('apps-content');
+  if (!apps || !apps.length) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+  let html = '<div class="apps-grid">';
+  for (const app of apps) {
+    const iconHtml = app.icon
+      ? `<img class="app-icon" src="${app.icon}" alt="">`
+      : '<div class="app-icon app-icon-placeholder"></div>';
+    html += `<div class="app-card">${iconHtml}<span class="app-name">${escapeHtml(app.name)}</span><span class="app-count">${app.count}</span></div>`;
+  }
+  html += '</div>';
+  content.innerHTML = html;
 }
 
 function renderStats(stats) {

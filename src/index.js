@@ -118,7 +118,10 @@ async function start() {
       logTail = ['Error reading log: ' + e.message];
     }
 
-    console.log(JSON.stringify({ stats, store, configPath: cfgPath, configContent, logTail }));
+    let apps = [];
+    try { apps = winMan.getAppsWithIcons(); } catch (e) { apps = []; }
+
+    console.log(JSON.stringify({ stats, store, apps, configPath: cfgPath, configContent, logTail }));
     process.exit(0);
   });
 

@@ -1,5 +1,6 @@
 import { windowManager } from 'node-window-manager';
 import { getWindows, getAppFromPath } from './windows.js';
+import { getUniqueApps, filterUserApps } from './stats-helpers.js';
 
 function getStats() {
   const wins = getWindows();
@@ -22,4 +23,33 @@ function getStats() {
   return stats;
 }
 
-export { getStats };
+function getAppsWithIcons() {
+  const wins = getWindows();
+  const unique = getUniqueApps(wins);
+  const userApps = filterUserApps(unique);
+
+  // Build a lookup: basename -> first window object (for icon extraction)
+  const firstWindow = {};
+  for (const win of wins) {
+    const name = (win.path || '').split(/[/\\]/).pop().toLowerCase();
+    if (name && !firstWindow[name]) firstWindow[name] = win;
+  }
+
+  return userApps.map(app => {
+    let icon = '';
+    try {
+      const win = firstWindow[app.name];
+      if (win && typeof win.getIcon === 'function') {
+        const buf = win.getIcon(32);
+        if (buf && buf.length) {
+          icon = 'data:image/png;base64,' + buf.toString('base64');
+        }
+      }
+    } catch (e) {
+      // icon extraction can fail for some windows
+    }
+    return { name: app.name, icon, count: app.count };
+  });
+}
+
+export { getStats, getAppsWithIcons };

@@ -41,6 +41,23 @@ h1 {
   cursor: pointer;
 }
 
+.field textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #45475a;
+  border-radius: 6px;
+  background: #313244;
+  color: #cdd6f4;
+  font-size: 13px;
+  font-family: "Cascadia Code", "Fira Code", monospace;
+  resize: vertical;
+}
+
+.field textarea:focus {
+  outline: none;
+  border-color: #cba6f7;
+}
+
 .field input[type="text"],
 .field input[type="number"] {
   width: 100%;
@@ -174,6 +191,48 @@ details summary {
 
 details summary:hover {
   color: #b4befe;
+}
+
+/* Running Apps */
+.apps-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.app-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #313244;
+  border: 1px solid #45475a;
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.app-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.app-icon-placeholder {
+  background: #45475a;
+}
+
+.app-name {
+  font-size: 13px;
+  color: #cdd6f4;
+}
+
+.app-count {
+  font-size: 11px;
+  color: #a6adc8;
+  background: #45475a;
+  border-radius: 10px;
+  padding: 1px 6px;
+  margin-left: auto;
 }
 
 .loading {
