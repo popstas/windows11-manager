@@ -1,5 +1,6 @@
 mod logging;
 mod mqtt;
+mod updater;
 mod ws_server;
 
 use log::{error, info, warn};
@@ -30,7 +31,9 @@ pub struct Settings {
     pub restore_on_start: bool,
     pub store_before_exit: bool,
     pub store_interval: u32,
+    pub store_match_list: Vec<String>,
     pub timeout_before_open: u32,
+    pub update_check_interval: String,
 }
 
 impl Default for Settings {
@@ -50,7 +53,9 @@ impl Default for Settings {
             restore_on_start: true,
             store_before_exit: true,
             store_interval: 300,
+            store_match_list: Vec::new(),
             timeout_before_open: 5,
+            update_check_interval: "launch".to_string(),
         }
     }
 }
@@ -69,7 +74,9 @@ mod tests {
         assert!(s.store_before_exit);
         assert_eq!(s.autoplacer_interval, 0);
         assert_eq!(s.store_interval, 300);
+        assert!(s.store_match_list.is_empty());
         assert_eq!(s.timeout_before_open, 5);
+        assert_eq!(s.update_check_interval, "launch");
     }
 }
 
@@ -80,6 +87,7 @@ struct AppState {
     mqtt_handle: Option<mqtt::MqttHandle>,
     ws_handle: Option<ws_server::WsServerHandle>,
     ws_client_child: Option<tauri_plugin_shell::process::CommandChild>,
+    update_download_url: Option<String>,
 }
 
 struct TrayHolder {
@@ -151,10 +159,24 @@ async fn get_settings(app: tauri::AppHandle) -> Result<Settings, String> {
             .get("store_interval")
             .and_then(|v| v.as_u64())
             .unwrap_or(300) as u32,
+        store_match_list: store
+            .get("store_match_list")
+            .and_then(|v| {
+                v.as_array().map(|arr| {
+                    arr.iter()
+                        .filter_map(|item| item.as_str().map(String::from))
+                        .collect::<Vec<String>>()
+                })
+            })
+            .unwrap_or_default(),
         timeout_before_open: store
             .get("timeout_before_open")
             .and_then(|v| v.as_u64())
             .unwrap_or(5) as u32,
+        update_check_interval: store
+            .get("update_check_interval")
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or(defaults.update_check_interval),
     };
 
     Ok(settings)
@@ -191,8 +213,28 @@ async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), 
     store.set("restore_on_start", serde_json::json!(settings.restore_on_start));
     store.set("store_before_exit", serde_json::json!(settings.store_before_exit));
     store.set("store_interval", serde_json::json!(settings.store_interval));
+    store.set(
+        "store_match_list",
+        serde_json::json!(settings.store_match_list),
+    );
     store.set("timeout_before_open", serde_json::json!(settings.timeout_before_open));
+    store.set("update_check_interval", serde_json::json!(settings.update_check_interval));
     store.save().map_err(|e| e.to_string())?;
+
+    // Write store-match-list.json to project dir so Node can read it
+    let project_path = store
+        .get("project_path")
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_default();
+    if !project_path.is_empty() {
+        let data_dir = std::path::Path::new(&project_path).join("data");
+        let _ = std::fs::create_dir_all(&data_dir);
+        let json_path = data_dir.join("store-match-list.json");
+        let json = serde_json::to_string(&settings.store_match_list).unwrap_or_default();
+        if let Err(e) = std::fs::write(&json_path, &json) {
+            error!("Failed to write store-match-list.json: {}", e);
+        }
+    }
 
     Ok(())
 }
@@ -254,7 +296,9 @@ fn load_settings_from_store(app: &tauri::AppHandle) -> Settings {
         restore_on_start: store.get("restore_on_start").and_then(|v| v.as_bool()).unwrap_or(true),
         store_before_exit: store.get("store_before_exit").and_then(|v| v.as_bool()).unwrap_or(true),
         store_interval: store.get("store_interval").and_then(|v| v.as_u64()).unwrap_or(300) as u32,
+        store_match_list: store.get("store_match_list").and_then(|v| v.as_array().map(|arr| arr.iter().filter_map(|item| item.as_str().map(String::from)).collect::<Vec<String>>())).unwrap_or_default(),
         timeout_before_open: store.get("timeout_before_open").and_then(|v| v.as_u64()).unwrap_or(5) as u32,
+        update_check_interval: store.get("update_check_interval").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.update_check_interval),
     }
 }
 
@@ -473,7 +517,7 @@ fn open_settings_window(app: &tauri::AppHandle) {
         tauri::WebviewUrl::App("index.html".into()),
     )
     .title("windows11-manager Settings")
-    .inner_size(480.0, 650.0)
+    .inner_size(480.0, 780.0)
     .resizable(false)
     .center()
     .build()
@@ -495,6 +539,7 @@ pub fn run() {
             mqtt_handle: None,
             ws_handle: None,
             ws_client_child: None,
+            update_download_url: None,
         }))
         .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version])
         .setup(|app| {
@@ -502,6 +547,10 @@ pub fn run() {
             logging::init(&project_path);
 
             // Build tray menu
+            let current_version = app.package_info().version.to_string();
+            let version_info_i = MenuItem::with_id(app, "version_info", &format!("Current: v{}", current_version), false, None::<&str>)?;
+            let download_update_i = MenuItem::with_id(app, "download_update", "Check for updates...", false, None::<&str>)?;
+            let sep_update = PredefinedMenuItem::separator(app)?;
             let place_i = MenuItem::with_id(app, "place", "Place Windows", true, None::<&str>)?;
             let store_i =
                 MenuItem::with_id(app, "store", "Store Windows", true, None::<&str>)?;
@@ -539,6 +588,9 @@ pub fn run() {
             let menu = Menu::with_items(
                 app,
                 &[
+                    &version_info_i,
+                    &download_update_i,
+                    &sep_update,
                     &place_i,
                     &store_i,
                     &restore_i,
@@ -566,6 +618,7 @@ pub fn run() {
             let mqtt_status_i_poll = mqtt_status_i.clone();
             let mqtt_status_i_auto = mqtt_status_i.clone();
             let mqtt_toggle_i_auto = mqtt_toggle_i.clone();
+            let download_update_i_check = download_update_i.clone();
 
             let tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().cloned().unwrap())
@@ -581,6 +634,13 @@ pub fn run() {
                     }
                 })
                 .on_menu_event(move |app, event| match event.id.as_ref() {
+                    "download_update" => {
+                        let state = app.state::<Mutex<AppState>>();
+                        let url = state.lock().unwrap().update_download_url.clone();
+                        if let Some(url) = url {
+                            let _ = app.shell().open(&url, None::<tauri_plugin_shell::open::Program>);
+                        }
+                    }
                     "place" => {
                         place_windows(app);
                     }
@@ -885,6 +945,46 @@ pub fn run() {
                     }
                 }
             });
+
+            // Check for updates
+            {
+                let app_handle = app.handle().clone();
+                let update_interval = settings.update_check_interval.clone();
+                tauri::async_runtime::spawn(async move {
+                    let store = match app_handle.store("settings.json") {
+                        Ok(s) => s,
+                        Err(_) => return,
+                    };
+                    let last_check = store
+                        .get("last_update_check")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
+
+                    if !updater::should_check(last_check, &update_interval) {
+                        info!("Skipping update check (interval: {}, last: {})", update_interval, last_check);
+                        return;
+                    }
+
+                    let current_version = app_handle.package_info().version.to_string();
+                    info!("Checking for updates (current: v{})...", current_version);
+
+                    match updater::check_latest_release(&current_version).await {
+                        Some(update) => {
+                            let _ = download_update_i_check.set_text(&format!("Download v{}", update.version));
+                            let _ = download_update_i_check.set_enabled(true);
+                            let state = app_handle.state::<Mutex<AppState>>();
+                            state.lock().unwrap().update_download_url = Some(update.download_url);
+                        }
+                        None => {
+                            let _ = download_update_i_check.set_text("Up to date");
+                        }
+                    }
+
+                    let now = chrono::Utc::now().timestamp();
+                    store.set("last_update_check", serde_json::json!(now));
+                    let _ = store.save();
+                });
+            }
 
             // Register global hotkey: Ctrl+Alt+Shift+P
             use tauri_plugin_global_shortcut::ShortcutState;

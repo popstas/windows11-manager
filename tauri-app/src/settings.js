@@ -13,7 +13,9 @@ async function loadSettings() {
     document.getElementById('restore_on_start').checked = settings.restore_on_start;
     document.getElementById('store_before_exit').checked = settings.store_before_exit;
     document.getElementById('store_interval').value = settings.store_interval;
+    document.getElementById('store_match_list').value = (settings.store_match_list || []).join('\n');
     document.getElementById('timeout_before_open').value = settings.timeout_before_open;
+    document.getElementById('update_check_interval').value = settings.update_check_interval || 'launch';
     document.getElementById('mqtt_enabled').checked = settings.mqtt_enabled;
     document.getElementById('mqtt_host').value = settings.mqtt_host;
     document.getElementById('mqtt_port').value = settings.mqtt_port;
@@ -44,7 +46,9 @@ form.addEventListener('submit', async (e) => {
     restore_on_start: document.getElementById('restore_on_start').checked,
     store_before_exit: document.getElementById('store_before_exit').checked,
     store_interval: parseInt(document.getElementById('store_interval').value, 10) || 0,
+    store_match_list: document.getElementById('store_match_list').value.split('\n').map(s => s.trim()).filter(Boolean),
     timeout_before_open: parseInt(document.getElementById('timeout_before_open').value, 10) || 5,
+    update_check_interval: document.getElementById('update_check_interval').value,
     mqtt_enabled: document.getElementById('mqtt_enabled').checked,
     mqtt_host: document.getElementById('mqtt_host').value,
     mqtt_port: parseInt(document.getElementById('mqtt_port').value, 10) || 1883,

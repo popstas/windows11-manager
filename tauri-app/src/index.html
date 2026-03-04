@@ -61,6 +61,24 @@
       <small>Delay before opening default apps after restore. 0 = no delay.</small>
     </div>
 
+    <div class="field">
+      <label for="store_match_list">Store match list (one exe per line)</label>
+      <textarea id="store_match_list" rows="8" placeholder="chrome.exe&#10;Code.exe&#10;firefox.exe"></textarea>
+      <small>Exe names to match for window storing. Empty = use config.js defaults.</small>
+    </div>
+
+    <div class="field">
+      <label for="update_check_interval">Check for updates</label>
+      <select id="update_check_interval">
+        <option value="launch">Each launch</option>
+        <option value="daily">Daily</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+        <option value="yearly">Yearly</option>
+        <option value="never">Never</option>
+      </select>
+    </div>
+
     <hr>
     <h2>MQTT</h2>
 

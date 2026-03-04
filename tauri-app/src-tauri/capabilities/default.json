@@ -15,6 +15,7 @@
     "shell:allow-kill",
     "global-shortcut:default",
     "global-shortcut:allow-register",
-    "store:default"
+    "store:default",
+    "shell:allow-open"
   ]
 }
