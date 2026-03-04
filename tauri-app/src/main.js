@@ -22,7 +22,7 @@ async function loadDashboard() {
     loading.hidden = true;
 
     renderApps(data.apps);
-    renderStats(data.stats);
+    renderStats(data.stats, data.matchList);
     renderStore(data.store);
     renderConfig(data.configPath, data.configContent);
     renderLog(data.logTail);
@@ -52,7 +52,7 @@ function renderApps(apps) {
   content.innerHTML = html;
 }
 
-function renderStats(stats) {
+function renderStats(stats, matchList) {
   const section = document.getElementById('stats-section');
   const content = document.getElementById('stats-content');
   section.hidden = false;
@@ -68,15 +68,31 @@ function renderStats(stats) {
     html += `<div class="stat-row">Active: <strong>${stats.active.app}</strong> — ${escapeHtml(stats.active.title)}</div>`;
   }
 
-  if (stats.byApp) {
-    html += '<table class="stats-table"><thead><tr><th>App</th><th>Count</th></tr></thead><tbody>';
-    for (const [app, info] of Object.entries(stats.byApp)) {
-      html += `<tr><td>${escapeHtml(app)}</td><td>${info.count}</td></tr>`;
+  const matchSet = new Set(matchList || []);
+  const runningApps = stats.byApp ? Object.keys(stats.byApp) : [];
+  const allApps = [...new Set([...matchSet, ...runningApps])].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+  if (allApps.length) {
+    html += '<table class="stats-table"><thead><tr><th>Autorun</th><th>App</th><th>Count</th></tr></thead><tbody>';
+    for (const app of allApps) {
+      const isInMatchList = matchSet.has(app);
+      const isRunning = stats.byApp && stats.byApp[app];
+      const count = isRunning ? stats.byApp[app].count : '';
+      const displayName = app.replace(/\.exe$/i, '');
+      const nameClass = isRunning ? ' class="app-running"' : '';
+      html += `<tr><td><input type="checkbox" class="autorun-checkbox" data-app="${escapeHtml(app)}"${isInMatchList ? ' checked' : ''}></td><td${nameClass}>${escapeHtml(displayName)}</td><td>${count}</td></tr>`;
     }
     html += '</tbody></table>';
   }
 
   content.innerHTML = html;
+
+  content.querySelectorAll('.autorun-checkbox').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const checked = [...content.querySelectorAll('.autorun-checkbox:checked')].map(el => el.dataset.app);
+      invoke('save_store_match_list', { list: checked });
+    });
+  });
 }
 
 function renderStore(store) {

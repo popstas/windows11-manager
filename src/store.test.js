@@ -3,6 +3,7 @@ import {
   filterWindowsToRestore,
   filterPathsToRestore,
   matchStoredWindows,
+  resolveMatchListPure,
 } from './store-helpers.js';
 
 describe('filterWindowsToRestore', () => {
@@ -112,5 +113,30 @@ describe('matchStoredWindows', () => {
     const matchList = { 0: 'chrome\\.exe' };
     const result = matchStoredWindows(wins, matchList);
     expect(result).toEqual([]);
+  });
+});
+
+describe('resolveMatchListPure', () => {
+  const configDefault = { 0: 'chrome.exe', 1: 'code.exe' };
+
+  it('returns override when non-empty array', () => {
+    const override = ['firefox.exe', 'notepad.exe'];
+    const result = resolveMatchListPure(override, configDefault);
+    expect(result).toEqual(['firefox.exe', 'notepad.exe']);
+  });
+
+  it('falls back to config when override is empty array', () => {
+    const result = resolveMatchListPure([], configDefault);
+    expect(result).toBe(configDefault);
+  });
+
+  it('falls back to config when override is null', () => {
+    const result = resolveMatchListPure(null, configDefault);
+    expect(result).toBe(configDefault);
+  });
+
+  it('falls back to config when override is undefined', () => {
+    const result = resolveMatchListPure(undefined, configDefault);
+    expect(result).toBe(configDefault);
   });
 });

@@ -78,8 +78,9 @@ async function start() {
     console.log(stats);
   });
 
-  program.command('dashboard').action(() => {
+  program.command('dashboard').action(async () => {
     const config = winMan.getConfig();
+    const { resolveMatchList } = await import('./store.js');
 
     let stats = {};
     try {
@@ -121,7 +122,10 @@ async function start() {
     let apps = [];
     try { apps = winMan.getAppsWithIcons(); } catch (e) { apps = []; }
 
-    console.log(JSON.stringify({ stats, store, apps, configPath: cfgPath, configContent, logTail }));
+    let matchList = [];
+    try { matchList = resolveMatchList(config); } catch (e) { matchList = []; }
+
+    console.log(JSON.stringify({ stats, store, apps, matchList, configPath: cfgPath, configContent, logTail }));
     process.exit(0);
   });
 

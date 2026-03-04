@@ -235,6 +235,10 @@ details summary:hover {
   margin-left: auto;
 }
 
+.app-running {
+  font-weight: 600;
+}
+
 .loading {
   color: #a6adc8;
   padding: 20px 0;

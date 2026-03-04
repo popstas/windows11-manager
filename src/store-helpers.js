@@ -36,4 +36,9 @@ function matchStoredWindows(wins, matchList) {
   });
 }
 
-export { filterWindowsToRestore, filterPathsToRestore, matchStoredWindows };
+function resolveMatchListPure(overrideList, configMatchList) {
+  if (Array.isArray(overrideList) && overrideList.length > 0) return overrideList;
+  return configMatchList;
+}
+
+export { filterWindowsToRestore, filterPathsToRestore, matchStoredWindows, resolveMatchListPure };

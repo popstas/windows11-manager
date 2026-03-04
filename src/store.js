@@ -1,15 +1,29 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { spawn, exec } from 'node:child_process';
 import { getConfig } from './config.js';
 import { getWindows } from './windows.js';
-import { filterWindowsToRestore, filterPathsToRestore, matchStoredWindows } from './store-helpers.js';
+import { filterWindowsToRestore, filterPathsToRestore, matchStoredWindows, resolveMatchListPure } from './store-helpers.js';
+
+function resolveMatchList(config) {
+  try {
+    const jsonPath = path.join(process.cwd(), 'data', 'store-match-list.json');
+    const overrideList = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+    return resolveMatchListPure(overrideList, config.store.matchList);
+  } catch {
+    return config.store.matchList;
+  }
+}
+
+export { resolveMatchList };
 
 function storeWindows() {
   const config = getConfig();
   const wins = getWindows();
   console.error('[store] saving positions: %d windows total', wins.length);
   console.error('[store] store path: %s', config.store.path);
-  const matchedWins = matchStoredWindows(wins, config.store.matchList);
+  const matchList = resolveMatchList(config);
+  const matchedWins = matchStoredWindows(wins, matchList);
   const explorerWins = wins.filter(win => win.path.includes('explorer.exe'));
   const explorerTitles = explorerWins.map(win => win.title);
   const storedPaths = explorerTitles.filter(title => {
@@ -82,5 +96,5 @@ function clearWindows() {
   fs.unlinkSync(config.store.path);
 }
 
-export { filterWindowsToRestore, filterPathsToRestore, matchStoredWindows } from './store-helpers.js';
+export { filterWindowsToRestore, filterPathsToRestore, matchStoredWindows, resolveMatchListPure } from './store-helpers.js';
 export { storeWindows, restoreWindows, openWindows, openPaths, openStore, clearWindows };

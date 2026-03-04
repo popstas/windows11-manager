@@ -240,6 +240,28 @@ async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), 
 }
 
 #[tauri::command]
+async fn save_store_match_list(app: tauri::AppHandle, list: Vec<String>) -> Result<(), String> {
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    store.set("store_match_list", serde_json::json!(list));
+    store.save().map_err(|e| e.to_string())?;
+
+    let project_path = store
+        .get("project_path")
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_default();
+    if !project_path.is_empty() {
+        let data_dir = std::path::Path::new(&project_path).join("data");
+        let _ = std::fs::create_dir_all(&data_dir);
+        let json_path = data_dir.join("store-match-list.json");
+        let json = serde_json::to_string(&list).unwrap_or_default();
+        if let Err(e) = std::fs::write(&json_path, &json) {
+            error!("Failed to write store-match-list.json: {}", e);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn get_dashboard_data(app: tauri::AppHandle) -> Result<String, String> {
     let project_path = get_project_path(&app);
     if project_path.is_empty() {
@@ -541,7 +563,7 @@ pub fn run() {
             ws_client_child: None,
             update_download_url: None,
         }))
-        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version])
+        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version, save_store_match_list])
         .setup(|app| {
             let project_path = get_project_path(app.handle());
             logging::init(&project_path);
