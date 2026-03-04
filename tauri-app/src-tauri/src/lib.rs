@@ -661,7 +661,7 @@ pub fn run() {
                         let state = app.state::<Mutex<AppState>>();
                         let url = state.lock().unwrap().update_download_url.clone();
                         if let Some(url) = url {
-                            let _ = tauri_plugin_opener::open_url(app, &url);
+                            let _ = tauri_plugin_opener::open_url(&url, None::<&str>);
                         }
                     }
                     "place" => {
