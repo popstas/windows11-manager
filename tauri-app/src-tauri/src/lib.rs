@@ -571,7 +571,7 @@ pub fn run() {
 
             // Build tray menu
             let current_version = app.package_info().version.to_string();
-            let version_info_i = MenuItem::with_id(app, "version_info", &format!("Current: v{}", current_version), false, None::<&str>)?;
+            let version_info_i = MenuItem::with_id(app, "version_info", format!("Current: v{}", current_version), false, None::<&str>)?;
             let download_update_i = MenuItem::with_id(app, "download_update", "Check for updates...", false, None::<&str>)?;
             let sep_update = PredefinedMenuItem::separator(app)?;
             let place_i = MenuItem::with_id(app, "place", "Place Windows", true, None::<&str>)?;
@@ -993,7 +993,7 @@ pub fn run() {
 
                     match updater::check_latest_release(&current_version).await {
                         Some(update) => {
-                            let _ = download_update_i_check.set_text(&format!("Download v{}", update.version));
+                            let _ = download_update_i_check.set_text(format!("Download v{}", update.version));
                             let _ = download_update_i_check.set_enabled(true);
                             let state = app_handle.state::<Mutex<AppState>>();
                             state.lock().unwrap().update_download_url = Some(update.download_url);
