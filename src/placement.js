@@ -81,8 +81,9 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
   const isPlaced = () => isBoundsMatch(oldPos, finalBounds);
   const placed = isPlaced();
   if (pos && !placed) {
-    if (w.getBounds()['x'] < 0) {
-      verboseLogFileOnly(`Skip offscreen ${winName}: x=${w.getBounds().x}`);
+    const MINIMIZED_THRESHOLD = -10000;
+    if (w.getBounds()['x'] < MINIMIZED_THRESHOLD) {
+      verboseLogFileOnly(`Skip minimized ${winName}: x=${w.getBounds().x}`);
       skipped.push({ name: 'bounds' });
     } else {
       if (debugLog) console.log(`Place ${getWindowInfo(w)} to ${JSON.stringify(applyPos)}\n`);
