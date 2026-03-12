@@ -606,6 +606,8 @@ pub fn run() {
                 MenuItem::with_id(app, "reload", "Reload Configs", true, None::<&str>)?;
             let settings_i =
                 MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
+            let open_log_i =
+                MenuItem::with_id(app, "open_log", "Open Log Location", true, None::<&str>)?;
             let exit_i = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
 
             let menu = Menu::with_items(
@@ -633,6 +635,7 @@ pub fn run() {
                     &sep3,
                     &reload_i,
                     &settings_i,
+                    &open_log_i,
                     &exit_i,
                 ],
             )?;
@@ -845,6 +848,23 @@ pub fn run() {
                     }
                     "settings" => {
                         open_settings_window(app);
+                    }
+                    "open_log" => {
+                        let project_path = get_project_path(app);
+                        if !project_path.is_empty() {
+                            let log_path = std::path::Path::new(&project_path)
+                                .join("data")
+                                .join("windows11-manager.log");
+                            let app_handle = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let shell = app_handle.shell();
+                                let _ = shell
+                                    .command("explorer.exe")
+                                    .args(["/select,", &log_path.to_string_lossy()])
+                                    .output()
+                                    .await;
+                            });
+                        }
                     }
                     "exit" => {
                         info!("=== Exit requested ===");

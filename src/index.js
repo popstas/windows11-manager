@@ -113,7 +113,7 @@ async function start() {
     try {
       if (fs.existsSync(logPath)) {
         const lines = fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean);
-        logTail = lines.slice(-5);
+        logTail = lines.slice(-10);
       }
     } catch (e) {
       logTail = ['Error reading log: ' + e.message];
@@ -125,7 +125,7 @@ async function start() {
     let matchList = [];
     try { matchList = resolveMatchList(config); } catch (e) { matchList = []; }
 
-    console.log(JSON.stringify({ stats, store, apps, matchList, configPath: cfgPath, configContent, logTail }));
+    console.log(JSON.stringify({ stats, store, apps, matchList, configPath: cfgPath, configContent, logPath, logTail }));
     process.exit(0);
   });
 

@@ -25,7 +25,7 @@ async function loadDashboard() {
     renderStats(data.stats, data.matchList, data.apps);
     renderStore(data.store);
     renderConfig(data.configPath, data.configContent);
-    renderLog(data.logTail);
+    renderLog(data.logPath, data.logTail);
   } catch (e) {
     loading.hidden = true;
     error.hidden = false;
@@ -120,10 +120,11 @@ function renderConfig(configPath, configContent) {
   document.getElementById('config-content').textContent = configContent || 'Empty';
 }
 
-function renderLog(logTail) {
+function renderLog(logPath, logTail) {
   const section = document.getElementById('log-section');
   const content = document.getElementById('log-content');
   section.hidden = false;
+  document.getElementById('log-path').textContent = logPath || '';
   content.textContent = (logTail && logTail.length) ? logTail.join('\n') : 'No log entries';
 }
 
