@@ -852,15 +852,14 @@ pub fn run() {
                     "open_log" => {
                         let project_path = get_project_path(app);
                         if !project_path.is_empty() {
-                            let log_path = std::path::Path::new(&project_path)
-                                .join("data")
-                                .join("windows11-manager.log");
+                            let log_dir = std::path::Path::new(&project_path)
+                                .join("data");
                             let app_handle = app.clone();
                             tauri::async_runtime::spawn(async move {
                                 let shell = app_handle.shell();
                                 let _ = shell
-                                    .command("explorer.exe")
-                                    .args(["/select,", &log_path.to_string_lossy()])
+                                    .command("cmd")
+                                    .args(["/c", "start", "", &log_dir.to_string_lossy()])
                                     .output()
                                     .await;
                             });
