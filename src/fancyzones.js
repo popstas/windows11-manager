@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { getConfig } from './config.js';
-import { getFancyZoneMonitor, getMonitor } from './monitors.js';
+import { getFancyZoneMonitor } from './monitors.js';
 import { calcFancyZonePos } from './fancyzones-helpers.js';
 
 function getFancyZoneInfo(opts) {
@@ -49,8 +49,7 @@ function fancyZonesToPos(opts) {
     height: monitor['work-area-height'],
   };
   const config = getConfig();
-  const nwmMonitor = getMonitor(opts.monitor);
-  const scaleFactor = nwmMonitor?.getScaleFactor?.() || 1;
+  const scaleFactor = monitor.dpi ? monitor.dpi / 96 : 1;
   return calcFancyZonePos({
     zone,
     monBounds,
