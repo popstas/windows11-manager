@@ -44,4 +44,36 @@ describe('calcFancyZonePos', () => {
     const pos = calcFancyZonePos({ zone, monBounds });
     expect(pos).toEqual({ x: 50, y: 50, width: 500, height: 400 });
   });
+
+  it('scales coordinates at 200% DPI', () => {
+    const zone = { X: 100, Y: 200, width: 800, height: 600 };
+    const pos = calcFancyZonePos({ zone, monBounds, scaleFactor: 2 });
+    expect(pos).toEqual({ x: 50, y: 100, width: 400, height: 300 });
+  });
+
+  it('scales coordinates at 150% DPI', () => {
+    const zone = { X: 300, Y: 150, width: 900, height: 600 };
+    const pos = calcFancyZonePos({ zone, monBounds, scaleFactor: 1.5 });
+    expect(pos).toEqual({ x: 200, y: 100, width: 600, height: 400 });
+  });
+
+  it('no scaling when scaleFactor is 1', () => {
+    const zone = { X: 100, Y: 200, width: 800, height: 600 };
+    const pos = calcFancyZonePos({ zone, monBounds, scaleFactor: 1 });
+    expect(pos).toEqual({ x: 100, y: 200, width: 800, height: 600 });
+  });
+
+  it('no scaling when scaleFactor is undefined', () => {
+    const zone = { X: 100, Y: 200, width: 800, height: 600 };
+    const pos = calcFancyZonePos({ zone, monBounds, scaleFactor: undefined });
+    expect(pos).toEqual({ x: 100, y: 200, width: 800, height: 600 });
+  });
+
+  it('scales with gaps and offset at 200% DPI', () => {
+    const zone = { X: 0, Y: 0, width: 1920, height: 1080 };
+    const monitorGaps = { position: 'bottom', gap: 48 };
+    const monitorsOffset = { left: 60, right: 60 };
+    const pos = calcFancyZonePos({ zone, monBounds, monitorGaps, monitorsOffset, scaleFactor: 2 });
+    expect(pos).toEqual({ x: 30, y: 0, width: 900, height: 516 });
+  });
 });

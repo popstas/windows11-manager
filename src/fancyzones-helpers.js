@@ -2,7 +2,7 @@
 
 import { applyMonitorGaps, applyMonitorsOffset } from './geometry.js';
 
-function calcFancyZonePos({ zone, monBounds, monitorGaps, monitorsOffset }) {
+function calcFancyZonePos({ zone, monBounds, monitorGaps, monitorsOffset, scaleFactor }) {
   const pos = {
     x: monBounds.x + zone.X,
     y: monBounds.y + zone.Y,
@@ -11,6 +11,14 @@ function calcFancyZonePos({ zone, monBounds, monitorGaps, monitorsOffset }) {
   };
   applyMonitorGaps({ pos, monBounds, monitorGaps });
   applyMonitorsOffset({ pos, offset: monitorsOffset });
+
+  if (scaleFactor && scaleFactor !== 1) {
+    pos.x = Math.round(pos.x / scaleFactor);
+    pos.y = Math.round(pos.y / scaleFactor);
+    pos.width = Math.round(pos.width / scaleFactor);
+    pos.height = Math.round(pos.height / scaleFactor);
+  }
+
   return pos;
 }
 
