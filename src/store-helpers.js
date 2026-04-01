@@ -26,7 +26,7 @@ function matchStoredWindows(wins, matchList) {
   return wins.filter(w => {
     for (const i in list) {
       const matchPath = list[i];
-      const reg = new RegExp(matchPath.replace('.', '\\.'), 'i');
+      const reg = new RegExp(matchPath.replaceAll('.', '\\.'), 'i');
       if (reg.test(w.path)) {
         delete list[i];
         return true;

@@ -74,6 +74,11 @@ describe('filterPathsToRestore', () => {
   it('returns empty for empty storedPaths', () => {
     expect(filterPathsToRestore([], [{ title: 'x', path: 'y' }])).toEqual([]);
   });
+
+  it('returns empty for null or undefined storedPaths', () => {
+    expect(filterPathsToRestore(null, [])).toEqual([]);
+    expect(filterPathsToRestore(undefined, [])).toEqual([]);
+  });
 });
 
 describe('matchStoredWindows', () => {
@@ -102,6 +107,25 @@ describe('matchStoredWindows', () => {
       { path: 'C:\\my.app.exe', title: 'App' },
     ];
     const matchList = { 0: 'my.app.exe' };
+    const result = matchStoredWindows(wins, matchList);
+    expect(result).toHaveLength(1);
+  });
+
+  it('does not match when dots differ', () => {
+    const wins = [
+      { path: 'C:\\myXappXexe', title: 'App' },
+    ];
+    const matchList = { 0: 'my.app.exe' };
+    const result = matchStoredWindows(wins, matchList);
+    expect(result).toEqual([]);
+  });
+
+  it('each pattern matches at most once', () => {
+    const wins = [
+      { path: 'C:\\chrome.exe', title: 'Tab 1' },
+      { path: 'C:\\chrome.exe', title: 'Tab 2' },
+    ];
+    const matchList = { 0: 'chrome.exe' };
     const result = matchStoredWindows(wins, matchList);
     expect(result).toHaveLength(1);
   });
