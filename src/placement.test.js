@@ -114,7 +114,12 @@ describe('parsePosFromRule', () => {
     { bounds: { x: 1920, y: 0, width: 1920, height: 1080 } },
   ];
 
-  it('returns false when pos is missing', () => {
+  it('returns false when rule is null or undefined', () => {
+    expect(parsePosFromRule({ rule: null, mons, panelWidth, panelHeight })).toBe(false);
+    expect(parsePosFromRule({ rule: undefined, mons, panelWidth, panelHeight })).toBe(false);
+  });
+
+  it('returns false when x and y are missing', () => {
     expect(parsePosFromRule({ rule: {}, mons, panelWidth, panelHeight })).toBe(false);
   });
 
@@ -141,6 +146,13 @@ describe('parsePosFromRule', () => {
     const rule = { width: 800, height: 600, x: 100, y: 200 };
     expect(parsePosFromRule({ rule, mons, panelWidth, panelHeight })).toEqual({
       width: 800, height: 600, x: 100, y: 200,
+    });
+  });
+
+  it('handles numeric zero values correctly', () => {
+    const rule = { width: 800, height: 600, x: 0, y: 0 };
+    expect(parsePosFromRule({ rule, mons, panelWidth, panelHeight })).toEqual({
+      width: 800, height: 600, x: 0, y: 0,
     });
   });
 

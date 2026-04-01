@@ -91,10 +91,19 @@ describe('isWindowExcluded', () => {
     })).toBe(false);
   });
 
-  it('handles undefined title or path', () => {
+  it('handles undefined title', () => {
     expect(isWindowExcluded({
       title: undefined,
       path: 'C:\\app.exe',
+      excludedTitles,
+      excludedPaths,
+    })).toBe(false);
+  });
+
+  it('handles undefined path', () => {
+    expect(isWindowExcluded({
+      title: 'Some Window',
+      path: undefined,
       excludedTitles,
       excludedPaths,
     })).toBe(false);
