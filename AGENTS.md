@@ -53,7 +53,7 @@ This repository contains a Node.js tool for managing window placement on Windows
 3. Use `node src <command>` or `npm start -- <command>`.
 4. Look into the `examples` directory for additional usage samples.
 
-There are no automated tests at the moment. Functionality heavily depends on a Windows 11 environment with FancyZones enabled, so many scripts will not work on other platforms.
+Run `npm test` to execute the vitest test suite. Tests cover pure helper functions extracted from placement, windows, store, fancyzones, monitors, geometry, window-match, scale, and stats modules. Functionality heavily depends on a Windows 11 environment with FancyZones enabled, so many scripts will not work on other platforms.
 
 ## Next steps
 
