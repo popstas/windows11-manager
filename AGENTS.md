@@ -40,6 +40,25 @@ This repository contains a Node.js tool for managing window placement on Windows
 - Settings stored via `tauri-plugin-store` in `settings.json` (project_path, MQTT config, etc.).
 - Build: `cd tauri-app/src-tauri && . "$HOME/.cargo/env" && cargo build`.
 
+## FancyZones coordinate system & DPI gotchas
+
+FancyZones `editor-parameters.json` stores monitor data with **mixed coordinate spaces** for high-DPI monitors:
+- `left-coordinate`, `top-coordinate`: **physical pixels** (scaled by DPI). E.g., a 200% DPI monitor at logical x=-1920 stores left-coordinate=-3840
+- `monitor-width`, `monitor-height`, `work-area-width`, `work-area-height`: **logical pixels** (post-scaling)
+- Zone coordinates in `custom-layouts.json` are relative to `ref-width`/`ref-height` which matches `work-area-width` — also **logical pixels**
+
+The code in `calcFancyZonePos` divides ALL values (monitor coords + zone coords) by `scaleFactor = dpi/96`. This works for monitor position (-3840/2=-1920) but **incorrectly halves zone dimensions** on high-DPI monitors (zone width 1599 becomes 800 instead of staying 1599).
+
+### Known issues
+- **Stale FZ data**: `editor-parameters.json` is only refreshed when the FancyZones editor is opened (Win+Shift+`) or after a **full system reboot**. Simply restarting PowerToys does NOT regenerate it. Stale data can have wrong DPI (192 vs 96) and wrong coordinates
+- **Duplicate monitor matching**: `getMonitor()` in monitors.js matches by logical resolution. Two monitors with same logical size (e.g., both 1920x1200 — one native, one scaled from 3840x2400) return the same physical monitor. Visible as duplicate IDs in `mons` output
+- **Verify with MultiMonitorTool**: Use it to see actual logical coordinates Windows is using — these are the ground truth for setBounds()
+
+### Debugging placement
+- `node src/index.js place` — run placement, logs show `from` → `to` for each window
+- `debug: true` in config enables verbose logging to `data/windows11-manager.log`
+- Config loaded from: `~/.config/windows11-manager.config.js` (takes priority) or `config.cjs`
+
 ## Key lib exports (src/lib/)
 
 - `src/store.js` exports: `storeWindows`, `restoreWindows`, `openWindows`, `openPaths`, `openStore`, `clearWindows`
