@@ -113,7 +113,7 @@ describe('matchStoredWindows', () => {
 
   it('does not match when dots differ', () => {
     const wins = [
-      { path: 'C:\\myXappXexe', title: 'App' },
+      { path: 'C:\\my.appXexe', title: 'App' },
     ];
     const matchList = { 0: 'my.app.exe' };
     const result = matchStoredWindows(wins, matchList);
