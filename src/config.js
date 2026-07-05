@@ -23,7 +23,10 @@ let configPath = resolveConfigPath();
 
 function getConfig() {
   delete require.cache[require.resolve(configPath)];
-  const config = require(configPath);
+  const loaded = require(configPath);
+  // require(esm) returns a frozen namespace: unwrap default and copy so
+  // _configPath can be attached regardless of the config's module format
+  const config = { ...(loaded && loaded.default ? loaded.default : loaded) };
   config._configPath = configPath;
   // if (config.debug) console.log('Config loaded from:', configPath);
   return config;
