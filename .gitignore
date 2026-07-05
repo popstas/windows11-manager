@@ -1,9 +1,9 @@
 node_modules/
 config.cjs
+/config.js
 dist/
 tauri-app/src-tauri/target/
 tauri-app/src-tauri/gen/schemas/windows-schema.json
-!/src/config.js
 /data/
 *.log
 
