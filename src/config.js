@@ -7,8 +7,22 @@ import { createRequire } from 'node:module';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
+// OS settings base dir: %APPDATA% on Windows, ~/Library/Application Support on
+// macOS, $XDG_CONFIG_HOME (or ~/.config) on Linux.
+function appDataDir() {
+  if (process.platform === 'win32') {
+    return process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+  }
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support');
+  }
+  return process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+}
+
 function resolveConfigPath() {
   const candidates = [
+    path.join(appDataDir(), 'windows-mqtt', 'windows11-manager.config.js'),
+    path.join(appDataDir(), 'windows11-manager', 'config.js'),
     path.join(os.homedir(), '.config', 'windows11-manager.config.js'),
     path.join(process.cwd(), 'windows11-manager.config.js'),
     path.resolve(__dirname, '../config.cjs'),
