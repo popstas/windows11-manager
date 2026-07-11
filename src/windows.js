@@ -20,17 +20,16 @@ function getWindows() {
   const list = [];
   for (const window of windows) {
     if (!window.isVisible()) continue;
+    const title = window.getTitle();
+    if (!title) continue;
     if (isWindowExcluded({
-      title: window.getTitle(),
+      title,
       path: window.path,
       excludedTitles: EXCLUDED_TITLES,
       excludedPaths: EXCLUDED_PATHS,
     })) continue;
-    const title = window.getTitle();
-    if (title) {
-      window.title = title;
-      list.push(window);
-    }
+    window.title = title;
+    list.push(window);
   }
   return list;
 }

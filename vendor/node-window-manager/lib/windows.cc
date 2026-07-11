@@ -207,10 +207,9 @@ Napi::String getWindowTitle (const Napi::CallbackInfo& info) {
     auto handle{ getValueFromCallbackData<HWND> (info, 0) };
 
     int bufsize = GetWindowTextLengthW (handle) + 1;
-    LPWSTR t = new WCHAR[bufsize];
-    GetWindowTextW (handle, t, bufsize);
-
-    std::wstring ws (t);
+    std::wstring ws (bufsize, L'\0');
+    int len = GetWindowTextW (handle, &ws[0], bufsize);
+    ws.resize (len > 0 ? len : 0);
     std::string title = toUtf8 (ws);
 
     return Napi::String::New (env, title);
