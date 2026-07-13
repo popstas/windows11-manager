@@ -1,7 +1,7 @@
 import { getConfig } from './config.js';
 import { getMons, getSortedMonitors, getMonitorByPoint } from './monitors.js';
 import { fancyZonesToPos, addFancyZoneHistory } from './fancyzones.js';
-import { getWindows, getMatchedRules, getWindowInfo, getWindow } from './windows.js';
+import { getWindows, getVisibleWindowIds, getMatchedRules, getWindowInfo, getWindow } from './windows.js';
 import { virtualDesktop } from './virtual-desktop.js';
 import { adjustBoundsForScale } from './scale.js';
 import { isBoundsMatch } from './geometry.js';
@@ -266,25 +266,28 @@ function startPlaceNewWindows() {
     placeNewWindowsIntervalId = null;
   }
 
-  const updateInterval = 500;
+  const updateInterval = 1500;
   const delay = 1000;
-  let stored;
-  placeNewWindowsIntervalId = setInterval(async () => {
-    const wins = getWindows();
-    if (stored && stored.length < wins.length) {
-      const newWins = wins.filter(w => !stored.find(st => st.id === w.id));
-      verboseLogFileOnly(`Autoplacer: detected ${newWins.length} new window(s): ${newWins.map(w => w.title || path.basename(w.path)).join(', ')}`);
-      stored = wins; // prevent re-trigger on next tick
-      setTimeout(async () => {
-        const currentWins = getWindows();
-        const winsToPlace = currentWins.filter(w => newWins.find(nw => nw.id === w.id));
-        verboseLogFileOnly(`Autoplacer: placing ${winsToPlace.length} window(s) after ${delay}ms delay`);
-        await placeWindowsByConfig(winsToPlace, { changeDesktop: winsToPlace.length === 1 });
-        stored = getWindows();
-      }, delay);
-    } else {
-      stored = wins;
+  // Poll only raw visible hwnds (cheap); build full Window objects with
+  // process paths and titles only when an unseen hwnd shows up.
+  let knownIds = null;
+  placeNewWindowsIntervalId = setInterval(() => {
+    const ids = getVisibleWindowIds();
+    if (knownIds === null) {
+      knownIds = new Set(ids);
+      return;
     }
+    const newIds = ids.filter(id => !knownIds.has(id));
+    knownIds = new Set(ids);
+    if (newIds.length === 0) return;
+    verboseLogFileOnly(`Autoplacer: detected ${newIds.length} new visible hwnd(s)`);
+    setTimeout(async () => {
+      const newIdSet = new Set(newIds);
+      const winsToPlace = getWindows().filter(w => newIdSet.has(w.id));
+      if (winsToPlace.length === 0) return;
+      verboseLogFileOnly(`Autoplacer: placing ${winsToPlace.length} window(s) after ${delay}ms delay: ${winsToPlace.map(w => w.title || path.basename(w.path)).join(', ')}`);
+      await placeWindowsByConfig(winsToPlace, { changeDesktop: winsToPlace.length === 1 });
+    }, delay);
   }, updateInterval);
 }
 

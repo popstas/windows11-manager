@@ -1,4 +1,4 @@
-import { windowManager } from 'node-window-manager';
+import { windowManager, addon } from 'node-window-manager';
 import { getConfig } from './config.js';
 import { getAppFromPath, isWindowMatchRule } from './window-match.js';
 import { matchRules, isWindowExcluded } from './windows-helpers.js';
@@ -14,6 +14,13 @@ const EXCLUDED_PATHS = [
   'TextInputHost.exe',
   'LogiOverlay.exe',
 ];
+
+// Raw hwnds of visible top-level windows. Unlike getWindows(), makes no
+// OpenProcess/getTitle call per window, so it is cheap enough to poll.
+function getVisibleWindowIds() {
+  if (!addon || !addon.getWindows) return [];
+  return addon.getWindows().filter(id => addon.isWindowVisible(id));
+}
 
 function getWindows() {
   const windows = windowManager.getWindows();
@@ -85,6 +92,7 @@ function getWindow(rule) {
 
 export { matchRules, isWindowExcluded } from './windows-helpers.js';
 export {
+  getVisibleWindowIds,
   getWindows,
   getAppFromPath,
   isWindowMatchRule,
