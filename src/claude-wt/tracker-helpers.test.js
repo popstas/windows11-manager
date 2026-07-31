@@ -70,7 +70,7 @@ describe('resolveSession', () => {
 });
 
 import { step } from './tracker-helpers.js';
-import { emptyState, upsertSlot } from './state-helpers.js';
+import { emptyState, upsertSlot, normalizeState } from './state-helpers.js';
 
 const bounds = (x, y) => ({ x, y, width: 800, height: 600 });
 const index = { ccfzf: { id: 'a1', cwd: '/p', title: 'ccfzf', ambiguous: false } };
@@ -114,7 +114,11 @@ describe('step', () => {
     const state = { ...emptyState(), slots: { a1: upsertSlot(undefined, { title: 'ccfzf', bounds: bounds(500, 500), now: 1 }) } };
     const shell = [{ id: 1, title: 'x@y: ~', bounds: bounds(0, 0) }];
     const session = [{ id: 1, title: 'ccfzf', bounds: bounds(0, 0) }];
-    const out = run([shell, shell, session, session], { state });
+    // Fifth tick: the move action was emitted on tick 4 (title settles back to
+    // 'ccfzf'), but Windows hasn't applied it yet — the window is still reported
+    // at its pre-move position (0, 0). Without the pendingMove guard this tick
+    // would overwrite the remembered slot with (0, 0).
+    const out = run([shell, shell, session, session, session], { state });
     expect(out.nextState.slots.a1.bounds).toEqual(bounds(500, 500));
   });
 
@@ -172,5 +176,20 @@ describe('step', () => {
     const w = [{ id: 1, title: 'ccfzf', bounds: bounds(10, 20) }];
     const out = run([w, w]);
     expect(out.nextState.updated).toBe(2);
+  });
+
+  it('still creates the slot once a session first seen minimized is restored', () => {
+    const minimized = [{ id: 1, title: 'ccfzf', bounds: { x: -32000, y: -32000, width: 800, height: 600 } }];
+    const restored = [{ id: 1, title: 'ccfzf', bounds: bounds(10, 20) }];
+    const out = run([minimized, minimized, restored]);
+    expect(out.nextState.slots.a1.titles).toContain('ccfzf');
+    expect(out.bindings).toEqual([{ windowId: 1, sessionId: 'a1' }]);
+    expect(normalizeState(out.nextState).slots.a1).toBeDefined();
+  });
+
+  it('stores lastSeen on the same epoch-seconds scale as updated', () => {
+    const w = [{ id: 1, title: 'ccfzf', bounds: bounds(10, 20) }];
+    const out = run([w, w]);
+    expect(out.nextState.slots.a1.lastSeen).toBe(out.nextState.updated);
   });
 });

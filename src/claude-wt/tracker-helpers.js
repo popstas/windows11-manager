@@ -63,6 +63,9 @@ function boundsEqual(a, b) {
  */
 function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, options = {} }) {
   const { stableTicks, moveTimeoutMs, minimizedX } = { ...DEFAULTS, ...options };
+  // `now` stays in ms because pendingMove.since/moveTimeoutMs need that resolution;
+  // everything persisted to state (lastSeen, updated) is stamped in epoch seconds.
+  const nowSec = Math.floor(now / 1000);
   const prev = new Map(prevWindows.map(w => [w.id, w]));
   const duplicates = duplicateTitles(windows);
   const slots = { ...state.slots };
@@ -84,7 +87,7 @@ function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, o
       tracked.sessionId = resolved && !resolved.ambiguous ? resolved.id : null;
       if (tracked.sessionId) {
         const known = slots[tracked.sessionId];
-        const common = { title: tracked.stableTitle, cwd: resolved.cwd, now };
+        const common = { title: tracked.stableTitle, cwd: resolved.cwd, now: nowSec };
         if (known?.bounds) {
           slots[tracked.sessionId] = upsertSlot(known, common);
           actions.push({ windowId: win.id, bounds: known.bounds, desktop: known.desktop });
@@ -103,7 +106,14 @@ function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, o
       if (settled) {
         tracked.pendingMove = null;
         if (!minimized) {
-          slots[tracked.sessionId] = upsertSlot(slots[tracked.sessionId], { bounds: win.bounds, now });
+          // A session first seen while minimized reaches here with no slot yet
+          // (the titleChanged branch above deliberately skipped creating one).
+          // Carry the title along so the slot isn't created identity-less, and
+          // bind exactly once — the same moment the titleChanged branch would
+          // have bound it, had the window not been minimized at the time.
+          const known = slots[tracked.sessionId];
+          slots[tracked.sessionId] = upsertSlot(known, { title: tracked.stableTitle, bounds: win.bounds, now: nowSec });
+          if (!known) bindings.push({ windowId: win.id, sessionId: tracked.sessionId });
         }
       }
     }
@@ -116,7 +126,7 @@ function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, o
     nextWindows,
     actions,
     bindings,
-    nextState: { ...state, slots, lastLayout, updated: Math.floor(now / 1000) },
+    nextState: { ...state, slots, lastLayout, updated: nowSec },
   };
 }
 
