@@ -52,13 +52,15 @@ describe('isTerminalPath', () => {
 
 describe('desktopOnlyActions', () => {
   const slots = { a1: { desktop: 2 }, b2: { desktop: null } };
-  const tracked = (over = {}) => ({ id: 1, sessionId: 'a1', ...over });
+  const tracked = (over = {}) => ({ id: 1, sessionId: 'a1', stableTitle: 'ccfzf', ...over });
+  // Окно, вышедшее из сессии: заголовок устоялся на приглашении шелла.
+  const atShell = (over = {}) => tracked({ sessionId: null, stableTitle: 'x@y: ~', ...over });
 
   it('returns the desktop of a session entered in a window that needs no move', () => {
     // step() подавляет action, когда координаты уже совпадают, и вместе с ним
     // теряется номер стола: окно на месте, но на чужом столе, назад не вернётся.
     const out = desktopOnlyActions({
-      prevWindows: [tracked({ sessionId: null })],
+      prevWindows: [atShell()],
       nextWindows: [tracked()],
       slots,
       actions: [],
@@ -68,7 +70,7 @@ describe('desktopOnlyActions', () => {
 
   it('stays out of the way when step already emitted a move for that window', () => {
     const out = desktopOnlyActions({
-      prevWindows: [tracked({ sessionId: null })],
+      prevWindows: [atShell()],
       nextWindows: [tracked()],
       slots,
       actions: [{ windowId: 1, bounds: {}, desktop: 2 }],
@@ -87,8 +89,6 @@ describe('desktopOnlyActions', () => {
   });
 
   it('ignores windows the tracker saw for the first time this tick', () => {
-    // Перезапуск демона: prevWindows пуст, привязку сообщают разом все окна.
-    // Растащить их по рабочим столам — совсем не то, чего ждут от перезапуска.
     const out = desktopOnlyActions({
       prevWindows: [],
       nextWindows: [tracked()],
@@ -98,9 +98,23 @@ describe('desktopOnlyActions', () => {
     expect(out).toEqual([]);
   });
 
+  it('ignores a window whose title had not settled yet on the previous tick', () => {
+    // Перезапуск демона: на первом тике заголовок ещё не устоялся, на втором
+    // окно разом сообщает о привязке. Растащить всё открытое по рабочим столам
+    // — совсем не то, чего ждут от перезапуска; на живом прогоне так и уехало
+    // окно b2b-kpi со стола 1 на стол 2.
+    const out = desktopOnlyActions({
+      prevWindows: [tracked({ sessionId: null, stableTitle: null })],
+      nextWindows: [tracked()],
+      slots,
+      actions: [],
+    });
+    expect(out).toEqual([]);
+  });
+
   it('ignores a slot with no remembered desktop', () => {
     const out = desktopOnlyActions({
-      prevWindows: [tracked({ sessionId: null })],
+      prevWindows: [atShell()],
       nextWindows: [tracked({ sessionId: 'b2' })],
       slots,
       actions: [],
@@ -111,7 +125,7 @@ describe('desktopOnlyActions', () => {
   it('ignores an unbound window', () => {
     const out = desktopOnlyActions({
       prevWindows: [tracked()],
-      nextWindows: [tracked({ sessionId: null })],
+      nextWindows: [atShell()],
       slots,
       actions: [],
     });

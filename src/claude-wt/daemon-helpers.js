@@ -36,10 +36,12 @@ function isTerminalPath(path) {
  * that hole for windows that were bound to a session on *this* tick and got no
  * action of their own.
  *
- * Windows the tracker had not seen on the previous tick are skipped on purpose:
- * that is the daemon-restart case, where every open window reports its binding
- * at once, and hauling them all across virtual desktops is not what restarting
- * a position tracker should do.
+ * A binding only counts as entering a session when the window had a settled
+ * title before it. On a daemon restart every open window goes from "no settled
+ * title yet" straight to its session on the second tick, and hauling them all
+ * across virtual desktops is not what restarting a position tracker should do —
+ * checking merely that the window existed last tick is not enough, because on
+ * a restart it did.
  */
 function desktopOnlyActions({ prevWindows = [], nextWindows = [], slots = {}, actions = [] }) {
   const prev = new Map(prevWindows.map(w => [w.id, w]));
@@ -48,7 +50,7 @@ function desktopOnlyActions({ prevWindows = [], nextWindows = [], slots = {}, ac
   for (const w of nextWindows) {
     if (!w.sessionId || moving.has(w.id)) continue;
     const was = prev.get(w.id);
-    if (!was || was.sessionId === w.sessionId) continue;
+    if (!was || !was.stableTitle || was.sessionId === w.sessionId) continue;
     const desktop = slots[w.sessionId]?.desktop;
     if (desktop == null) continue;
     out.push({ windowId: w.id, desktop });
