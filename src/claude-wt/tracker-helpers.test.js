@@ -254,6 +254,37 @@ describe('step with monitors', () => {
   });
 });
 
+describe('step with DPI rounding', () => {
+  // На мониторе со 125% окно возвращается из setBounds() на пиксель меньше,
+  // чем просили: 602 -> 601, 1387 -> 1386. Прогон ниже воспроизводит ровно это.
+  const remembered = { x: 10, y: 20, width: 602, height: 1387 };
+  const rounded = { x: 10, y: 20, width: 601, height: 1386 };
+  const state = () => ({
+    ...emptyState(),
+    slots: { a1: upsertSlot(undefined, { title: 'ccfzf', bounds: remembered, desktop: 2, now: 1 }) },
+  });
+  const shell = [{ id: 1, title: 'x@y: ~', bounds: bounds(700, 300) }];
+  const session = [{ id: 1, title: 'ccfzf', bounds: bounds(700, 300) }];
+  const arrived = [{ id: 1, title: 'ccfzf', bounds: rounded }];
+
+  it('counts the rounded-down rectangle as arrival', () => {
+    const out = run([shell, shell, session, session, arrived], { state: state() });
+    expect(out.nextWindows[0].pendingMove).toBe(null);
+  });
+
+  it('does not lose a pixel off the remembered size on every restore', () => {
+    const out = run([shell, shell, session, session, arrived, arrived], { state: state() });
+    expect(out.nextState.slots.a1.bounds).toEqual(remembered);
+  });
+
+  it('does not move a window that is already there bar the rounding', () => {
+    const settled = [{ id: 1, title: 'x@y: ~', bounds: rounded }];
+    const entered = [{ id: 1, title: 'ccfzf', bounds: rounded }];
+    const out = run([settled, settled, entered, entered], { state: state() });
+    expect(out.actions).toEqual([]);
+  });
+});
+
 describe('step move timeout', () => {
   const state = () => ({
     ...emptyState(),

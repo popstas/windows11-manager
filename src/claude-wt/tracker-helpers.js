@@ -50,9 +50,18 @@ function resolveSession(title, sessionIndex, slots) {
 
 const DEFAULTS = { stableTicks: 2, moveTimeoutMs: 5000, minimizedX: -10000 };
 
+// A window never comes back from setBounds() at exactly the size it was asked
+// for on a scaled monitor: node-window-manager multiplies by the scale factor
+// and floors going in, divides and floors coming out, so 602 px at 125% is read
+// back as 601. Exact comparison would mean the move never "arrives" (the guard
+// waits out its whole timeout), and the rounded-down rectangle then overwrites
+// the remembered one — a pixel lost per restore, forever. Same 2px tolerance
+// placement.js already uses in isBoundsMatch.
+const BOUNDS_TOLERANCE = 2;
+
 function boundsEqual(a, b) {
   if (!a || !b) return false;
-  return ['x', 'y', 'width', 'height'].every(k => a[k] === b[k]);
+  return ['x', 'y', 'width', 'height'].every(k => Math.abs(a[k] - b[k]) < BOUNDS_TOLERANCE);
 }
 
 /**
