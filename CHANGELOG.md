@@ -32,6 +32,13 @@
 
 
 
+## [2.0.1](https://github.com/popstas/windows11-manager/compare/windows11-manager-v2.0.0...windows11-manager-v2.0.1) (2026-07-31)
+
+
+### Performance Improvements
+
+* **autoplace:** poll cheap visible hwnd ids instead of full window snapshots ([96c2584](https://github.com/popstas/windows11-manager/commit/96c25848b8b13c8f96970ce3729b7707cf04793e))
+
 ## [2.0.0](https://github.com/popstas/windows11-manager/compare/windows11-manager-v1.1.0...windows11-manager-v2.0.0) (2026-07-12)
 
 
