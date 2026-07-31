@@ -1,4 +1,5 @@
 /** Pure helper functions for the claude-wt tracker. No external I/O. */
+import { upsertSlot } from './state-helpers.js';
 
 /**
  * Follow one window's title across ticks. A title becomes "stable" only after
@@ -46,4 +47,77 @@ function resolveSession(title, sessionIndex, slots) {
   return { id, cwd: slot.cwd ?? '', ambiguous: matches.length > 1 };
 }
 
-export { trackTitle, duplicateTitles, resolveSession };
+const DEFAULTS = { stableTicks: 2, moveTimeoutMs: 5000, minimizedX: -10000 };
+
+function boundsEqual(a, b) {
+  if (!a || !b) return false;
+  return ['x', 'y', 'width', 'height'].every(k => a[k] === b[k]);
+}
+
+/**
+ * One tick of the tracker: pure, so the whole behaviour table is testable
+ * without Windows. Returns the next state plus what the daemon must do:
+ * `actions` are windows to move, `bindings` are windows whose virtual desktop
+ * number should be read once (that call spawns VirtualDesktop11.exe, so it
+ * must never happen on every tick).
+ */
+function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, options = {} }) {
+  const { stableTicks, moveTimeoutMs, minimizedX } = { ...DEFAULTS, ...options };
+  const prev = new Map(prevWindows.map(w => [w.id, w]));
+  const duplicates = duplicateTitles(windows);
+  const slots = { ...state.slots };
+  const nextWindows = [];
+  const actions = [];
+  const bindings = [];
+  const lastLayout = [];
+
+  for (const win of windows) {
+    const before = prev.get(win.id);
+    const tracked = trackTitle(before, win, stableTicks);
+    const minimized = win.bounds.x < minimizedX;
+    const titleChanged = tracked.stableTitle !== (before?.stableTitle ?? null);
+
+    if (titleChanged) {
+      const resolved = duplicates.has(tracked.stableTitle)
+        ? null
+        : resolveSession(tracked.stableTitle, sessionIndex, slots);
+      tracked.sessionId = resolved && !resolved.ambiguous ? resolved.id : null;
+      if (tracked.sessionId) {
+        const known = slots[tracked.sessionId];
+        const common = { title: tracked.stableTitle, cwd: resolved.cwd, now };
+        if (known?.bounds) {
+          slots[tracked.sessionId] = upsertSlot(known, common);
+          actions.push({ windowId: win.id, bounds: known.bounds, desktop: known.desktop });
+          tracked.pendingMove = { bounds: known.bounds, since: now };
+        } else if (!minimized) {
+          // Слот заводится только вместе с позицией: слот без bounds бесполезен
+          // и был бы всё равно выброшен normalizeState при следующем чтении.
+          slots[tracked.sessionId] = upsertSlot(known, { ...common, bounds: win.bounds });
+          bindings.push({ windowId: win.id, sessionId: tracked.sessionId });
+        }
+      }
+    } else if (tracked.sessionId) {
+      const settled = !tracked.pendingMove
+        || boundsEqual(win.bounds, tracked.pendingMove.bounds)
+        || now - tracked.pendingMove.since > moveTimeoutMs;
+      if (settled) {
+        tracked.pendingMove = null;
+        if (!minimized) {
+          slots[tracked.sessionId] = upsertSlot(slots[tracked.sessionId], { bounds: win.bounds, now });
+        }
+      }
+    }
+
+    if (tracked.sessionId) lastLayout.push(tracked.sessionId);
+    nextWindows.push(tracked);
+  }
+
+  return {
+    nextWindows,
+    actions,
+    bindings,
+    nextState: { ...state, slots, lastLayout, updated: Math.floor(now / 1000) },
+  };
+}
+
+export { trackTitle, duplicateTitles, resolveSession, step, boundsEqual };

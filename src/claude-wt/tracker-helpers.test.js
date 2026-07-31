@@ -68,3 +68,109 @@ describe('resolveSession', () => {
     expect(resolveSession(null, index, {})).toBe(null);
   });
 });
+
+import { step } from './tracker-helpers.js';
+import { emptyState, upsertSlot } from './state-helpers.js';
+
+const bounds = (x, y) => ({ x, y, width: 800, height: 600 });
+const index = { ccfzf: { id: 'a1', cwd: '/p', title: 'ccfzf', ambiguous: false } };
+
+// Прогоняет тики, пока заголовок не станет стабильным, и отдаёт последний результат.
+function run(ticks, { state = emptyState(), sessionIndex = index } = {}) {
+  let prevWindows = [];
+  let out = { nextWindows: [], actions: [], bindings: [], nextState: state };
+  ticks.forEach((windows, i) => {
+    out = step({ prevWindows, windows, sessionIndex, state: out.nextState, now: 1000 + i * 1000 });
+    prevWindows = out.nextWindows;
+  });
+  return out;
+}
+
+describe('step', () => {
+  it('creates a slot with the current position for a session it has never seen', () => {
+    const w = [{ id: 1, title: 'ccfzf', bounds: bounds(10, 20) }];
+    const out = run([w, w]);
+    expect(out.actions).toEqual([]);
+    expect(out.nextState.slots.a1.bounds).toEqual(bounds(10, 20));
+    expect(out.bindings).toEqual([{ windowId: 1, sessionId: 'a1' }]);
+  });
+
+  it('moves the window back to the remembered position when the session returns', () => {
+    const state = { ...emptyState(), slots: { a1: upsertSlot(undefined, { title: 'ccfzf', bounds: bounds(500, 500), desktop: 2, now: 1 }) } };
+    const shell = [{ id: 1, title: 'popstas@pc-virt: ~', bounds: bounds(0, 0) }];
+    const session = [{ id: 1, title: 'ccfzf', bounds: bounds(0, 0) }];
+    const out = run([shell, shell, session, session], { state });
+    expect(out.actions).toEqual([{ windowId: 1, bounds: bounds(500, 500), desktop: 2 }]);
+  });
+
+  it('records a position the user dragged the window to', () => {
+    const w = [{ id: 1, title: 'ccfzf', bounds: bounds(10, 20) }];
+    const moved = [{ id: 1, title: 'ccfzf', bounds: bounds(700, 300) }];
+    const out = run([w, w, moved]);
+    expect(out.nextState.slots.a1.bounds).toEqual(bounds(700, 300));
+  });
+
+  it('does not record the position while its own move is still in flight', () => {
+    const state = { ...emptyState(), slots: { a1: upsertSlot(undefined, { title: 'ccfzf', bounds: bounds(500, 500), now: 1 }) } };
+    const shell = [{ id: 1, title: 'x@y: ~', bounds: bounds(0, 0) }];
+    const session = [{ id: 1, title: 'ccfzf', bounds: bounds(0, 0) }];
+    const out = run([shell, shell, session, session], { state });
+    expect(out.nextState.slots.a1.bounds).toEqual(bounds(500, 500));
+  });
+
+  it('leaves the window alone when the title is not a session', () => {
+    const w = [{ id: 1, title: 'popstas@pc-virt: ~/projects', bounds: bounds(10, 20) }];
+    const out = run([w, w]);
+    expect(out.actions).toEqual([]);
+    expect(out.nextState.slots).toEqual({});
+  });
+
+  it('does not touch either window when two of them show the same title', () => {
+    const w = [
+      { id: 1, title: 'ccfzf', bounds: bounds(10, 20) },
+      { id: 2, title: 'ccfzf', bounds: bounds(30, 40) },
+    ];
+    const out = run([w, w]);
+    expect(out.actions).toEqual([]);
+    expect(out.nextState.slots).toEqual({});
+  });
+
+  it('refuses to bind an ambiguous title', () => {
+    const w = [{ id: 1, title: 'ccfzf', bounds: bounds(10, 20) }];
+    const ambiguous = { ccfzf: { id: 'a1', cwd: '/p', title: 'ccfzf', ambiguous: true } };
+    const out = run([w, w], { sessionIndex: ambiguous });
+    expect(out.nextState.slots).toEqual({});
+  });
+
+  it('never records a minimized window', () => {
+    const w = [{ id: 1, title: 'ccfzf', bounds: { x: -32000, y: -32000, width: 800, height: 600 } }];
+    const out = run([w, w]);
+    expect(out.nextState.slots).toEqual({});
+  });
+
+  it('keeps the slot but clears the layout when the window disappears', () => {
+    const w = [{ id: 1, title: 'ccfzf', bounds: bounds(10, 20) }];
+    const out = run([w, w, []]);
+    expect(out.nextState.slots.a1.bounds).toEqual(bounds(10, 20));
+    expect(out.nextState.lastLayout).toEqual([]);
+  });
+
+  it('lists the sessions on screen in lastLayout', () => {
+    const two = {
+      ccfzf: { id: 'a1', cwd: '/p', title: 'ccfzf', ambiguous: false },
+      home: { id: 'b2', cwd: '/q', title: 'home', ambiguous: false },
+    };
+    const w = [
+      { id: 1, title: 'ccfzf', bounds: bounds(10, 20) },
+      { id: 2, title: 'home', bounds: bounds(30, 40) },
+    ];
+    const out = run([w, w], { sessionIndex: two });
+    expect(out.nextState.lastLayout.sort()).toEqual(['a1', 'b2']);
+  });
+
+  it('stamps updated with the current time in seconds', () => {
+    const w = [{ id: 1, title: 'ccfzf', bounds: bounds(10, 20) }];
+    const out = run([w, w]);
+    expect(out.nextState.updated).toBe(2);
+  });
+});
