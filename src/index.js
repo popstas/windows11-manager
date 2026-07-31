@@ -145,9 +145,13 @@ async function start() {
   claudeWt
     .command('restore')
     .option('--force', 'restore only the sessions that are missing, even if others are open')
+    .option('--session <id...>', 'restore these session ids instead of the last layout')
     .action(async (options) => {
       const mod = await import('./claude-wt/restore.js');
-      const { skipped } = await mod.restoreClaudeSessions({ force: options.force });
+      const { skipped } = await mod.restoreClaudeSessions({
+        force: options.force,
+        sessionIds: options.session,
+      });
       process.exit(skipped.length ? 1 : 0);
     });
 

@@ -52,7 +52,7 @@ function startHttpServer(port = 9722) {
           // Imported lazily: claude-wt pulls in the whole tracker, and the HTTP
           // server is also started on machines that do not use it.
           const { restoreClaudeSessions } = await import('./claude-wt/restore.js');
-          const result = await restoreClaudeSessions({ force: Boolean(body.force) });
+          const result = await restoreClaudeSessions({ force: Boolean(body.force), sessionIds: body.sessionIds });
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: true, ...result }));
           return;

@@ -50,7 +50,7 @@ function connect() {
         case 'claude-wt-restore': {
           const restorePayload = typeof payload === 'string' ? JSON.parse(payload || '{}') : (payload ?? {});
           const { restoreClaudeSessions } = await import('./claude-wt/restore.js');
-          const result = await restoreClaudeSessions({ force: Boolean(restorePayload.force) });
+          const result = await restoreClaudeSessions({ force: Boolean(restorePayload.force), sessionIds: restorePayload.sessionIds });
           console.log(`WS claude-wt-restore completed: ${JSON.stringify(result)}`);
           break;
         }

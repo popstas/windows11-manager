@@ -9,7 +9,7 @@ import { loadSessionIndex } from './sessions.js';
 import { resolveSession } from './tracker-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
-import { bootTimeSec, detectCrash, planRestore, partitionPlan } from './restore-helpers.js';
+import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds } from './restore-helpers.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -49,10 +49,12 @@ async function waitForNewWindow(knownIds, timeoutMs, pollMs = 500) {
  * windows popping up at once cannot be told apart, and identifying them by
  * title is not an option either — the title has not settled yet at that point.
  */
-async function restoreClaudeSessions({ force = false } = {}) {
+async function restoreClaudeSessions({ force = false, sessionIds } = {}) {
   const cfg = getClaudeWtConfig();
   const state = readState(cfg.statePath);
-  const fullPlan = planRestore({ state, launch: cfg.launch });
+  const { unknown } = resolveRestoreIds({ state, sessionIds });
+  for (const id of unknown) console.error(`[claude-wt] no remembered slot for session ${id}`);
+  const fullPlan = planRestore({ state, launch: cfg.launch, sessionIds });
   const restored = [];
   const skipped = [];
   if (!fullPlan.length) {

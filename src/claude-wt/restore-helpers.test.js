@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bootTimeSec, detectCrash, planRestore, partitionPlan } from './restore-helpers.js';
+import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds } from './restore-helpers.js';
 
 const bounds = { x: 10, y: 20, width: 800, height: 600 };
 const slot = (over = {}) => ({ titles: ['ccfzf'], cwd: '/p', bounds, desktop: 2, lastSeen: 500, ...over });
@@ -98,5 +98,31 @@ describe('partitionPlan', () => {
 
   it('treats a missing set as nothing being open', () => {
     expect(partitionPlan(plan, undefined).missing).toHaveLength(3);
+  });
+});
+
+describe('resolveRestoreIds', () => {
+  const twoSlots = state({ slots: { a1: slot(), b2: slot() }, lastLayout: ['a1'] });
+
+  it('falls back to the last layout when no ids are given', () => {
+    expect(resolveRestoreIds({ state: twoSlots })).toEqual({ ids: ['a1'], unknown: [] });
+  });
+
+  it('takes the ids it was given over the last layout', () => {
+    // Живой демон переписывает lastLayout каждый тик, так что сессии, умершие
+    // по одной, из него выпадают, хотя слоты остаются. Явные id — дорога назад.
+    expect(resolveRestoreIds({ state: twoSlots, sessionIds: ['b2'] }).ids).toEqual(['b2']);
+  });
+
+  it('reports ids it has no slot for instead of dropping them', () => {
+    const out = resolveRestoreIds({ state: twoSlots, sessionIds: ['b2', 'nope'] });
+    expect(out.ids).toEqual(['b2']);
+    expect(out.unknown).toEqual(['nope']);
+  });
+
+  it('plans from explicit ids', () => {
+    const launch = { command: 'wt.exe', args: ['--session {id}'] };
+    const plan = planRestore({ state: twoSlots, launch, sessionIds: ['b2'] });
+    expect(plan.map(i => i.sessionId)).toEqual(['b2']);
   });
 });

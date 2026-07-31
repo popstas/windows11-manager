@@ -17,8 +17,26 @@ function detectCrash({ state, bootTimeSec: boot, windowCount }) {
   return state.updated < boot;
 }
 
-function planRestore({ state, launch }) {
-  return (state.lastLayout ?? [])
+/**
+ * Which sessions a restore should cover.
+ *
+ * `lastLayout` is the right default — it is the set that was on screen when
+ * the machine went down. It is not always usable, though: a daemon that is
+ * still alive rewrites it on every tick, so sessions that died one at a time
+ * drop out of it while their slots remain. Explicit ids are the way back to
+ * those, and unknown ids are reported rather than silently dropped.
+ */
+function resolveRestoreIds({ state, sessionIds }) {
+  if (!sessionIds?.length) return { ids: state.lastLayout ?? [], unknown: [] };
+  const known = state.slots ?? {};
+  return {
+    ids: sessionIds.filter(id => known[id]),
+    unknown: sessionIds.filter(id => !known[id]),
+  };
+}
+
+function planRestore({ state, launch, sessionIds }) {
+  return (resolveRestoreIds({ state, sessionIds }).ids)
     .map(sessionId => ({ sessionId, slot: state.slots?.[sessionId] }))
     .filter(({ slot }) => Boolean(slot))
     .map(({ sessionId, slot }) => ({
@@ -46,4 +64,4 @@ function partitionPlan(plan, openSessionIds) {
   };
 }
 
-export { bootTimeSec, detectCrash, planRestore, partitionPlan };
+export { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds };
