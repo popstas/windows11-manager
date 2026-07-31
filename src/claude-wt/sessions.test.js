@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { loadSessionIndex } from './sessions.js';
 
 // loadSessionIndex keeps its cache at module scope, keyed by path. Every test
@@ -97,5 +97,41 @@ describe('loadSessionIndex', () => {
     writeDump(cached, dumpWith('ccfzf'), T0);
     loadSessionIndex(cached);
     expect(loadSessionIndex(path.join(dir, 'other.json'))).toEqual({});
+  });
+});
+
+describe('warning throttle', () => {
+  // Свежая копия модуля: lastWarnedAt живёт в области модуля, и предупреждения
+  // из тестов выше уже израсходовали бы первое окно.
+  async function freshModule() {
+    vi.resetModules();
+    return (await import('./sessions.js')).loadSessionIndex;
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('warns once per five minutes, not once per tick', async () => {
+    const load = await freshModule();
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const missing = path.join(dir, 'never-mounted.json');
+    // Демон тикает раз в секунду по сетевому пути: отвалившийся V: без троттла
+    // превращается в поток одинаковых строк в логе.
+    load(missing);
+    load(missing);
+    load(missing);
+    expect(errors).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns again after the interval has passed', async () => {
+    const load = await freshModule();
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const missing = path.join(dir, 'never-mounted.json');
+    const base = Date.now();
+    load(missing);
+    vi.spyOn(Date, 'now').mockReturnValue(base + 6 * 60 * 1000);
+    load(missing);
+    expect(errors).toHaveBeenCalledTimes(2);
   });
 });
