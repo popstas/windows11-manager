@@ -162,3 +162,34 @@ describe('applyMonitorGaps', () => {
     expect(pos).toEqual({ x: 0, y: 0, width: 960, height: 540 });
   });
 });
+
+import { clampBoundsToMonitors } from './geometry.js';
+
+describe('clampBoundsToMonitors', () => {
+  const mons = [{ bounds: { x: 0, y: 0, width: 1920, height: 1080 } }];
+
+  it('leaves bounds that fit on a monitor untouched', () => {
+    const b = { x: 100, y: 100, width: 800, height: 600 };
+    expect(clampBoundsToMonitors(b, mons)).toEqual(b);
+  });
+
+  it('pulls a window back from a monitor that is gone', () => {
+    const b = { x: 3000, y: 200, width: 800, height: 600 };
+    expect(clampBoundsToMonitors(b, mons)).toEqual({ x: 1120, y: 200, width: 800, height: 600 });
+  });
+
+  it('pulls a window back from negative coordinates', () => {
+    const b = { x: -2000, y: -500, width: 800, height: 600 };
+    expect(clampBoundsToMonitors(b, mons)).toEqual({ x: 0, y: 0, width: 800, height: 600 });
+  });
+
+  it('shrinks a window wider than every monitor', () => {
+    const b = { x: 0, y: 0, width: 4000, height: 600 };
+    expect(clampBoundsToMonitors(b, mons)).toEqual({ x: 0, y: 0, width: 1920, height: 600 });
+  });
+
+  it('keeps bounds as-is when the monitor list is empty', () => {
+    const b = { x: 3000, y: 200, width: 800, height: 600 };
+    expect(clampBoundsToMonitors(b, [])).toEqual(b);
+  });
+});

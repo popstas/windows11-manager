@@ -94,4 +94,30 @@ function isBoundsMatch(oldPos, newPos) {
   return true;
 }
 
-export { getGapBounds, getGapOverlap, isBoundsMatch, applyMonitorsOffset, applyMonitorGaps };
+function boundsOverlap(a, b) {
+  const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+  const h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
+/**
+ * Keep a remembered position reachable. If the monitor it was saved on is
+ * gone, pull the window onto the monitor it overlaps most (the first one when
+ * it overlaps nothing) instead of leaving it off-screen.
+ */
+function clampBoundsToMonitors(bounds, monitors) {
+  if (!monitors?.length) return bounds;
+  const best = monitors.reduce((acc, mon) =>
+    boundsOverlap(bounds, mon.bounds) > boundsOverlap(bounds, acc.bounds) ? mon : acc, monitors[0]);
+  const area = best.bounds;
+  const width = Math.min(bounds.width, area.width);
+  const height = Math.min(bounds.height, area.height);
+  return {
+    x: Math.max(area.x, Math.min(bounds.x, area.x + area.width - width)),
+    y: Math.max(area.y, Math.min(bounds.y, area.y + area.height - height)),
+    width,
+    height,
+  };
+}
+
+export { getGapBounds, getGapOverlap, isBoundsMatch, applyMonitorsOffset, applyMonitorGaps, clampBoundsToMonitors };
