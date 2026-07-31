@@ -47,6 +47,13 @@ function connect() {
           console.log(`WS desktop switch to ${desktopPayload.number}`);
           break;
         }
+        case 'claude-wt-restore': {
+          const restorePayload = typeof payload === 'string' ? JSON.parse(payload || '{}') : (payload ?? {});
+          const { restoreClaudeSessions } = await import('./claude-wt/restore.js');
+          const result = await restoreClaudeSessions({ force: Boolean(restorePayload.force) });
+          console.log(`WS claude-wt-restore completed: ${JSON.stringify(result)}`);
+          break;
+        }
         default:
           console.log(`WS unknown command: ${command}`);
       }

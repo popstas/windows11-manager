@@ -31,4 +31,19 @@ function planRestore({ state, launch }) {
     }));
 }
 
-export { bootTimeSec, detectCrash, planRestore };
+/**
+ * Split a restore plan by what is already on screen.
+ *
+ * Restoring is only meaningful when the sessions really are gone: relaunching
+ * a session that is sitting right there would give the user a second window
+ * onto the same transcript.
+ */
+function partitionPlan(plan, openSessionIds) {
+  const open = openSessionIds ?? new Set();
+  return {
+    alreadyOpen: plan.filter(item => open.has(item.sessionId)),
+    missing: plan.filter(item => !open.has(item.sessionId)),
+  };
+}
+
+export { bootTimeSec, detectCrash, planRestore, partitionPlan };

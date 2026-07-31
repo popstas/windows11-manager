@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bootTimeSec, detectCrash, planRestore } from './restore-helpers.js';
+import { bootTimeSec, detectCrash, planRestore, partitionPlan } from './restore-helpers.js';
 
 const bounds = { x: 10, y: 20, width: 800, height: 600 };
 const slot = (over = {}) => ({ titles: ['ccfzf'], cwd: '/p', bounds, desktop: 2, lastSeen: 500, ...over });
@@ -75,5 +75,28 @@ describe('planRestore', () => {
     expect(planRestore({ state: state(), launch: repeatingLaunch })[0].args).toEqual([
       '--session a1 --title a1',
     ]);
+  });
+});
+
+describe('partitionPlan', () => {
+  const item = id => ({ sessionId: id, title: id, command: 'wt.exe', args: [], bounds, desktop: 1 });
+  const plan = [item('a1'), item('b2'), item('c3')];
+
+  it('reports everything as missing when nothing is on screen', () => {
+    const { alreadyOpen, missing } = partitionPlan(plan, new Set());
+    expect(alreadyOpen).toEqual([]);
+    expect(missing).toHaveLength(3);
+  });
+
+  it('separates the sessions that are still open', () => {
+    // Перезапустить сессию, окно которой стоит прямо здесь, значило бы отдать
+    // пользователю второе окно на тот же транскрипт.
+    const { alreadyOpen, missing } = partitionPlan(plan, new Set(['b2']));
+    expect(alreadyOpen.map(i => i.sessionId)).toEqual(['b2']);
+    expect(missing.map(i => i.sessionId)).toEqual(['a1', 'c3']);
+  });
+
+  it('treats a missing set as nothing being open', () => {
+    expect(partitionPlan(plan, undefined).missing).toHaveLength(3);
   });
 });

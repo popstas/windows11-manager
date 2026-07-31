@@ -48,6 +48,21 @@ function startHttpServer(port = 9722) {
         case '/desktop':
           virtualDesktop.GoToDesktopNumber(body.number - 1);
           break;
+        case '/claude-wt/restore': {
+          // Imported lazily: claude-wt pulls in the whole tracker, and the HTTP
+          // server is also started on machines that do not use it.
+          const { restoreClaudeSessions } = await import('./claude-wt/restore.js');
+          const result = await restoreClaudeSessions({ force: Boolean(body.force) });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, ...result }));
+          return;
+        }
+        case '/claude-wt/status': {
+          const { claudeWtStatus } = await import('./claude-wt/index.js');
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(claudeWtStatus()));
+          return;
+        }
         default:
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Not found' }));

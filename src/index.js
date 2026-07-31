@@ -142,11 +142,14 @@ async function start() {
     process.exit(0);
   });
 
-  claudeWt.command('restore').action(async () => {
-    const mod = await import('./claude-wt/restore.js');
-    await mod.restoreClaudeSessions();
-    process.exit(0);
-  });
+  claudeWt
+    .command('restore')
+    .option('--force', 'restore only the sessions that are missing, even if others are open')
+    .action(async (options) => {
+      const mod = await import('./claude-wt/restore.js');
+      const { skipped } = await mod.restoreClaudeSessions({ force: options.force });
+      process.exit(skipped.length ? 1 : 0);
+    });
 
   claudeWt.command('clear').action(async () => {
     const mod = await import('./claude-wt/index.js');
