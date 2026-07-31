@@ -32,6 +32,13 @@
 
 
 
+## [2.1.0](https://github.com/popstas/windows11-manager/compare/windows11-manager-v2.0.1...windows11-manager-v2.1.0) (2026-07-31)
+
+
+### Features
+
+* **claude-wt:** позиционная память окон Claude Code ([#13](https://github.com/popstas/windows11-manager/issues/13)) ([20a8427](https://github.com/popstas/windows11-manager/commit/20a8427f573240a7125fbebe040649d3d0d0de00))
+
 ## [2.0.1](https://github.com/popstas/windows11-manager/compare/windows11-manager-v2.0.0...windows11-manager-v2.0.1) (2026-07-31)
 
 
