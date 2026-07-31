@@ -12,7 +12,8 @@ Project is dirty and will not work out of the box.
 - Store/restore opened windows
 - Set wallpapers by virtual desktop
 - Opened windows stats
-- Command line: place, store, restore, stats
+- Remember and restore window position per Claude Code session (claude-wt)
+- Command line: place, store, restore, stats, claude-wt
 
 Based on [MScholtes/VirtualDesktop CLI tool](https://github.com/MScholtes/VirtualDesktop).
 

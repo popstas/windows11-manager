@@ -83,6 +83,8 @@ mod tests {
 struct AppState {
     autoplacer_running: bool,
     autoplacer_child: Option<tauri_plugin_shell::process::CommandChild>,
+    claude_wt_running: bool,
+    claude_wt_child: Option<tauri_plugin_shell::process::CommandChild>,
     mqtt_running: bool,
     mqtt_handle: Option<mqtt::MqttHandle>,
     ws_handle: Option<ws_server::WsServerHandle>,
@@ -426,6 +428,43 @@ fn toggle_autoplacer(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>)
     let _ = app.emit("autoplacer-toggled", app_state.autoplacer_running);
 }
 
+fn toggle_claude_wt(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
+    let project_path = get_project_path(app);
+    if project_path.is_empty() {
+        warn!("Project path not configured, opening settings");
+        open_settings_window(app);
+        return;
+    }
+
+    let mut app_state = state.lock().unwrap();
+
+    if app_state.claude_wt_running {
+        if let Some(child) = app_state.claude_wt_child.take() {
+            let _ = child.kill();
+        }
+        app_state.claude_wt_running = false;
+        info!("claude-wt stopped");
+    } else {
+        let shell = app.shell();
+        let result = shell
+            .command("node")
+            .args(["src/index.js", "claude-wt", "watch"])
+            .current_dir(&project_path)
+            .spawn();
+
+        match result {
+            Ok((_rx, child)) => {
+                app_state.claude_wt_child = Some(child);
+                app_state.claude_wt_running = true;
+                info!("claude-wt started");
+            }
+            Err(e) => error!("Failed to start claude-wt: {}", e),
+        }
+    }
+
+    let _ = app.emit("claude-wt-toggled", app_state.claude_wt_running);
+}
+
 fn start_mqtt_service(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
     let settings = load_settings_from_store(app);
     if settings.mqtt_host.is_empty() || settings.mqtt_topic.is_empty() {
@@ -558,6 +597,8 @@ pub fn run() {
         .manage(Mutex::new(AppState {
             autoplacer_running: false,
             autoplacer_child: None,
+            claude_wt_running: false,
+            claude_wt_child: None,
             mqtt_running: false,
             mqtt_handle: None,
             ws_handle: None,
@@ -586,6 +627,15 @@ pub fn run() {
             let sep0 = PredefinedMenuItem::separator(app)?;
             let auto_i =
                 MenuItem::with_id(app, "autoplacer", "Start Autoplacer", true, None::<&str>)?;
+            let claude_wt_i =
+                MenuItem::with_id(app, "claude_wt", "Start claude-wt", true, None::<&str>)?;
+            let claude_wt_restore_i = MenuItem::with_id(
+                app,
+                "claude_wt_restore",
+                "Restore claude sessions",
+                true,
+                None::<&str>,
+            )?;
             let sep1 = PredefinedMenuItem::separator(app)?;
             let mqtt_status_i =
                 MenuItem::with_id(app, "mqtt_status", "MQTT: Off", false, None::<&str>)?;
@@ -623,6 +673,8 @@ pub fn run() {
                     &open_default_i,
                     &sep0,
                     &auto_i,
+                    &claude_wt_i,
+                    &claude_wt_restore_i,
                     &sep1,
                     &mqtt_status_i,
                     &mqtt_toggle_i,
@@ -700,6 +752,25 @@ pub fn run() {
                             "Start Autoplacer"
                         };
                         let _ = auto_i.set_text(text);
+                    }
+                    "claude_wt" => {
+                        let state = app.state::<Mutex<AppState>>();
+                        toggle_claude_wt(app, &state);
+
+                        let running = state.lock().unwrap().claude_wt_running;
+                        let text = if running {
+                            "Stop claude-wt"
+                        } else {
+                            "Start claude-wt"
+                        };
+                        let _ = claude_wt_i.set_text(text);
+                    }
+                    "claude_wt_restore" => {
+                        run_node_command(
+                            app,
+                            &["src/index.js", "claude-wt", "restore"],
+                            "claude-wt restore",
+                        );
                     }
                     "mqtt_toggle" => {
                         let state = app.state::<Mutex<AppState>>();
@@ -879,6 +950,9 @@ pub fn run() {
                         let state = app.state::<Mutex<AppState>>();
                         let mut s = state.lock().unwrap();
                         if let Some(child) = s.autoplacer_child.take() {
+                            let _ = child.kill();
+                        }
+                        if let Some(child) = s.claude_wt_child.take() {
                             let _ = child.kill();
                         }
                         stop_mqtt_state(&mut s);
