@@ -9,7 +9,7 @@ const CLAUDE_WT_DEFAULTS = {
   desktop: true,
   debug: false,
   launch: { command: 'wt.exe', args: [] },
-  restore: { auto: false, windowTimeoutMs: 30000 },
+  restore: { auto: false, windowTimeoutMs: 30000, launchDelayMs: 2000, settleMs: 500 },
 };
 
 /** Deep-ish merge: launch and restore are merged key by key, everything else replaced. */

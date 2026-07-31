@@ -128,7 +128,7 @@ module.exports = {
       args: ['-w', '-1', '-p', 'popstas', 'ssh', '-A', 'popstas@pc-virt.popstas.pro',
              '-t', 'ccfzf --session {id} --kiosk'],
     },
-    restore: { auto: false, windowTimeoutMs: 30000 },
+    restore: { auto: false, windowTimeoutMs: 30000, launchDelayMs: 2000, settleMs: 500 },
   },
 
   // backup positions for FancyZones

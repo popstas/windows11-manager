@@ -77,7 +77,14 @@ async function restoreClaudeSessions({ force = false } = {}) {
   }
   console.log(`[claude-wt] restoring ${plan.length} session(s)`);
   const monitors = getWindowsMonitors();
+  let first = true;
   for (const item of plan) {
+    // Пауза между запусками. Windows Terminal открывает окно асинхронно, и
+    // окна, запрошенные подряд, всплывают пачкой: «новое окно» перестаёт
+    // однозначно означать «окно этой сессии», позиции разъезжаются по чужим
+    // сессиям, а часть окон остаётся пустой.
+    if (!first) await sleep(cfg.restore.launchDelayMs);
+    first = false;
     const knownIds = new Set(terminalWindows().map(w => w.id));
     console.log(`[claude-wt] restoring ${item.title} (${item.sessionId})`);
     try {
@@ -93,6 +100,9 @@ async function restoreClaudeSessions({ force = false } = {}) {
       skipped.push(item.sessionId);
       continue;
     }
+    // Окно уже есть, но Windows Terminal ещё доводит его до нужного размера;
+    // позиция, выставленная в этот момент, тут же затирается.
+    await sleep(cfg.restore.settleMs);
     const bounds = clampBoundsToMonitors(item.bounds, monitors);
     const rule = { window: win.id, ...bounds };
     if (cfg.desktop && item.desktop) rule.desktop = item.desktop;

@@ -27,7 +27,9 @@ describe('mergeClaudeWtConfig', () => {
       restore: { windowTimeoutMs: 5000 },
     });
     expect(cfg.launch).toEqual({ command: 'wt.exe', args: ['-w', '-1'] });
-    expect(cfg.restore).toEqual({ auto: false, windowTimeoutMs: 5000 });
+    expect(cfg.restore).toEqual({
+      auto: false, windowTimeoutMs: 5000, launchDelayMs: 2000, settleMs: 500,
+    });
   });
 
   it('does not leak edits back into the defaults', () => {
