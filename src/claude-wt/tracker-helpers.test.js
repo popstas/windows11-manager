@@ -219,11 +219,28 @@ describe('step with monitors', () => {
 
   it('recognises arrival at the clamped position, so the guard releases', () => {
     // Окно доехало ровно туда, куда просили после зажатия. Если бы pendingMove
-    // сторожил незажатые 2100, приезд не был бы распознан и слот застрял бы
-    // на старом значении до самого таймаута.
+    // сторожил незажатые 2100, приезд не был бы распознан и сторож висел бы
+    // до самого таймаута.
     const arrived = [{ id: 1, title: 'ccfzf', bounds: bounds(1120, 200) }];
     const out = run([shell, shell, session, session, arrived], { state: offscreen(), monitors: oneMonitor });
-    expect(out.nextState.slots.a1.bounds).toEqual(bounds(1120, 200));
+    expect(out.nextWindows[0].pendingMove).toBe(null);
+    expect(out.nextState.slots.a1.lastSeen).toBe(out.nextState.updated);
+  });
+
+  it('keeps the original position when the window sits at the clamped one', () => {
+    // Позиция зажата, потому что монитор отключён, — это не выбор пользователя.
+    // Записать 1120 значило бы потерять 2100 навсегда: после подключения
+    // монитора окно осталось бы на главном экране.
+    const arrived = [{ id: 1, title: 'ccfzf', bounds: bounds(1120, 200) }];
+    const out = run([shell, shell, session, session, arrived, arrived], { state: offscreen(), monitors: oneMonitor });
+    expect(out.nextState.slots.a1.bounds).toEqual(bounds(2100, 200));
+  });
+
+  it('records the position when the user drags the window away from the clamped one', () => {
+    const arrived = [{ id: 1, title: 'ccfzf', bounds: bounds(1120, 200) }];
+    const dragged = [{ id: 1, title: 'ccfzf', bounds: bounds(300, 400) }];
+    const out = run([shell, shell, session, session, arrived, dragged], { state: offscreen(), monitors: oneMonitor });
+    expect(out.nextState.slots.a1.bounds).toEqual(bounds(300, 400));
   });
 
   it('behaves exactly as before when no monitors are passed', () => {

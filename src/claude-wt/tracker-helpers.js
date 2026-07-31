@@ -137,7 +137,18 @@ function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, o
           // bind exactly once — the same moment the titleChanged branch would
           // have bound it, had the window not been minimized at the time.
           const known = slots[tracked.sessionId];
-          slots[tracked.sessionId] = upsertSlot(known, { title: tracked.stableTitle, bounds: win.bounds, now: nowSec });
+          // Окно стоит ровно там, куда запомненная позиция ложится на текущие
+          // мониторы. Если её пришлось зажать (монитор отключён), записывать
+          // зажатое значение нельзя: исходные координаты пропали бы навсегда и
+          // после возврата монитора окно осталось бы на главном экране. Любая
+          // другая позиция — выбор пользователя, её и запоминаем.
+          const atRemembered = Boolean(known?.bounds)
+            && boundsEqual(win.bounds, clampBoundsToMonitors(known.bounds, monitors));
+          slots[tracked.sessionId] = upsertSlot(known, {
+            title: tracked.stableTitle,
+            ...(atRemembered ? {} : { bounds: win.bounds }),
+            now: nowSec,
+          });
           if (!known) bindings.push({ windowId: win.id, sessionId: tracked.sessionId });
         }
       }
