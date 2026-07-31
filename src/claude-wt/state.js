@@ -18,12 +18,24 @@ function readState(filePath) {
   }
 }
 
-/** Atomic: write a sibling temp file, then rename over the target. */
+/**
+ * Atomic: write a sibling temp file, fsync it, then rename over the target.
+ * The fsync is the point of the exercise — the rename is journaled but the
+ * data need not be, so without it a power loss can still leave a torn file,
+ * and a torn file costs us lastLayout, which is exactly what crash restore
+ * needs.
+ */
 function writeState(filePath, state) {
   if (!filePath) return;
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmp = `${filePath}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(state));
+  const fd = fs.openSync(tmp, 'w');
+  try {
+    fs.writeSync(fd, JSON.stringify(state));
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
   fs.renameSync(tmp, filePath);
 }
 

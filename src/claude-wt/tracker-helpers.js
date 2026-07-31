@@ -1,5 +1,6 @@
 /** Pure helper functions for the claude-wt tracker. No external I/O. */
 import { upsertSlot } from './state-helpers.js';
+import { clampBoundsToMonitors } from '../geometry.js';
 
 /**
  * Follow one window's title across ticks. A title becomes "stable" only after
@@ -60,8 +61,16 @@ function boundsEqual(a, b) {
  * `actions` are windows to move, `bindings` are windows whose virtual desktop
  * number should be read once (that call spawns VirtualDesktop11.exe, so it
  * must never happen on every tick).
+ *
+ * `monitors` (plain `[{ bounds }]` data, so this stays pure) is optional but
+ * should be passed by the daemon: the remembered rectangle is clamped onto the
+ * currently connected monitors *here*, so the bounds we ask for and the bounds
+ * the pendingMove guard waits for are the same rectangle. Clamping in the
+ * caller instead would leave the guard waiting for a position the window can
+ * never reach, and the timeout would then record the clamped position as if
+ * the user had chosen it — destroying the original.
  */
-function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, options = {} }) {
+function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, options = {}, monitors = [] }) {
   const { stableTicks, moveTimeoutMs, minimizedX } = { ...DEFAULTS, ...options };
   // `now` stays in ms because pendingMove.since/moveTimeoutMs need that resolution;
   // everything persisted to state (lastSeen, updated) is stamped in epoch seconds.
@@ -90,8 +99,20 @@ function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, o
         const common = { title: tracked.stableTitle, cwd: resolved.cwd, now: nowSec };
         if (known?.bounds) {
           slots[tracked.sessionId] = upsertSlot(known, common);
-          actions.push({ windowId: win.id, bounds: known.bounds, desktop: known.desktop });
-          tracked.pendingMove = { bounds: known.bounds, since: now };
+          const target = clampBoundsToMonitors(known.bounds, monitors);
+          // Уже стоит там, где нужно — не дёргаем окно. Иначе перезапуск демона
+          // (пустой prevWindows) тащил бы каждое открытое окно, включая протаскивание
+          // между виртуальными столами через action.desktop.
+          if (!boundsEqual(win.bounds, target)) {
+            actions.push({ windowId: win.id, bounds: target, desktop: known.desktop });
+            tracked.pendingMove = { bounds: target, since: now };
+          }
+          // Слот с bounds, но без номера рабочего стола (одна неудачная попытка
+          // прочитать его, или файл состояния старого формата) иначе никогда бы
+          // не получил второго шанса: bindings пушились только при создании слота.
+          if (known.desktop == null && !minimized) {
+            bindings.push({ windowId: win.id, sessionId: tracked.sessionId });
+          }
         } else if (!minimized) {
           // Слот заводится только вместе с позицией: слот без bounds бесполезен
           // и был бы всё равно выброшен normalizeState при следующем чтении.
@@ -100,12 +121,16 @@ function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, o
         }
       }
     } else if (tracked.sessionId) {
-      const settled = !tracked.pendingMove
-        || boundsEqual(win.bounds, tracked.pendingMove.bounds)
-        || now - tracked.pendingMove.since > moveTimeoutMs;
+      const arrived = Boolean(tracked.pendingMove) && boundsEqual(win.bounds, tracked.pendingMove.bounds);
+      const timedOut = Boolean(tracked.pendingMove) && !arrived && now - tracked.pendingMove.since > moveTimeoutMs;
+      const settled = !tracked.pendingMove || arrived || timedOut;
       if (settled) {
         tracked.pendingMove = null;
-        if (!minimized) {
+        // Истёк таймаут — окно так и не доехало. Позиция, на которой оно сейчас
+        // стоит, выбрана не пользователем, а неудавшимся переносом: записать её
+        // значило бы затереть запомненную. Пропускаем этот тик, со следующего
+        // запись возобновляется как обычно.
+        if (!minimized && !timedOut) {
           // A session first seen while minimized reaches here with no slot yet
           // (the titleChanged branch above deliberately skipped creating one).
           // Carry the title along so the slot isn't created identity-less, and
@@ -118,7 +143,9 @@ function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, o
       }
     }
 
-    if (tracked.sessionId) lastLayout.push(tracked.sessionId);
+    // Два окна могут разрешиться в один слот через историю заголовков; planRestore
+    // читает lastLayout один-к-одному и запустил бы такую сессию дважды.
+    if (tracked.sessionId && !lastLayout.includes(tracked.sessionId)) lastLayout.push(tracked.sessionId);
     nextWindows.push(tracked);
   }
 

@@ -76,11 +76,11 @@ const bounds = (x, y) => ({ x, y, width: 800, height: 600 });
 const index = { ccfzf: { id: 'a1', cwd: '/p', title: 'ccfzf', ambiguous: false } };
 
 // Прогоняет тики, пока заголовок не станет стабильным, и отдаёт последний результат.
-function run(ticks, { state = emptyState(), sessionIndex = index } = {}) {
+function run(ticks, { state = emptyState(), sessionIndex = index, options, monitors } = {}) {
   let prevWindows = [];
   let out = { nextWindows: [], actions: [], bindings: [], nextState: state };
   ticks.forEach((windows, i) => {
-    out = step({ prevWindows, windows, sessionIndex, state: out.nextState, now: 1000 + i * 1000 });
+    out = step({ prevWindows, windows, sessionIndex, state: out.nextState, now: 1000 + i * 1000, options, monitors });
     prevWindows = out.nextWindows;
   });
   return out;
@@ -191,5 +191,147 @@ describe('step', () => {
     const w = [{ id: 1, title: 'ccfzf', bounds: bounds(10, 20) }];
     const out = run([w, w]);
     expect(out.nextState.slots.a1.lastSeen).toBe(out.nextState.updated);
+  });
+});
+
+describe('step with monitors', () => {
+  // Слот помнит позицию на втором мониторе, которого сейчас нет.
+  const offscreen = () => ({
+    ...emptyState(),
+    slots: { a1: upsertSlot(undefined, { title: 'ccfzf', bounds: bounds(2100, 200), desktop: 2, now: 1 }) },
+  });
+  const oneMonitor = [{ bounds: { x: 0, y: 0, width: 1920, height: 1080 } }];
+  const shell = [{ id: 1, title: 'x@y: ~', bounds: bounds(0, 0) }];
+  const session = [{ id: 1, title: 'ccfzf', bounds: bounds(0, 0) }];
+
+  it('asks for the clamped rectangle, not the off-screen remembered one', () => {
+    const out = run([shell, shell, session, session], { state: offscreen(), monitors: oneMonitor });
+    // 2100 не влезает в 1920 — демон всё равно зажал бы это сам, но тогда окно
+    // никогда не доехало бы до запрошенной позиции.
+    expect(out.actions).toEqual([{ windowId: 1, bounds: bounds(1120, 200), desktop: 2 }]);
+  });
+
+  it('keeps the remembered position while the clamped move is in flight', () => {
+    // Тик 5: action отправлен на тике 4, окно ещё стоит на (0,0).
+    const out = run([shell, shell, session, session, session], { state: offscreen(), monitors: oneMonitor });
+    expect(out.nextState.slots.a1.bounds).toEqual(bounds(2100, 200));
+  });
+
+  it('recognises arrival at the clamped position, so the guard releases', () => {
+    // Окно доехало ровно туда, куда просили после зажатия. Если бы pendingMove
+    // сторожил незажатые 2100, приезд не был бы распознан и слот застрял бы
+    // на старом значении до самого таймаута.
+    const arrived = [{ id: 1, title: 'ccfzf', bounds: bounds(1120, 200) }];
+    const out = run([shell, shell, session, session, arrived], { state: offscreen(), monitors: oneMonitor });
+    expect(out.nextState.slots.a1.bounds).toEqual(bounds(1120, 200));
+  });
+
+  it('behaves exactly as before when no monitors are passed', () => {
+    const out = run([shell, shell, session, session], { state: offscreen() });
+    expect(out.actions).toEqual([{ windowId: 1, bounds: bounds(2100, 200), desktop: 2 }]);
+  });
+
+  it('behaves exactly as before when the monitor list is empty', () => {
+    const out = run([shell, shell, session, session], { state: offscreen(), monitors: [] });
+    expect(out.actions).toEqual([{ windowId: 1, bounds: bounds(2100, 200), desktop: 2 }]);
+  });
+});
+
+describe('step move timeout', () => {
+  const state = () => ({
+    ...emptyState(),
+    slots: { a1: upsertSlot(undefined, { title: 'ccfzf', bounds: bounds(500, 500), desktop: 2, now: 1 }) },
+  });
+  const shell = [{ id: 1, title: 'x@y: ~', bounds: bounds(0, 0) }];
+  const session = [{ id: 1, title: 'ccfzf', bounds: bounds(0, 0) }];
+  // Action уходит на тике 4 (now=4000); окно не двигается вообще — placeWindow
+  // упал, окно закрылось, что угодно. При moveTimeoutMs=1500 таймаут истекает
+  // на тике 6 (now=6000).
+  const stuck = [shell, shell, session, session, session, session];
+  const options = { moveTimeoutMs: 1500 };
+
+  it('does not record the un-moved position when the move times out', () => {
+    const out = run(stuck, { state: state(), options });
+    expect(out.nextState.slots.a1.bounds).toEqual(bounds(500, 500));
+  });
+
+  it('clears pendingMove when the move times out', () => {
+    const out = run(stuck, { state: state(), options });
+    expect(out.nextWindows[0].pendingMove).toBe(null);
+  });
+
+  it('resumes recording on the tick after the timeout', () => {
+    // Сторож снят — со следующего тика позиция окна снова считается выбором пользователя.
+    const out = run([...stuck, session], { state: state(), options });
+    expect(out.nextState.slots.a1.bounds).toEqual(bounds(0, 0));
+  });
+});
+
+describe('step desktop binding', () => {
+  const shell = [{ id: 1, title: 'x@y: ~', bounds: bounds(0, 0) }];
+  const session = [{ id: 1, title: 'ccfzf', bounds: bounds(0, 0) }];
+
+  it('asks again for the desktop number of a slot that has bounds but no desktop', () => {
+    // Одна неудачная попытка GetWindowDesktopNumber (или файл состояния,
+    // записанный до появления поля) иначе оставляла бы desktop: null навсегда.
+    const state = { ...emptyState(), slots: { a1: upsertSlot(undefined, { title: 'ccfzf', bounds: bounds(500, 500), now: 1 }) } };
+    expect(state.slots.a1.desktop).toBe(null);
+    const out = run([shell, shell, session, session], { state });
+    expect(out.bindings).toEqual([{ windowId: 1, sessionId: 'a1' }]);
+  });
+
+  it('does not re-read the desktop number of a slot that already has one', () => {
+    const state = { ...emptyState(), slots: { a1: upsertSlot(undefined, { title: 'ccfzf', bounds: bounds(500, 500), desktop: 2, now: 1 }) } };
+    const out = run([shell, shell, session, session], { state });
+    expect(out.bindings).toEqual([]);
+  });
+
+  it('does not ask for the desktop number of a minimized window', () => {
+    const state = { ...emptyState(), slots: { a1: upsertSlot(undefined, { title: 'ccfzf', bounds: bounds(500, 500), now: 1 }) } };
+    const minimized = [{ id: 1, title: 'ccfzf', bounds: { x: -32000, y: -32000, width: 800, height: 600 } }];
+    const out = run([shell, shell, minimized, minimized], { state });
+    expect(out.bindings).toEqual([]);
+  });
+});
+
+describe('step redundant moves', () => {
+  it('does not move a window that already sits at its remembered position', () => {
+    const state = { ...emptyState(), slots: { a1: upsertSlot(undefined, { title: 'старое имя', bounds: bounds(10, 20), desktop: 2, now: 1 }) } };
+    const shell = [{ id: 1, title: 'x@y: ~', bounds: bounds(10, 20) }];
+    const session = [{ id: 1, title: 'ccfzf', bounds: bounds(10, 20) }];
+    const out = run([shell, shell, session, session], { state });
+    // Иначе перезапуск демона (prevWindows пуст) дёргал бы каждое уже стоящее
+    // на месте окно, а вместе с desktop — таскал бы его между рабочими столами.
+    expect(out.actions).toEqual([]);
+    // Но привязка к сессии и обновление заголовка происходят как обычно.
+    expect(out.nextState.lastLayout).toEqual(['a1']);
+    expect(out.nextState.slots.a1.titles[0]).toBe('ccfzf');
+  });
+
+  it('still moves a window that sits somewhere else', () => {
+    const state = { ...emptyState(), slots: { a1: upsertSlot(undefined, { title: 'ccfzf', bounds: bounds(10, 20), desktop: 2, now: 1 }) } };
+    const shell = [{ id: 1, title: 'x@y: ~', bounds: bounds(700, 300) }];
+    const session = [{ id: 1, title: 'ccfzf', bounds: bounds(700, 300) }];
+    const out = run([shell, shell, session, session], { state });
+    expect(out.actions).toEqual([{ windowId: 1, bounds: bounds(10, 20), desktop: 2 }]);
+  });
+});
+
+describe('step lastLayout', () => {
+  it('lists a session once even when two windows resolve to it', () => {
+    // Слот помнит два заголовка; окно 1 показывает новый, окно 2 — старый.
+    // planRestore читает lastLayout один-к-одному и запустил бы сессию дважды.
+    const state = {
+      ...emptyState(),
+      slots: {
+        a1: { titles: ['ccfzf', 'ccfzf old'], cwd: '/p', bounds: bounds(10, 20), desktop: 2, lastSeen: 1 },
+      },
+    };
+    const w = [
+      { id: 1, title: 'ccfzf', bounds: bounds(10, 20) },
+      { id: 2, title: 'ccfzf old', bounds: bounds(10, 20) },
+    ];
+    const out = run([w, w], { state, sessionIndex: {} });
+    expect(out.nextState.lastLayout).toEqual(['a1']);
   });
 });

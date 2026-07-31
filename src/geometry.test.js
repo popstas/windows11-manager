@@ -236,6 +236,31 @@ describe('clampBoundsToMonitors', () => {
       expect(clampBoundsToMonitors(b, noOverlap)).toEqual({ x: 0, y: 0, width: 1000, height: 800 });
     });
 
+    it('skips the 1-based placeholder at index 0 instead of throwing on it', () => {
+      // getMons() returns a 1-based array with {} at index 0; reducing over it
+      // reads mon.bounds.x of undefined and kills the caller's whole tick.
+      const oneBased = [{}, { bounds: { x: 0, y: 0, width: 1920, height: 1080 } }];
+      const b = { x: 3000, y: 200, width: 800, height: 600 };
+      expect(() => clampBoundsToMonitors(b, oneBased)).not.toThrow();
+      // And the surviving monitor is actually used, not silently ignored.
+      expect(clampBoundsToMonitors(b, oneBased)).toEqual({ x: 1120, y: 200, width: 800, height: 600 });
+    });
+
+    it('skips a configured-but-detached monitor entry', () => {
+      // getMonitor() returns sorted[ind], which is undefined for a monitor that
+      // is in the config but not attached right now.
+      const detached = [{ bounds: { x: 0, y: 0, width: 1920, height: 1080 } }, undefined];
+      const b = { x: 100, y: 100, width: 800, height: 600 };
+      expect(() => clampBoundsToMonitors(b, detached)).not.toThrow();
+      expect(clampBoundsToMonitors(b, detached)).toEqual(b);
+    });
+
+    it('returns bounds unchanged when no entry has usable bounds', () => {
+      const b = { x: 3000, y: 200, width: 800, height: 600 };
+      // Nothing to clamp onto — leave the rectangle alone rather than inventing one.
+      expect(clampBoundsToMonitors(b, [{}, undefined, { bounds: null }])).toEqual(b);
+    });
+
     it('shrinks to the overlapping monitor\'s size, not another monitor\'s size', () => {
       const differentSizes = [
         { bounds: { x: 0, y: 0, width: 3840, height: 2160 } },

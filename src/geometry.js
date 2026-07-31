@@ -94,6 +94,10 @@ function isBoundsMatch(oldPos, newPos) {
   return true;
 }
 
+function hasBounds(b) {
+  return Boolean(b) && ['x', 'y', 'width', 'height'].every(k => Number.isFinite(b[k]));
+}
+
 function boundsOverlap(a, b) {
   const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
   const h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
@@ -104,11 +108,17 @@ function boundsOverlap(a, b) {
  * Keep a remembered position reachable. If the monitor it was saved on is
  * gone, pull the window onto the monitor it overlaps most (the first one when
  * it overlaps nothing) instead of leaving it off-screen.
+ *
+ * Entries without usable bounds are skipped, the same way findMonitorByPoint
+ * does: this project's monitor lists are 1-based with a placeholder {} at
+ * index 0, and a configured-but-detached monitor can be undefined. Reducing
+ * over those would throw and kill the caller's whole tick.
  */
 function clampBoundsToMonitors(bounds, monitors) {
-  if (!monitors?.length) return bounds;
-  const best = monitors.reduce((acc, mon) =>
-    boundsOverlap(bounds, mon.bounds) > boundsOverlap(bounds, acc.bounds) ? mon : acc, monitors[0]);
+  const usable = (monitors ?? []).filter(mon => hasBounds(mon?.bounds));
+  if (!usable.length) return bounds;
+  const best = usable.reduce((acc, mon) =>
+    boundsOverlap(bounds, mon.bounds) > boundsOverlap(bounds, acc.bounds) ? mon : acc, usable[0]);
   const area = best.bounds;
   const width = Math.min(bounds.width, area.width);
   const height = Math.min(bounds.height, area.height);
