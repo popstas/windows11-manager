@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getGapBounds, getGapOverlap, isBoundsMatch, applyMonitorsOffset, applyMonitorGaps } from './geometry.js';
+import { getGapBounds, getGapOverlap, isBoundsMatch, applyMonitorsOffset, applyMonitorGaps, clampBoundsToMonitors } from './geometry.js';
 
 const monBounds = { x: 0, y: 0, width: 1920, height: 1080 };
 
@@ -163,8 +163,6 @@ describe('applyMonitorGaps', () => {
   });
 });
 
-import { clampBoundsToMonitors } from './geometry.js';
-
 describe('clampBoundsToMonitors', () => {
   const mons = [{ bounds: { x: 0, y: 0, width: 1920, height: 1080 } }];
 
@@ -191,5 +189,62 @@ describe('clampBoundsToMonitors', () => {
   it('keeps bounds as-is when the monitor list is empty', () => {
     const b = { x: 3000, y: 200, width: 800, height: 600 };
     expect(clampBoundsToMonitors(b, [])).toEqual(b);
+  });
+
+  describe('multi-monitor selection', () => {
+    it('picks the monitor a fully-contained window overlaps, not monitors[0]', () => {
+      const twoAcross = [
+        { bounds: { x: 0, y: 0, width: 1920, height: 1080 } },
+        { bounds: { x: 1920, y: 0, width: 1920, height: 1080 } },
+      ];
+      // Fully inside the second monitor only — if the reduce picked monitors[0]
+      // instead of the overlapping one, this would get pulled back to x:1120.
+      const b = { x: 2000, y: 100, width: 800, height: 600 };
+      expect(clampBoundsToMonitors(b, twoAcross)).toEqual(b);
+    });
+
+    it('picks a negative-origin monitor over a positive-origin one listed first', () => {
+      const negativeSecond = [
+        { bounds: { x: 0, y: 0, width: 2560, height: 1440 } },
+        { bounds: { x: -1920, y: 0, width: 1920, height: 1080 } },
+      ];
+      // Fully inside the negative-origin monitor (index 1) — if the reduce
+      // stayed on monitors[0] (the primary), this would get pulled to x:0.
+      const b = { x: -1800, y: 100, width: 800, height: 600 };
+      expect(clampBoundsToMonitors(b, negativeSecond)).toEqual(b);
+    });
+
+    it('clamps a straddling window onto the monitor it overlaps more, not the other', () => {
+      const twoAcross = [
+        { bounds: { x: 0, y: 0, width: 1920, height: 1080 } },
+        { bounds: { x: 1920, y: 0, width: 1920, height: 1080 } },
+      ];
+      // x:1700..2100 — 220px sit on monitor 0, only 180px spill onto monitor 1,
+      // so monitor 0 has more overlap and should be the clamp target.
+      const b = { x: 1700, y: 100, width: 400, height: 300 };
+      expect(clampBoundsToMonitors(b, twoAcross)).toEqual({ x: 1520, y: 100, width: 400, height: 300 });
+    });
+
+    it('falls back to the first monitor when the window overlaps none of them', () => {
+      const noOverlap = [
+        { bounds: { x: 0, y: 0, width: 1920, height: 1080 } },
+        { bounds: { x: 6000, y: 6000, width: 800, height: 600 } },
+      ];
+      // Far from every monitor — falls back to monitors[0] (1920x1080), not the
+      // smaller second monitor, which would shrink the window differently.
+      const b = { x: -5000, y: -5000, width: 1000, height: 800 };
+      expect(clampBoundsToMonitors(b, noOverlap)).toEqual({ x: 0, y: 0, width: 1000, height: 800 });
+    });
+
+    it('shrinks to the overlapping monitor\'s size, not another monitor\'s size', () => {
+      const differentSizes = [
+        { bounds: { x: 0, y: 0, width: 3840, height: 2160 } },
+        { bounds: { x: 4000, y: 0, width: 1024, height: 768 } },
+      ];
+      // Overlaps only the small second monitor and is larger than it in both
+      // dimensions — must shrink to 1024x768, not to the big monitor's size.
+      const b = { x: 3900, y: 50, width: 1200, height: 900 };
+      expect(clampBoundsToMonitors(b, differentSizes)).toEqual({ x: 4000, y: 0, width: 1024, height: 768 });
+    });
   });
 });
