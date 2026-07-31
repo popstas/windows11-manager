@@ -114,6 +114,23 @@ module.exports = {
     ],
   },
 
+  // remember and restore the Windows Terminal window position per Claude Code session
+  claudeWt: {
+    enabled: true,
+    interval: 1000,
+    stableTicks: 2,
+    sessionsFile: 'V:\\.ccfzf.sessions.json',
+    statePath: 'C:\\Users\\popstas\\AppData\\Local\\windows11-manager\\claude-wt.json',
+    desktop: true, // return the window to its virtual desktop too
+    debug: false,  // log terminal titles that could not be matched to a session
+    launch: {
+      command: 'wt.exe',
+      args: ['-w', '-1', '-p', 'popstas', 'ssh', '-A', 'popstas@pc-virt.popstas.pro',
+             '-t', 'ccfzf --session {id} --kiosk'],
+    },
+    restore: { auto: false, windowTimeoutMs: 30000 },
+  },
+
   // backup positions for FancyZones
   positionsMap: [
     {

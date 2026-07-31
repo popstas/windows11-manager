@@ -1,0 +1,158 @@
+import { describe, it, expect } from 'vitest';
+import {
+  CLAUDE_WT_DEFAULTS,
+  mergeClaudeWtConfig,
+  isTerminalPath,
+  desktopOnlyActions,
+  layoutFingerprint,
+  unresolvedTitles,
+} from './daemon-helpers.js';
+
+describe('mergeClaudeWtConfig', () => {
+  it('returns the defaults for a missing block', () => {
+    expect(mergeClaudeWtConfig(undefined)).toEqual(CLAUDE_WT_DEFAULTS);
+    expect(mergeClaudeWtConfig(null)).toEqual(CLAUDE_WT_DEFAULTS);
+  });
+
+  it('overrides only the keys that were given', () => {
+    const cfg = mergeClaudeWtConfig({ interval: 2000 });
+    expect(cfg.interval).toBe(2000);
+    expect(cfg.stableTicks).toBe(CLAUDE_WT_DEFAULTS.stableTicks);
+  });
+
+  it('merges the nested launch and restore blocks instead of replacing them', () => {
+    // Задать один windowTimeoutMs, не продублировав auto, должно быть можно.
+    const cfg = mergeClaudeWtConfig({
+      launch: { args: ['-w', '-1'] },
+      restore: { windowTimeoutMs: 5000 },
+    });
+    expect(cfg.launch).toEqual({ command: 'wt.exe', args: ['-w', '-1'] });
+    expect(cfg.restore).toEqual({ auto: false, windowTimeoutMs: 5000 });
+  });
+
+  it('does not leak edits back into the defaults', () => {
+    mergeClaudeWtConfig({}).launch.args.push('mutated');
+    expect(CLAUDE_WT_DEFAULTS.launch.args).toEqual([]);
+  });
+});
+
+describe('isTerminalPath', () => {
+  it('matches Windows Terminal', () => {
+    expect(isTerminalPath('C:\\Program Files\\WindowsApps\\wt\\WindowsTerminal.exe')).toBe(true);
+    expect(isTerminalPath('c:/x/windowsterminal.exe')).toBe(true);
+  });
+
+  it('rejects anything else', () => {
+    expect(isTerminalPath('C:\\Windows\\explorer.exe')).toBe(false);
+    expect(isTerminalPath('C:\\x\\WindowsTerminalHelper.exe')).toBe(false);
+    expect(isTerminalPath('')).toBe(false);
+    expect(isTerminalPath(undefined)).toBe(false);
+  });
+});
+
+describe('desktopOnlyActions', () => {
+  const slots = { a1: { desktop: 2 }, b2: { desktop: null } };
+  const tracked = (over = {}) => ({ id: 1, sessionId: 'a1', ...over });
+
+  it('returns the desktop of a session entered in a window that needs no move', () => {
+    // step() подавляет action, когда координаты уже совпадают, и вместе с ним
+    // теряется номер стола: окно на месте, но на чужом столе, назад не вернётся.
+    const out = desktopOnlyActions({
+      prevWindows: [tracked({ sessionId: null })],
+      nextWindows: [tracked()],
+      slots,
+      actions: [],
+    });
+    expect(out).toEqual([{ windowId: 1, desktop: 2 }]);
+  });
+
+  it('stays out of the way when step already emitted a move for that window', () => {
+    const out = desktopOnlyActions({
+      prevWindows: [tracked({ sessionId: null })],
+      nextWindows: [tracked()],
+      slots,
+      actions: [{ windowId: 1, bounds: {}, desktop: 2 }],
+    });
+    expect(out).toEqual([]);
+  });
+
+  it('ignores a window that was already bound to the same session', () => {
+    const out = desktopOnlyActions({
+      prevWindows: [tracked()],
+      nextWindows: [tracked()],
+      slots,
+      actions: [],
+    });
+    expect(out).toEqual([]);
+  });
+
+  it('ignores windows the tracker saw for the first time this tick', () => {
+    // Перезапуск демона: prevWindows пуст, привязку сообщают разом все окна.
+    // Растащить их по рабочим столам — совсем не то, чего ждут от перезапуска.
+    const out = desktopOnlyActions({
+      prevWindows: [],
+      nextWindows: [tracked()],
+      slots,
+      actions: [],
+    });
+    expect(out).toEqual([]);
+  });
+
+  it('ignores a slot with no remembered desktop', () => {
+    const out = desktopOnlyActions({
+      prevWindows: [tracked({ sessionId: null })],
+      nextWindows: [tracked({ sessionId: 'b2' })],
+      slots,
+      actions: [],
+    });
+    expect(out).toEqual([]);
+  });
+
+  it('ignores an unbound window', () => {
+    const out = desktopOnlyActions({
+      prevWindows: [tracked()],
+      nextWindows: [tracked({ sessionId: null })],
+      slots,
+      actions: [],
+    });
+    expect(out).toEqual([]);
+  });
+});
+
+describe('layoutFingerprint', () => {
+  const state = { version: 1, slots: { a1: { titles: ['x'] } }, lastLayout: ['a1'], updated: 100 };
+
+  it('ignores the updated stamp', () => {
+    // Иначе дедупликация записи не работает вообще: updated меняется каждый тик,
+    // и демон переписывал бы файл раз в секунду.
+    expect(layoutFingerprint(state)).toBe(layoutFingerprint({ ...state, updated: 999 }));
+  });
+
+  it('changes when a slot changes', () => {
+    expect(layoutFingerprint(state)).not.toBe(
+      layoutFingerprint({ ...state, slots: { a1: { titles: ['y'] } } }));
+  });
+
+  it('changes when the layout changes', () => {
+    expect(layoutFingerprint(state)).not.toBe(layoutFingerprint({ ...state, lastLayout: [] }));
+  });
+});
+
+describe('unresolvedTitles', () => {
+  it('lists settled titles that were not attributed to a session', () => {
+    const out = unresolvedTitles([
+      { id: 1, stableTitle: 'ccfzf', sessionId: 'a1' },
+      { id: 2, stableTitle: 'popstas@pc-virt: ~', sessionId: null },
+      { id: 3, stableTitle: null, sessionId: null },
+    ]);
+    expect(out).toEqual(['popstas@pc-virt: ~']);
+  });
+
+  it('reports a title shared by two windows only once', () => {
+    const out = unresolvedTitles([
+      { id: 1, stableTitle: 'same', sessionId: null },
+      { id: 2, stableTitle: 'same', sessionId: null },
+    ]);
+    expect(out).toEqual(['same']);
+  });
+});

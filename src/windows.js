@@ -1,4 +1,4 @@
-import { windowManager, addon } from 'node-window-manager';
+import { windowManager, addon, Window } from 'node-window-manager';
 import { getConfig } from './config.js';
 import { getAppFromPath, isWindowMatchRule } from './window-match.js';
 import { matchRules, isWindowExcluded } from './windows-helpers.js';
@@ -20,6 +20,15 @@ const EXCLUDED_PATHS = [
 function getVisibleWindowIds() {
   if (!addon || !addon.getWindows) return [];
   return addon.getWindows().filter(id => addon.isWindowVisible(id));
+}
+
+// A single known hwnd, at the cost of one initWindow (OpenProcess + exe path)
+// instead of the whole getWindows() sweep. For pollers that already know which
+// handles they care about; returns null for a handle that is no longer a window.
+function getWindowById(id) {
+  if (!addon) return null;
+  const w = new Window(id);
+  return w.isWindow() ? w : null;
 }
 
 function getWindows() {
@@ -93,6 +102,7 @@ function getWindow(rule) {
 export { matchRules, isWindowExcluded } from './windows-helpers.js';
 export {
   getVisibleWindowIds,
+  getWindowById,
   getWindows,
   getAppFromPath,
   isWindowMatchRule,

@@ -129,6 +129,33 @@ async function start() {
     process.exit(0);
   });
 
+  const claudeWt = program.command('claude-wt').description('remember Claude Code window positions');
+
+  claudeWt.command('watch').action(async () => {
+    const mod = await import('./claude-wt/index.js');
+    mod.startClaudeWt();
+  });
+
+  claudeWt.command('status').action(async () => {
+    const mod = await import('./claude-wt/index.js');
+    console.log(JSON.stringify(mod.claudeWtStatus(), null, 2));
+    process.exit(0);
+  });
+
+  claudeWt.command('restore').action(async () => {
+    const mod = await import('./claude-wt/restore.js');
+    await mod.restoreClaudeSessions();
+    process.exit(0);
+  });
+
+  claudeWt.command('clear').action(async () => {
+    const mod = await import('./claude-wt/index.js');
+    const { statePath } = mod.getClaudeWtConfig();
+    if (statePath && fs.existsSync(statePath)) fs.unlinkSync(statePath);
+    console.log(`[claude-wt] cleared ${statePath}`);
+    process.exit(0);
+  });
+
   program.allowExcessArguments();
   program.parse();
 }
