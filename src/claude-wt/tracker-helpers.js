@@ -161,6 +161,28 @@ function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, o
           if (!known) bindings.push({ windowId: win.id, sessionId: tracked.sessionId });
         }
       }
+    } else if (tracked.stableTitle && !minimized) {
+      // Заголовок устоялся раньше, чем сессия попала в дамп ccfzf: дамп
+      // переписывается периодически, а привязка пробовалась ровно один раз —
+      // в момент смены заголовка. Без второй попытки такое окно осталось бы
+      // без слота навсегда, пока заголовок не сменится ещё раз. Стоило это
+      // на живом прогоне двух сессий из шести.
+      const resolved = duplicates.has(tracked.stableTitle)
+        ? null
+        : resolveSession(tracked.stableTitle, sessionIndex, slots);
+      if (resolved && !resolved.ambiguous) {
+        tracked.sessionId = resolved.id;
+        const known = slots[resolved.id];
+        // Окно не двигаем: это не вход в сессию, а догнавший дамп. Окно стоит
+        // здесь давно, и его позиция — выбор пользователя, а не то, что нужно
+        // исправлять.
+        slots[resolved.id] = upsertSlot(known, {
+          title: tracked.stableTitle, cwd: resolved.cwd, bounds: win.bounds, now: nowSec,
+        });
+        if (!known || known.desktop == null) {
+          bindings.push({ windowId: win.id, sessionId: resolved.id });
+        }
+      }
     }
 
     // Два окна могут разрешиться в один слот через историю заголовков; planRestore

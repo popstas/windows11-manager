@@ -254,6 +254,71 @@ describe('step with monitors', () => {
   });
 });
 
+describe('step late session resolution', () => {
+  const w = [{ id: 1, title: 'cup-dashboard', bounds: bounds(10, 20) }];
+  const late = { 'cup-dashboard': { id: 'c3', cwd: '/p', title: 'cup-dashboard', ambiguous: false } };
+
+  // Прогон с разными индексами по тикам: сначала дамп сессии не знает, потом узнаёт.
+  function runWithIndexes(indexes) {
+    let prevWindows = [];
+    let out = { nextWindows: [], actions: [], bindings: [], nextState: emptyState() };
+    indexes.forEach((sessionIndex, i) => {
+      out = step({ prevWindows, windows: w, sessionIndex, state: out.nextState, now: 1000 + i * 1000 });
+      prevWindows = out.nextWindows;
+    });
+    return out;
+  }
+
+  it('binds the session once the dump catches up, without a title change', () => {
+    // Дамп ccfzf переписывается периодически; заголовок к этому моменту давно
+    // устоялся и второй раз меняться не будет.
+    const out = runWithIndexes([{}, {}, {}, late]);
+    expect(out.nextState.slots.c3.bounds).toEqual(bounds(10, 20));
+    expect(out.nextState.lastLayout).toEqual(['c3']);
+  });
+
+  it('asks for the desktop number of the newly bound window', () => {
+    const out = runWithIndexes([{}, {}, {}, late]);
+    expect(out.bindings).toEqual([{ windowId: 1, sessionId: 'c3' }]);
+  });
+
+  it('does not move the window it just adopted', () => {
+    // Слот с другой позицией существует, но это не вход в сессию: окно стоит
+    // здесь давно, дёргать его при позднем опознании нечестно. Заголовок в
+    // слоте старый — иначе сессия опозналась бы по собственной истории и до
+    // позднего разрешения дело бы не дошло.
+    const state = { ...emptyState(), slots: { c3: upsertSlot(undefined, { title: 'старое имя', bounds: bounds(900, 900), now: 1 }) } };
+    let prevWindows = [];
+    let out = { nextWindows: [], nextState: state };
+    [{}, {}, {}, late].forEach((sessionIndex, i) => {
+      out = step({ prevWindows, windows: w, sessionIndex, state: out.nextState, now: 1000 + i * 1000 });
+      prevWindows = out.nextWindows;
+    });
+    expect(out.actions).toEqual([]);
+    expect(out.nextState.slots.c3.bounds).toEqual(bounds(10, 20));
+  });
+
+  it('leaves a title that resolves to nothing unbound', () => {
+    const out = runWithIndexes([{}, {}, {}, {}]);
+    expect(out.nextState.slots).toEqual({});
+    expect(out.nextState.lastLayout).toEqual([]);
+  });
+
+  it('refuses a late binding when two windows share the title', () => {
+    const two = [
+      { id: 1, title: 'cup-dashboard', bounds: bounds(10, 20) },
+      { id: 2, title: 'cup-dashboard', bounds: bounds(30, 40) },
+    ];
+    let prevWindows = [];
+    let out = { nextWindows: [], nextState: emptyState() };
+    [{}, {}, {}, late].forEach((sessionIndex, i) => {
+      out = step({ prevWindows, windows: two, sessionIndex, state: out.nextState, now: 1000 + i * 1000 });
+      prevWindows = out.nextWindows;
+    });
+    expect(out.nextState.slots).toEqual({});
+  });
+});
+
 describe('step with DPI rounding', () => {
   // На мониторе со 125% окно возвращается из setBounds() на пиксель меньше,
   // чем просили: 602 -> 601, 1387 -> 1386. Прогон ниже воспроизводит ровно это.
