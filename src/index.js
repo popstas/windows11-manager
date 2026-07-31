@@ -129,6 +129,40 @@ async function start() {
     process.exit(0);
   });
 
+  const claudeWt = program.command('claude-wt').description('remember Claude Code window positions');
+
+  claudeWt.command('watch').action(async () => {
+    const mod = await import('./claude-wt/index.js');
+    mod.startClaudeWt();
+  });
+
+  claudeWt.command('status').action(async () => {
+    const mod = await import('./claude-wt/index.js');
+    console.log(JSON.stringify(mod.claudeWtStatus(), null, 2));
+    process.exit(0);
+  });
+
+  claudeWt
+    .command('restore')
+    .option('--force', 'restore only the sessions that are missing, even if others are open')
+    .option('--session <id...>', 'restore these session ids instead of the last layout')
+    .action(async (options) => {
+      const mod = await import('./claude-wt/restore.js');
+      const { skipped } = await mod.restoreClaudeSessions({
+        force: options.force,
+        sessionIds: options.session,
+      });
+      process.exit(skipped.length ? 1 : 0);
+    });
+
+  claudeWt.command('clear').action(async () => {
+    const mod = await import('./claude-wt/index.js');
+    const { statePath } = mod.getClaudeWtConfig();
+    if (statePath && fs.existsSync(statePath)) fs.unlinkSync(statePath);
+    console.log(`[claude-wt] cleared ${statePath}`);
+    process.exit(0);
+  });
+
   program.allowExcessArguments();
   program.parse();
 }

@@ -94,4 +94,54 @@ function isBoundsMatch(oldPos, newPos) {
   return true;
 }
 
-export { getGapBounds, getGapOverlap, isBoundsMatch, applyMonitorsOffset, applyMonitorGaps };
+function hasBounds(b) {
+  return Boolean(b) && ['x', 'y', 'width', 'height'].every(k => Number.isFinite(b[k]));
+}
+
+function boundsOverlap(a, b) {
+  const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+  const h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
+// How much of a window has to sit on some monitor for its position to count as
+// the user's choice rather than an artefact of a monitor that went away.
+const VISIBLE_FRACTION = 0.5;
+
+/**
+ * Keep a remembered position reachable. If the monitor it was saved on is
+ * gone, pull the window onto the monitor it overlaps most (the first one when
+ * it overlaps nothing) instead of leaving it off-screen.
+ *
+ * A position that is already mostly on screen is returned untouched, monitor
+ * edges included. Windows sits its windows a few pixels outside the work area
+ * on purpose — the invisible resize border — so a plain edge clamp would shove
+ * every such window inwards on every restore, and treating monitor rectangles
+ * as hard walls would also break a window deliberately straddling two screens.
+ * Coverage is summed over all monitors for exactly that straddling case.
+ *
+ * Entries without usable bounds are skipped, the same way findMonitorByPoint
+ * does: this project's monitor lists are 1-based with a placeholder {} at
+ * index 0, and a configured-but-detached monitor can be undefined. Reducing
+ * over those would throw and kill the caller's whole tick.
+ */
+function clampBoundsToMonitors(bounds, monitors) {
+  const usable = (monitors ?? []).filter(mon => hasBounds(mon?.bounds));
+  if (!usable.length) return bounds;
+  const windowArea = Math.max(0, bounds.width) * Math.max(0, bounds.height);
+  const covered = usable.reduce((sum, mon) => sum + boundsOverlap(bounds, mon.bounds), 0);
+  if (windowArea > 0 && covered >= windowArea * VISIBLE_FRACTION) return bounds;
+  const best = usable.reduce((acc, mon) =>
+    boundsOverlap(bounds, mon.bounds) > boundsOverlap(bounds, acc.bounds) ? mon : acc, usable[0]);
+  const area = best.bounds;
+  const width = Math.min(bounds.width, area.width);
+  const height = Math.min(bounds.height, area.height);
+  return {
+    x: Math.max(area.x, Math.min(bounds.x, area.x + area.width - width)),
+    y: Math.max(area.y, Math.min(bounds.y, area.y + area.height - height)),
+    width,
+    height,
+  };
+}
+
+export { getGapBounds, getGapOverlap, isBoundsMatch, applyMonitorsOffset, applyMonitorGaps, clampBoundsToMonitors };

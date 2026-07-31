@@ -7,3 +7,5 @@ export * from '../store.js';
 export * from '../stats.js';
 export * from '../wallpapers.js';
 export * from '../config.js';
+export * from '../claude-wt/index.js';
+export * from '../claude-wt/restore.js';

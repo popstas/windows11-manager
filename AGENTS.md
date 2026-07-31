@@ -3,7 +3,7 @@
 This repository contains a Node.js tool for managing window placement on Windows 11 using PowerToys FancyZones and the VirtualDesktop11 utility. The codebase is small, but the main logic is in the **src** folder.
 
 ## Build commands
-- Node CLI: `node src <command>` (place, store, restore, clear, reload, open-default, stats, dashboard)
+- Node CLI: `node src <command>` (place, store, restore, clear, reload, open-default, stats, dashboard, `claude-wt watch|status|restore|clear`)
 - Tauri build: `cd tauri-app/src-tauri && . "$HOME/.cargo/env" && cargo build`
 - Tests: `npm test` (vitest). Unit tests for placement, windows, store, fancyzones, monitors, geometry, window-match, scale
 
@@ -11,6 +11,7 @@ This repository contains a Node.js tool for managing window placement on Windows
 
 - **src/index.js** -- command line entry point using `commander`. It wires commands like `place`, `store`, `restore` and `stats` to the functions exported from `src/lib/`.
 - **src/lib/** -- directory with modularized logic (`placement.js`, `windows.js`, `monitors.js`, `virtual-desktop.js`, etc.).
+- **src/claude-wt/** -- window position memory for Claude Code sessions: remembers where the Windows Terminal window of each session sat and puts it back on re-entry, and can restore the whole layout after a crash. See `docs/specs/2026-07-31-claude-wt-design.md`.
 - **src/helpers/** -- helper types (TypeScript) used by the main code.
 - **examples/** -- small scripts showing how to call the library (e.g. `placeWindows.js`, `swapWindows.js`).
 - **config.example.js** -- copy this file to `config.js` and customise rules for your environment. Without `config.js` the CLI will fail.
@@ -64,6 +65,17 @@ The code in `calcFancyZonePos` divides ALL values (monitor coords + zone coords)
 - `src/store.js` exports: `storeWindows`, `restoreWindows`, `openWindows`, `openPaths`, `openStore`, `clearWindows`
 - `src/config.js` exports: `getConfig`, `reloadConfigs`, `watchAppliedLayouts`
 - `src/placement.js` exports: `placeWindows`, `placeWindowByConfig`
+- `src/claude-wt/index.js` exports: `startClaudeWt`, `stopClaudeWt`, `claudeWtStatus`, `getClaudeWtConfig`
+- `src/claude-wt/restore.js` exports: `restoreClaudeSessions`, `maybeRestoreOnStart`
+
+## claude-wt polling budget
+
+Two rules keep the once-a-second daemon off the CPU graph; both were paid for once already and must not be re-learned:
+
+- **Never call `getWindows()` in the loop.** It does `OpenProcess` plus an exe-path query for every window in the system (~21-31 ms measured here, commit `96c2584`). The daemon polls `getVisibleWindowIds()` instead (~1-3 ms: `EnumWindows` + `IsWindowVisible`), resolves a hwnd to a process exactly once via `getWindowById()`, and reads titles and bounds only for the handful of Windows Terminal windows.
+- **Never read the virtual desktop number in the loop.** `virtualDesktop.GetWindowDesktopNumber()` spawns `VirtualDesktop11.exe`; periodic exe spawns were the source of the parasitic load fixed in 2026-07-14. It is called only when a window is bound to a session, driven by the `bindings` list `step()` returns.
+
+Window titles are compared in decoration-stripped form (`title-helpers.js`): Claude Code prefixes the terminal title with a status glyph (`✳ ccfzf`) while the ccfzf dump stores the bare summary, so both sides are normalised by the same function.
 
 ## Getting started
 
