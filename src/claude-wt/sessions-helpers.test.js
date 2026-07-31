@@ -45,6 +45,23 @@ describe('indexSessions', () => {
     expect(Object.keys(index)).toEqual(['ok']);
   });
 
+  it('indexes a decorated dump title under its bare form', () => {
+    // В окне заголовок приходит со статус-глифом Claude Code, в дампе — без
+    // него. Индекс ключуется той же формой, в которой заголовок сравнивается.
+    const index = indexSessions({ sessions: [session({ title: '✳ ccfzf' })] });
+    expect(index.ccfzf.id).toBe('a1');
+    expect(index.ccfzf.title).toBe('✳ ccfzf');
+  });
+
+  it('treats decorated and bare spellings of one title as the same session', () => {
+    const index = indexSessions({ sessions: [
+      session({ id: 'x', title: '✳ ccfzf', mtime: 100, live: true }),
+      session({ id: 'y', title: 'ccfzf', mtime: 100, live: true }),
+    ] });
+    expect(Object.keys(index)).toEqual(['ccfzf']);
+    expect(index.ccfzf.ambiguous).toBe(true);
+  });
+
   it('returns an empty index for a missing or malformed dump', () => {
     expect(indexSessions(null)).toEqual({});
     expect(indexSessions({})).toEqual({});
