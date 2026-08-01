@@ -6,6 +6,9 @@ const CLAUDE_WT_DEFAULTS = {
   stableTicks: 2,
   sessionsFile: '',
   statePath: '',
+  // Каталог, куда хук wt-progress.sh на стороне агента пишет <id>.state.json.
+  // Пусто — состояний нет и кружок в пикере остаётся двухцветным.
+  progressDir: '',
   desktop: true,
   debug: false,
   launch: { command: 'wt.exe', args: [] },
