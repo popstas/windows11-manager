@@ -41,6 +41,14 @@ function buildSessionList({ slots, openMap, mons, progress = {} }) {
       // Что делает агент внутри окна: active | question | review | idle, либо
       // null, когда хук состояний не установлен или ещё не сработал.
       agentState: agent?.state ?? null,
+      // Событие хука, из которого состояние получилось (tool-start, attention,
+      // stop…). Состояние — это вывод, событие — исходник; в подсказке видно,
+      // почему кружок такой.
+      agentEvent: agent?.event ?? '',
+      // Текст уведомления. Осмыслен только у attention: «Claude needs your
+      // permission» против «Claude is waiting for your input» — единственное,
+      // что отличает жёлтый кружок от серого.
+      agentMessage: agent?.message ?? '',
       // Epoch-секунды. Пикер показывает возраст относительно now, поэтому
       // отдаём метку времени, а не отформатированную строку: форматирование
       // на секунду устаревает быстрее, чем долетает.

@@ -21,6 +21,7 @@ function normalizeProgress(raw) {
   return {
     state,
     updated,
+    event: typeof raw.event === 'string' ? raw.event : '',
     message: typeof raw.message === 'string' ? raw.message : '',
   };
 }

@@ -4,7 +4,7 @@ import { normalizeProgress, lastActivityAt } from './progress-helpers.js';
 describe('normalizeProgress', () => {
   it('keeps a well-formed record', () => {
     expect(normalizeProgress({ state: 'active', updated: 100, message: 'hi' }))
-      .toEqual({ state: 'active', updated: 100, message: 'hi' });
+      .toEqual({ state: 'active', updated: 100, event: '', message: 'hi' });
   });
 
   it('accepts every state the hook writes', () => {
@@ -18,7 +18,7 @@ describe('normalizeProgress', () => {
     // another process: an unrecognised state must not reach the picker, yet
     // the write itself still proves the session was alive at that moment.
     expect(normalizeProgress({ state: 'unknown', updated: 42 }))
-      .toEqual({ state: null, updated: 42, message: '' });
+      .toEqual({ state: null, updated: 42, event: '', message: '' });
   });
 
   it('returns null when there is neither a state nor a time', () => {
@@ -30,7 +30,7 @@ describe('normalizeProgress', () => {
 
   it('ignores a non-numeric timestamp', () => {
     expect(normalizeProgress({ state: 'idle', updated: 'soon' }))
-      .toEqual({ state: 'idle', updated: 0, message: '' });
+      .toEqual({ state: 'idle', updated: 0, event: '', message: '' });
   });
 
   it('ignores a non-string message', () => {
