@@ -82,9 +82,21 @@ function layoutFingerprint(state) {
  * окно можно и руками — Alt+Tab, клик по таскбару, — и такой просмотр ничем не
  * отличается от перехода через пикер.
  */
-function focusedSessionId({ activeWindowId, prevActiveWindowId, windows = [] }) {
-  if (!activeWindowId || activeWindowId === prevActiveWindowId) return null;
-  return windows.find(w => w.id === activeWindowId)?.sessionId ?? null;
+function focusedSessionIds({ activeWindowId, prevActiveWindowId, windows = [], slots = {} }) {
+  if (!activeWindowId || activeWindowId === prevActiveWindowId) return [];
+  const sessionId = windows.find(w => w.id === activeWindowId)?.sessionId;
+  if (!sessionId) return [];
+
+  // Заголовок делят несколько сессий: одна и та же работа, переоткрытая
+  // заново, оставляет слот на каждый id. Но одновременно на экране живёт
+  // ровно одно окно с таким названием — то, на которое сейчас смотрят, — а
+  // значит просмотренным становится и всё, что трекер завёл под этим же
+  // именем. Иначе близнецы навсегда остаются оранжевыми: фокус достаётся
+  // одному из них, а в списке горят оба.
+  const title = slots[sessionId]?.titles?.[0];
+  if (!title) return [sessionId];
+  const sameTitle = Object.keys(slots).filter(id => slots[id]?.titles?.[0] === title);
+  return sameTitle.includes(sessionId) ? sameTitle : [sessionId, ...sameTitle];
 }
 
 /** Settled titles of terminal windows that could not be attributed to a session. */
@@ -98,6 +110,6 @@ export {
   isTerminalPath,
   desktopOnlyActions,
   layoutFingerprint,
-  focusedSessionId,
+  focusedSessionIds,
   unresolvedTitles,
 };

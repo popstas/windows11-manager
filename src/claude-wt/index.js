@@ -11,7 +11,7 @@ import {
   isTerminalPath,
   desktopOnlyActions,
   layoutFingerprint,
-  focusedSessionId,
+  focusedSessionIds,
   unresolvedTitles,
 } from './daemon-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
@@ -153,11 +153,14 @@ async function claudeWtTick() {
   // окна — один GetForegroundWindow, без initWindow, — и записывается только в
   // момент перехода фокуса на окно, привязанное к сессии.
   const activeWindowId = getActiveWindowId();
-  const focusedId = focusedSessionId({ activeWindowId, prevActiveWindowId, windows: nextWindows });
-  if (focusedId && nextState.slots[focusedId]) {
-    nextState.slots[focusedId] = upsertSlot(nextState.slots[focusedId], {
-      focusedAt: Math.floor(Date.now() / 1000),
-    });
+  const focused = focusedSessionIds({
+    activeWindowId, prevActiveWindowId, windows: nextWindows, slots: nextState.slots,
+  });
+  if (focused.length) {
+    const seenAt = Math.floor(Date.now() / 1000);
+    for (const id of focused) {
+      if (nextState.slots[id]) nextState.slots[id] = upsertSlot(nextState.slots[id], { focusedAt: seenAt });
+    }
   }
   prevActiveWindowId = activeWindowId;
 

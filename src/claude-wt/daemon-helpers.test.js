@@ -5,7 +5,7 @@ import {
   isTerminalPath,
   desktopOnlyActions,
   layoutFingerprint,
-  focusedSessionId,
+  focusedSessionIds,
   unresolvedTitles,
 } from './daemon-helpers.js';
 
@@ -174,38 +174,54 @@ describe('unresolvedTitles', () => {
   });
 });
 
-describe('focusedSessionId', () => {
+describe('focusedSessionIds', () => {
   const windows = [
     { id: 1, sessionId: 'alpha' },
     { id: 2, sessionId: 'beta' },
     { id: 3, sessionId: null },
   ];
+  const slots = {
+    alpha: { titles: ['work'] },
+    beta: { titles: ['other'] },
+    'alpha-old': { titles: ['work'] },
+    'alpha-older': { titles: ['work'] },
+  };
 
   it('names the session whose window just came to the front', () => {
-    expect(focusedSessionId({ activeWindowId: 2, prevActiveWindowId: 1, windows })).toBe('beta');
+    expect(focusedSessionIds({ activeWindowId: 2, prevActiveWindowId: 1, windows, slots }))
+      .toEqual(['beta']);
+  });
+
+  it('marks every slot that shares the focused title', () => {
+    // The same work reopened leaves a slot per session id, but only one window
+    // with that title is ever on screen — the one being looked at. Leaving the
+    // twins out would keep them orange forever.
+    expect(focusedSessionIds({ activeWindowId: 1, prevActiveWindowId: 0, windows, slots }).sort())
+      .toEqual(['alpha', 'alpha-old', 'alpha-older']);
+  });
+
+  it('falls back to the session alone when its slot has no title', () => {
+    expect(focusedSessionIds({ activeWindowId: 1, prevActiveWindowId: 0, windows, slots: { alpha: {} } }))
+      .toEqual(['alpha']);
   });
 
   it('stays silent while the same window keeps the focus', () => {
     // Stamping every tick would rewrite the state file once a second for as
     // long as the window sits in front: layoutFingerprint() covers the slots
     // whole, so every stamp is a disk write.
-    expect(focusedSessionId({ activeWindowId: 2, prevActiveWindowId: 2, windows })).toBeNull();
+    expect(focusedSessionIds({ activeWindowId: 2, prevActiveWindowId: 2, windows, slots })).toEqual([]);
   });
 
   it('ignores a window that belongs to no session', () => {
-    expect(focusedSessionId({ activeWindowId: 3, prevActiveWindowId: 1, windows })).toBeNull();
+    expect(focusedSessionIds({ activeWindowId: 3, prevActiveWindowId: 1, windows, slots })).toEqual([]);
   });
 
   it('ignores a foreground window the tracker does not follow', () => {
-    expect(focusedSessionId({ activeWindowId: 99, prevActiveWindowId: 1, windows })).toBeNull();
+    expect(focusedSessionIds({ activeWindowId: 99, prevActiveWindowId: 1, windows, slots })).toEqual([]);
   });
 
   it('ignores an empty foreground handle', () => {
     // GetForegroundWindow returns 0 when the foreground is being handed over.
-    expect(focusedSessionId({ activeWindowId: 0, prevActiveWindowId: 1, windows })).toBeNull();
-  });
-
-  it('reports the very first focus seen after a daemon start', () => {
-    expect(focusedSessionId({ activeWindowId: 1, prevActiveWindowId: 0, windows })).toBe('alpha');
+    expect(focusedSessionIds({ activeWindowId: 0, prevActiveWindowId: 1, windows, slots })).toEqual([]);
   });
 });
