@@ -31,6 +31,25 @@ function getWindowById(id) {
   return w.isWindow() ? w : null;
 }
 
+// Windows parks minimized windows at x = -32000. restore() un-maximizes a
+// maximized window, so it must only be called for one that is actually
+// minimized.
+const MINIMIZED_X = -30000;
+
+/**
+ * Bring a window to the foreground, un-minimizing it first if needed.
+ *
+ * Consumers used to call a `focusWindow` that this package never defined.
+ */
+function focusWindowById(id) {
+  const w = getWindowById(id);
+  if (!w) return false;
+  const bounds = w.getBounds();
+  if (bounds && bounds.x <= MINIMIZED_X) w.restore();
+  w.bringToTop();
+  return true;
+}
+
 function getWindows() {
   const windows = windowManager.getWindows();
   const list = [];
@@ -99,10 +118,26 @@ function getWindow(rule) {
   }
 }
 
+/**
+ * Resolve a rule to a window and focus it.
+ *
+ * Consumers used to call a `focusWindow` that this package never defined.
+ */
+function focusWindow(rule) {
+  const windows = findWindows(rule);
+  if (!windows || !windows.length) {
+    console.log(`focusWindow: no window matched rule ${JSON.stringify(rule)}`);
+    return false;
+  }
+  return focusWindowById(windows[0].id);
+}
+
 export { matchRules, isWindowExcluded } from './windows-helpers.js';
 export {
   getVisibleWindowIds,
   getWindowById,
+  focusWindowById,
+  focusWindow,
   getWindows,
   getAppFromPath,
   isWindowMatchRule,

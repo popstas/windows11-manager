@@ -9,3 +9,4 @@ export * from '../wallpapers.js';
 export * from '../config.js';
 export * from '../claude-wt/index.js';
 export * from '../claude-wt/restore.js';
+export * from '../claude-wt/view.js';
