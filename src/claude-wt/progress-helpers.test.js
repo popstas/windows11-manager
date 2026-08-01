@@ -3,8 +3,15 @@ import { normalizeProgress, lastActivityAt, seenSinceUpdate } from './progress-h
 
 describe('normalizeProgress', () => {
   it('keeps a well-formed record', () => {
-    expect(normalizeProgress({ state: 'active', updated: 100, message: 'hi' }))
-      .toEqual({ state: 'active', updated: 100, event: '', message: 'hi' });
+    expect(normalizeProgress({ state: 'active', updated: 100, message: 'hi', summary: 'Закоммитил' }))
+      .toEqual({ state: 'active', updated: 100, event: '', message: 'hi', summary: 'Закоммитил' });
+  });
+
+  it('treats a missing summary as no summary', () => {
+    // Хук без правки на сводку — обычное дело: файл пишет чужой процесс на
+    // другой машине, и он может быть старой версии.
+    expect(normalizeProgress({ state: 'active', updated: 100 })?.summary).toBe('');
+    expect(normalizeProgress({ state: 'active', updated: 100, summary: 42 })?.summary).toBe('');
   });
 
   it('accepts every state the hook writes', () => {
@@ -18,7 +25,7 @@ describe('normalizeProgress', () => {
     // another process: an unrecognised state must not reach the picker, yet
     // the write itself still proves the session was alive at that moment.
     expect(normalizeProgress({ state: 'unknown', updated: 42 }))
-      .toEqual({ state: null, updated: 42, event: '', message: '' });
+      .toEqual({ state: null, updated: 42, event: '', message: '', summary: '' });
   });
 
   it('returns null when there is neither a state nor a time', () => {
@@ -30,7 +37,7 @@ describe('normalizeProgress', () => {
 
   it('ignores a non-numeric timestamp', () => {
     expect(normalizeProgress({ state: 'idle', updated: 'soon' }))
-      .toEqual({ state: 'idle', updated: 0, event: '', message: '' });
+      .toEqual({ state: 'idle', updated: 0, event: '', message: '', summary: '' });
   });
 
   it('ignores a non-string message', () => {

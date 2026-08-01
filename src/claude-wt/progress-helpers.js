@@ -23,6 +23,10 @@ function normalizeProgress(raw) {
     updated,
     event: typeof raw.event === 'string' ? raw.event : '',
     message: typeof raw.message === 'string' ? raw.message : '',
+    // Первая строка последнего ответа агента, уже обрезанная хуком до полусотни
+    // знаков. Считает её он, а не мы: транскрипты бывают на мегабайты и лежат
+    // на сетевом диске, а у хука тот же файл под рукой локально.
+    summary: typeof raw.summary === 'string' ? raw.summary : '',
   };
 }
 
