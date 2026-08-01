@@ -2,11 +2,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { normalizeProgress } from './progress-helpers.js';
 
-// Кэш на файл: { mtimeMs, value }. Пикер опрашивает список раз в секунду, а
-// каталог состояний лежит на сетевом диске — перечитывать неизменившийся файл
-// на каждый тик значит платить сетевым вводом-выводом за одни и те же байты.
+// Кэш на файл: { mtimeMs, readAt, value }. Пикер опрашивает список раз в
+// секунду, а каталог состояний лежит на сетевом диске — перечитывать
+// неизменившийся файл на каждый тик значит платить сетевым вводом-выводом за
+// одни и те же байты.
 let cache = new Map();
 let cachedDir = '';
+
+// Одного mtime на сетевом диске мало.
+//
+// Замерено 2026-08-02: хук сменил состояние сессии на V: в 00:42:30, свежий
+// процесс видел и новую отметку, и новое содержимое, а долгоживущий продолжал
+// получать от statSync() прежнюю отметку минутами — клиент SMB отдавал ему
+// закэшированные атрибуты. Сравнение mtime при этом проходит, а под ним уже
+// другое: панель показывала работающего агента там, где он спрашивал разрешение.
+//
+// Поэтому у записи есть ещё и срок годности. Файлы по три сотни байт, и их
+// столько же, сколько слотов; перечитывание случается не чаще раза в MAX_AGE_MS
+// и живёт рядом с getWindows() (31 мс) в том же вызове — на его фоне это ничего
+// не стоит.
+const MAX_AGE_MS = 3000;
 
 /**
  * Состояния агента для перечисленных сессий.
@@ -20,7 +35,7 @@ let cachedDir = '';
  * обращения к сети — ровно тот источник паразитной нагрузки, за который в
  * этом проекте уже заплачено (см. claude-wt polling budget в AGENTS.md).
  */
-function loadProgress(dir, sessionIds) {
+function loadProgress(dir, sessionIds, nowMs = Date.now()) {
   if (!dir || !sessionIds?.length) return {};
   // Смена каталога в конфиге обесценивает всё, что накоплено по старому пути.
   if (cachedDir !== dir) {
@@ -41,7 +56,7 @@ function loadProgress(dir, sessionIds) {
       continue;
     }
     const hit = cache.get(id);
-    if (hit && hit.mtimeMs === stat.mtimeMs) {
+    if (hit && hit.mtimeMs === stat.mtimeMs && nowMs - hit.readAt < MAX_AGE_MS) {
       if (hit.value) out[id] = hit.value;
       continue;
     }
@@ -54,7 +69,7 @@ function loadProgress(dir, sessionIds) {
       // дешевле, чем разбирать те же байты каждую секунду.
       value = null;
     }
-    cache.set(id, { mtimeMs: stat.mtimeMs, value });
+    cache.set(id, { mtimeMs: stat.mtimeMs, readAt: nowMs, value });
     if (value) out[id] = value;
   }
   // Сессии, о которых больше не спрашивают, из кэша уходят: иначе он растёт
