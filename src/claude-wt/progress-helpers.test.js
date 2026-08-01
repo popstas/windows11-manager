@@ -3,8 +3,11 @@ import { normalizeProgress, lastActivityAt, seenSinceUpdate } from './progress-h
 
 describe('normalizeProgress', () => {
   it('keeps a well-formed record', () => {
-    expect(normalizeProgress({ state: 'active', updated: 100, message: 'hi', summary: 'Закоммитил' }))
-      .toEqual({ state: 'active', updated: 100, event: '', message: 'hi', summary: 'Закоммитил' });
+    expect(normalizeProgress({
+      state: 'active', updated: 100, message: 'hi', summary: '', lastSummary: 'Закоммитил',
+    })).toEqual({
+      state: 'active', updated: 100, event: '', message: 'hi', summary: '', lastSummary: 'Закоммитил',
+    });
   });
 
   it('treats a missing summary as no summary', () => {
@@ -25,7 +28,7 @@ describe('normalizeProgress', () => {
     // another process: an unrecognised state must not reach the picker, yet
     // the write itself still proves the session was alive at that moment.
     expect(normalizeProgress({ state: 'unknown', updated: 42 }))
-      .toEqual({ state: null, updated: 42, event: '', message: '', summary: '' });
+      .toEqual({ state: null, updated: 42, event: '', message: '', summary: '', lastSummary: '' });
   });
 
   it('returns null when there is neither a state nor a time', () => {
@@ -37,7 +40,7 @@ describe('normalizeProgress', () => {
 
   it('ignores a non-numeric timestamp', () => {
     expect(normalizeProgress({ state: 'idle', updated: 'soon' }))
-      .toEqual({ state: 'idle', updated: 0, event: '', message: '', summary: '' });
+      .toEqual({ state: 'idle', updated: 0, event: '', message: '', summary: '', lastSummary: '' });
   });
 
   it('ignores a non-string message', () => {
