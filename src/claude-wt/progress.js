@@ -63,5 +63,38 @@ function loadProgress(dir, sessionIds) {
   return out;
 }
 
+/**
+ * Отметка каталога состояний — по ней решают, не пора ли пересобрать индекс
+ * сессий.
+ *
+ * Хук пишет через временный файл и переименование, а это меняет mtime самого
+ * каталога. Один stat в тик — столько же, сколько уже стоит проверка дампа.
+ */
+function progressStamp(dir) {
+  if (!dir) return 0;
+  try {
+    return fs.statSync(dir).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Когда сессия последний раз подавала признаки жизни по данным хука, в
+ * epoch-секундах. Ноль — про эту сессию хук ничего не писал.
+ *
+ * Берётся mtime файла, а не поле внутри: содержимое читать незачем, а stat на
+ * сетевом диске в разы дешевле. Вызывается только для сессий, чей заголовок
+ * делят несколько кандидатов, — то есть обычно ни разу за тик.
+ */
+function activityAt(dir, id) {
+  if (!dir || !id) return 0;
+  try {
+    return Math.floor(fs.statSync(path.join(dir, `${id}.state.json`)).mtimeMs / 1000);
+  } catch {
+    return 0;
+  }
+}
+
 export * from './progress-helpers.js';
-export { loadProgress };
+export { loadProgress, progressStamp, activityAt };

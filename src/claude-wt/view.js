@@ -15,7 +15,7 @@ import { loadProgress } from './progress.js';
  * the picker cannot focus a window it has no handle for.
  */
 function openSessionMap(cfg, state) {
-  const sessionIndex = loadSessionIndex(cfg.sessionsFile);
+  const sessionIndex = loadSessionIndex(cfg.sessionsFile, cfg.progressDir);
   const map = new Map();
   for (const w of getWindows().filter(isTerminalWindow)) {
     const resolved = resolveSession(stripTitleDecoration(w.getTitle()), sessionIndex, state.slots);

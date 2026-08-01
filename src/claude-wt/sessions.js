@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import { indexSessions } from './sessions-helpers.js';
+import { progressStamp, activityAt } from './progress.js';
 
-let cache = { path: '', mtimeMs: 0, index: {} };
+let cache = { path: '', mtimeMs: 0, stamp: 0, index: {} };
 let lastWarnedAt = 0;
 const WARN_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -28,7 +29,7 @@ function warnThrottled(message) {
  *   keep serving data the file no longer contains.
  * Either way the tracker degrades to its own title history rather than throwing.
  */
-function loadSessionIndex(filePath) {
+function loadSessionIndex(filePath, progressDir = '') {
   if (!filePath) return {};
   let stat;
   try {
@@ -37,13 +38,23 @@ function loadSessionIndex(filePath) {
     warnThrottled(`session dump unreachable (${filePath}): ${e.message}`);
     return cache.path === filePath ? cache.index : {};
   }
-  if (cache.path === filePath && cache.mtimeMs === stat.mtimeMs) return cache.index;
+  // Индекс зависит не только от дампа: у спорных заголовков победителя выбирают
+  // отметки хуков, а они меняются независимо. Каталог состояний меняет mtime
+  // на каждую запись хука (временный файл + переименование), так что его
+  // отметка — достаточный признак «пора пересобрать».
+  const stamp = progressStamp(progressDir);
+  if (cache.path === filePath && cache.mtimeMs === stat.mtimeMs && cache.stamp === stamp) {
+    return cache.index;
+  }
   try {
-    const index = indexSessions(JSON.parse(fs.readFileSync(filePath, 'utf8')));
-    cache = { path: filePath, mtimeMs: stat.mtimeMs, index };
+    const index = indexSessions(
+      JSON.parse(fs.readFileSync(filePath, 'utf8')),
+      progressDir ? id => activityAt(progressDir, id) : undefined,
+    );
+    cache = { path: filePath, mtimeMs: stat.mtimeMs, stamp, index };
   } catch (e) {
     warnThrottled(`session dump unreadable (${filePath}): ${e.message}`);
-    cache = { path: filePath, mtimeMs: stat.mtimeMs, index: {} };
+    cache = { path: filePath, mtimeMs: stat.mtimeMs, stamp, index: {} };
   }
   return cache.index;
 }

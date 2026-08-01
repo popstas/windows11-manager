@@ -99,7 +99,7 @@ async function claudeWtTick() {
   // файл — только снимок для восстановления, а не рабочая структура.
   if (!liveState) liveState = readState(cfg.statePath);
   const windows = snapshot();
-  const sessionIndex = loadSessionIndex(cfg.sessionsFile);
+  const sessionIndex = loadSessionIndex(cfg.sessionsFile, cfg.progressDir);
   // monitors нужны ДО actions: step() зажимает координаты сам, иначе запрошенная
   // и фактически применённая позиция расходятся и guard собственного хода
   // висит до таймаута, а потом записывает зажатую позицию поверх исходной.

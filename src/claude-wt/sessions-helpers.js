@@ -1,6 +1,25 @@
 /** Pure helper functions for the ccfzf session dump. No external I/O. */
 import { stripTitleDecoration } from './title-helpers.js';
 
+/**
+ * Сравнение с учётом того, что говорят хуки самих агентов.
+ *
+ * Флаг `live` в дампе ccfzf бывает неверен: замерено 2026-08-01, когда две
+ * сессии делили заголовок `shared` — работала та, у которой стояло
+ * `live=false`, а `live=true` висело на старой. Хук же срабатывает на каждый
+ * вызов инструмента реально работающего агента, поэтому свежая запись от него
+ * — довод сильнее любого флага в дампе.
+ *
+ * Если хук не установлен, обе отметки нулевые и всё сводится к прежнему
+ * правилу.
+ */
+function byActivityThen(activityAt) {
+  return (a, b) => {
+    const diff = (activityAt(b.id) ?? 0) - (activityAt(a.id) ?? 0);
+    return diff !== 0 ? diff : compareSessions(a, b);
+  };
+}
+
 /** Newest live session wins: live first, then larger mtime. */
 function compareSessions(a, b) {
   const aLive = a.live ? 1 : 0;
@@ -19,7 +38,7 @@ function compareSessions(a, b) {
  * shows "✳ Check branch commit count". Both sides are stripped by the same
  * function, so the two always line up. `title` keeps the dump's own spelling.
  */
-function indexSessions(dump) {
+function indexSessions(dump, activityAt) {
   const sessions = Array.isArray(dump?.sessions) ? dump.sessions : [];
   const byTitle = new Map();
   for (const s of sessions) {
@@ -31,16 +50,22 @@ function indexSessions(dump) {
   }
   const index = {};
   for (const [key, list] of byTitle) {
-    const sorted = [...list].sort(compareSessions);
+    // Спрашивать про активность есть смысл только когда кандидатов больше
+    // одного: у единственного всё равно нет соперника, а каждый вопрос — это
+    // stat по сетевому диску.
+    const compare = list.length > 1 && activityAt
+      ? byActivityThen(activityAt)
+      : compareSessions;
+    const sorted = [...list].sort(compare);
     const [best, second] = sorted;
     index[key] = {
       id: best.id,
       cwd: best.cwd ?? '',
       title: best.title,
-      ambiguous: Boolean(second) && compareSessions(best, second) === 0,
+      ambiguous: Boolean(second) && compare(best, second) === 0,
     };
   }
   return index;
 }
 
-export { compareSessions, indexSessions };
+export { compareSessions, byActivityThen, indexSessions };

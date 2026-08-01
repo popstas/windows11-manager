@@ -74,3 +74,50 @@ describe('compareSessions', () => {
     expect(compareSessions(session(), session({ id: 'b1' }))).toBe(0);
   });
 });
+
+describe('indexSessions with agent activity', () => {
+  const dump = {
+    sessions: [
+      { id: 'stale', title: 'shared', cwd: '/a', live: true, mtime: 1000 },
+      { id: 'working', title: 'shared', cwd: '/a', live: false, mtime: 2000 },
+    ],
+  };
+
+  it('believes the hook over the dump when they disagree about who is alive', () => {
+    // Measured 2026-08-01: two sessions shared the title `shared`, the one
+    // actually running was marked live=false and a dead one carried
+    // live=true. The hook fires on every tool call of a real agent, so a
+    // fresh write from it outweighs any flag in the dump.
+    const activity = id => (id === 'working' ? 5000 : 0);
+    expect(indexSessions(dump, activity).shared.id).toBe('working');
+  });
+
+  it('falls back to the dump when the hook knows nothing', () => {
+    expect(indexSessions(dump, () => 0).shared.id).toBe('stale');
+    expect(indexSessions(dump).shared.id).toBe('stale');
+  });
+
+  it('prefers the more recent of two sessions the hook has seen', () => {
+    const activity = id => (id === 'working' ? 9000 : 8000);
+    expect(indexSessions(dump, activity).shared.id).toBe('working');
+  });
+
+  it('never asks about a title only one session claims', () => {
+    // Every question is a stat over a network share; with no rival there is
+    // nothing to decide.
+    const asked = [];
+    const one = { sessions: [{ id: 'solo', title: 'alone', cwd: '/a', live: true, mtime: 1 }] };
+    indexSessions(one, id => { asked.push(id); return 0; });
+    expect(asked).toEqual([]);
+  });
+
+  it('still reports a tie as ambiguous', () => {
+    const tied = {
+      sessions: [
+        { id: 'a', title: 'same', cwd: '/x', live: true, mtime: 100 },
+        { id: 'b', title: 'same', cwd: '/x', live: true, mtime: 100 },
+      ],
+    };
+    expect(indexSessions(tied, () => 0).same.ambiguous).toBe(true);
+  });
+});

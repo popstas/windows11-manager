@@ -26,7 +26,7 @@ function terminalWindows() {
  * there, this restore would duplicate them".
  */
 function openSessionIds(cfg, state) {
-  const sessionIndex = loadSessionIndex(cfg.sessionsFile);
+  const sessionIndex = loadSessionIndex(cfg.sessionsFile, cfg.progressDir);
   const ids = new Set();
   for (const w of terminalWindows()) {
     const resolved = resolveSession(stripTitleDecoration(w.getTitle()), sessionIndex, state.slots);
