@@ -40,4 +40,24 @@ function lastActivityAt(slot, progress) {
   return Math.max(fromHook, fromSlot) || null;
 }
 
-export { AGENT_STATES, normalizeProgress, lastActivityAt };
+/**
+ * Видел ли человек то состояние, в котором сейчас находится сессия.
+ *
+ * Окно, вышедшее на передний план после последней записи агента, — это
+ * «посмотрел». Тот же признак использует сам Windows: подсветка кнопки на
+ * таскбаре гаснет при переходе на окно, а не по таймеру.
+ *
+ * Сравнение нестрогое: обе метки в секундах, и переход в ту же секунду, что и
+ * запись состояния, — это всё-таки переход после неё.
+ *
+ * Без данных агента вопрос не имеет смысла: показывать нечего, а значит и
+ * увидеть было нечего.
+ */
+function seenSinceUpdate(slot, progress) {
+  const updated = progress?.updated ?? 0;
+  if (!updated) return false;
+  const focusedAt = Number.isFinite(slot?.focusedAt) ? slot.focusedAt : 0;
+  return focusedAt >= updated;
+}
+
+export { AGENT_STATES, normalizeProgress, lastActivityAt, seenSinceUpdate };

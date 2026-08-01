@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeProgress, lastActivityAt } from './progress-helpers.js';
+import { normalizeProgress, lastActivityAt, seenSinceUpdate } from './progress-helpers.js';
 
 describe('normalizeProgress', () => {
   it('keeps a well-formed record', () => {
@@ -56,5 +56,33 @@ describe('lastActivityAt', () => {
   it('returns null when nothing is known, so the picker draws no age', () => {
     expect(lastActivityAt({}, null)).toBeNull();
     expect(lastActivityAt({ lastSeen: 0 }, { updated: 0 })).toBeNull();
+  });
+});
+
+describe('seenSinceUpdate', () => {
+  it('counts a focus that came after the agent wrote its state', () => {
+    expect(seenSinceUpdate({ focusedAt: 200 }, { updated: 100 })).toBe(true);
+  });
+
+  it('counts a focus in the very same second as seen', () => {
+    // Both marks are in whole seconds, so an equal pair is a focus that
+    // landed after the write, not before it.
+    expect(seenSinceUpdate({ focusedAt: 100 }, { updated: 100 })).toBe(true);
+  });
+
+  it('does not count a focus from before the state was written', () => {
+    // Looked at the window, then the agent finished: that state is unseen.
+    expect(seenSinceUpdate({ focusedAt: 100 }, { updated: 200 })).toBe(false);
+  });
+
+  it('treats a window that was never focused as unseen', () => {
+    expect(seenSinceUpdate({ focusedAt: 0 }, { updated: 100 })).toBe(false);
+    expect(seenSinceUpdate({}, { updated: 100 })).toBe(false);
+    expect(seenSinceUpdate(null, { updated: 100 })).toBe(false);
+  });
+
+  it('returns false when the agent said nothing, because there was nothing to see', () => {
+    expect(seenSinceUpdate({ focusedAt: 500 }, null)).toBe(false);
+    expect(seenSinceUpdate({ focusedAt: 500 }, { updated: 0 })).toBe(false);
   });
 });

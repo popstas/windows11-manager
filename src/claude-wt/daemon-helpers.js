@@ -70,6 +70,23 @@ function layoutFingerprint(state) {
   return JSON.stringify({ slots: state?.slots ?? {}, lastLayout: state?.lastLayout ?? [] });
 }
 
+/**
+ * Сессия, чьё окно только что вышло на передний план.
+ *
+ * Считается только переход. Пока окно остаётся впереди, отметка не обновляется:
+ * иначе состояние переписывалось бы на диск каждую секунду всё время, что окно
+ * висит активным — а `layoutFingerprint()` включает слоты целиком, так что
+ * каждая такая отметка означала бы запись файла.
+ *
+ * Фокус читается в демоне, а не в менеджере сессий, потому что переключиться на
+ * окно можно и руками — Alt+Tab, клик по таскбару, — и такой просмотр ничем не
+ * отличается от перехода через пикер.
+ */
+function focusedSessionId({ activeWindowId, prevActiveWindowId, windows = [] }) {
+  if (!activeWindowId || activeWindowId === prevActiveWindowId) return null;
+  return windows.find(w => w.id === activeWindowId)?.sessionId ?? null;
+}
+
 /** Settled titles of terminal windows that could not be attributed to a session. */
 function unresolvedTitles(nextWindows) {
   return [...new Set(nextWindows.filter(w => w.stableTitle && !w.sessionId).map(w => w.stableTitle))];
@@ -81,5 +98,6 @@ export {
   isTerminalPath,
   desktopOnlyActions,
   layoutFingerprint,
+  focusedSessionId,
   unresolvedTitles,
 };

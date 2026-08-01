@@ -1,5 +1,5 @@
 import { getConfig } from '../config.js';
-import { getVisibleWindowIds, getWindowById } from '../windows.js';
+import { getVisibleWindowIds, getWindowById, getActiveWindowId } from '../windows.js';
 import { placeWindowByConfig } from '../placement.js';
 import { getWindowsMonitors } from '../monitors.js';
 import { virtualDesktop } from '../virtual-desktop.js';
@@ -11,6 +11,7 @@ import {
   isTerminalPath,
   desktopOnlyActions,
   layoutFingerprint,
+  focusedSessionId,
   unresolvedTitles,
 } from './daemon-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
@@ -70,6 +71,7 @@ let intervalId = null;
 let prevWindows = [];
 let lastWritten = '';
 let liveState = null;
+let prevActiveWindowId = 0;
 let reportedTitles = new Set();
 
 /** Diagnostics for the case the design cannot detect: a title we fail to match. */
@@ -147,6 +149,18 @@ async function claudeWtTick() {
     }
   }
 
+  // Отметка «человек посмотрел на эту сессию». Читается голый hwnd переднего
+  // окна — один GetForegroundWindow, без initWindow, — и записывается только в
+  // момент перехода фокуса на окно, привязанное к сессии.
+  const activeWindowId = getActiveWindowId();
+  const focusedId = focusedSessionId({ activeWindowId, prevActiveWindowId, windows: nextWindows });
+  if (focusedId && nextState.slots[focusedId]) {
+    nextState.slots[focusedId] = upsertSlot(nextState.slots[focusedId], {
+      focusedAt: Math.floor(Date.now() / 1000),
+    });
+  }
+  prevActiveWindowId = activeWindowId;
+
   liveState = nextState;
   const fingerprint = layoutFingerprint(nextState);
   if (fingerprint !== lastWritten) {
@@ -169,6 +183,7 @@ function startClaudeWt() {
   liveState = null;
   prevWindows = [];
   lastWritten = '';
+  prevActiveWindowId = 0;
   terminals = new Map();
   notTerminals = new Set();
   reportedTitles = new Set();

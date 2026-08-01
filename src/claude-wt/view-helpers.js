@@ -1,5 +1,5 @@
 /** Pure helpers for the session picker view. No external I/O. */
-import { lastActivityAt } from './progress-helpers.js';
+import { lastActivityAt, seenSinceUpdate } from './progress-helpers.js';
 
 /**
  * Monitor number for a window, taken from its centre point.
@@ -53,6 +53,10 @@ function buildSessionList({ slots, openMap, mons, progress = {} }) {
       // отдаём метку времени, а не отформатированную строку: форматирование
       // на секунду устаревает быстрее, чем долетает.
       lastActivity: lastActivityAt(slot, agent),
+      // Окно выходило на передний план уже после того, как агент записал своё
+      // состояние, — то есть человек это состояние видел. Сравнение считается
+      // здесь: обе метки известны только тут, а пикеру нужен готовый ответ.
+      agentSeen: seenSinceUpdate(slot, agent),
     };
   });
 }

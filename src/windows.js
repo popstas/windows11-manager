@@ -22,6 +22,15 @@ function getVisibleWindowIds() {
   return addon.getWindows().filter(id => addon.isWindowVisible(id));
 }
 
+// Bare hwnd of the foreground window — GetForegroundWindow() and nothing else.
+// windowManager.getActiveWindow() wraps the same hwnd in a Window, whose
+// constructor calls initWindow (OpenProcess + exe path); that is exactly the
+// per-tick cost the claude-wt daemon is written to avoid.
+function getActiveWindowId() {
+  if (!addon || !addon.getActiveWindow) return 0;
+  return addon.getActiveWindow();
+}
+
 // A single known hwnd, at the cost of one initWindow (OpenProcess + exe path)
 // instead of the whole getWindows() sweep. For pollers that already know which
 // handles they care about; returns null for a handle that is no longer a window.
@@ -135,6 +144,7 @@ function focusWindow(rule) {
 export { matchRules, isWindowExcluded } from './windows-helpers.js';
 export {
   getVisibleWindowIds,
+  getActiveWindowId,
   getWindowById,
   focusWindowById,
   focusWindow,

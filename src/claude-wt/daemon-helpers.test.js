@@ -5,6 +5,7 @@ import {
   isTerminalPath,
   desktopOnlyActions,
   layoutFingerprint,
+  focusedSessionId,
   unresolvedTitles,
 } from './daemon-helpers.js';
 
@@ -170,5 +171,41 @@ describe('unresolvedTitles', () => {
       { id: 2, stableTitle: 'same', sessionId: null },
     ]);
     expect(out).toEqual(['same']);
+  });
+});
+
+describe('focusedSessionId', () => {
+  const windows = [
+    { id: 1, sessionId: 'alpha' },
+    { id: 2, sessionId: 'beta' },
+    { id: 3, sessionId: null },
+  ];
+
+  it('names the session whose window just came to the front', () => {
+    expect(focusedSessionId({ activeWindowId: 2, prevActiveWindowId: 1, windows })).toBe('beta');
+  });
+
+  it('stays silent while the same window keeps the focus', () => {
+    // Stamping every tick would rewrite the state file once a second for as
+    // long as the window sits in front: layoutFingerprint() covers the slots
+    // whole, so every stamp is a disk write.
+    expect(focusedSessionId({ activeWindowId: 2, prevActiveWindowId: 2, windows })).toBeNull();
+  });
+
+  it('ignores a window that belongs to no session', () => {
+    expect(focusedSessionId({ activeWindowId: 3, prevActiveWindowId: 1, windows })).toBeNull();
+  });
+
+  it('ignores a foreground window the tracker does not follow', () => {
+    expect(focusedSessionId({ activeWindowId: 99, prevActiveWindowId: 1, windows })).toBeNull();
+  });
+
+  it('ignores an empty foreground handle', () => {
+    // GetForegroundWindow returns 0 when the foreground is being handed over.
+    expect(focusedSessionId({ activeWindowId: 0, prevActiveWindowId: 1, windows })).toBeNull();
+  });
+
+  it('reports the very first focus seen after a daemon start', () => {
+    expect(focusedSessionId({ activeWindowId: 1, prevActiveWindowId: 0, windows })).toBe('alpha');
   });
 });
