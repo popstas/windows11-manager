@@ -68,6 +68,19 @@ The code in `calcFancyZonePos` divides ALL values (monitor coords + zone coords)
 - `src/claude-wt/index.js` exports: `startClaudeWt`, `stopClaudeWt`, `claudeWtStatus`, `getClaudeWtConfig`
 - `src/claude-wt/restore.js` exports: `restoreClaudeSessions`, `maybeRestoreOnStart`
 
+## claude-wt: связка четырёх мест
+
+Список сессий собирается не только здесь. Хуки агента живут на pc-virt (`V:`),
+пикер и экспорт в Home Assistant — в `windows-mqtt`, конфиг панели openHASP — на
+shome (`R:`). Состояние течёт в одну сторону, нажатия — в обратную, и каждая
+граница между частями уже приносила по багу.
+
+Карта, потоки и измеренные ограничения: `.claude/skills/claude-wt/SKILL.md`.
+Читать перед правками в `src/claude-wt/`, в `windows-mqtt` или в конфиге панели —
+там же собраны грабли, которые невозможно вывести из кода одного репозитория
+(вранье `mtime` по SMB, обрезка шаблонов в Home Assistant, отсутствие отступов у
+кнопок openHASP).
+
 ## claude-wt polling budget
 
 Two rules keep the once-a-second daemon off the CPU graph; both were paid for once already and must not be re-learned:
