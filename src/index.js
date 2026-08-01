@@ -144,14 +144,51 @@ async function start() {
 
   claudeWt
     .command('restore')
-    .option('--force', 'restore only the sessions that are missing, even if others are open')
-    .option('--session <id...>', 'restore these session ids instead of the last layout')
+    .description('alias for "snapshots-restore last"')
+    .option('--session <id...>', 'restore only these sessions from the snapshot')
+    .option('--slots', 'restore from the live slots instead of a snapshot (legacy)')
+    .option('--force', 'with --slots: bring back only the sessions that are missing')
     .action(async (options) => {
       const mod = await import('./claude-wt/restore.js');
-      const { skipped } = await mod.restoreClaudeSessions({
-        force: options.force,
-        sessionIds: options.session,
-      });
+      // По умолчанию — самый свежий снимок. lastLayout обнуляется через секунду
+      // после закрытия окон (демон переписывает его тем, что видит на экране),
+      // поэтому восстановление по нему работало только сразу после перезагрузки.
+      const { skipped } = options.slots
+        ? await mod.restoreClaudeSessions({ force: options.force, sessionIds: options.session })
+        : await mod.restoreSnapshot({ id: 'last', sessionIds: options.session });
+      process.exit(skipped.length ? 1 : 0);
+    });
+
+  claudeWt
+    .command('snapshots-list')
+    .description('list remembered session layouts')
+    .option('--json', 'print the raw structure instead of a table')
+    .action(async (options) => {
+      const mod = await import('./claude-wt/snapshotter.js');
+      const { getClaudeWtConfig } = await import('./claude-wt/index.js');
+      const snapshots = mod.listSnapshots(getClaudeWtConfig());
+      if (options.json) {
+        console.log(JSON.stringify({ ok: true, snapshots }, null, 2));
+        process.exit(0);
+      }
+      if (!snapshots.length) console.log('[claude-wt] no snapshots yet');
+      for (const s of snapshots) {
+        console.log(`${s.id}  ${s.sessions.length} session(s)`);
+        for (const x of s.sessions) {
+          const where = `desktop ${x.desktop ?? '—'} · monitor ${x.monitor ?? '—'}`;
+          console.log(`    ${x.title || x.id}  (${where})`);
+        }
+      }
+      process.exit(0);
+    });
+
+  claudeWt
+    .command('snapshots-restore [id]')
+    .description('bring back a remembered layout ("last" for the newest)')
+    .option('--session <id...>', 'restore only these sessions from the snapshot')
+    .action(async (id, options) => {
+      const mod = await import('./claude-wt/restore.js');
+      const { skipped } = await mod.restoreSnapshot({ id: id ?? 'last', sessionIds: options.session });
       process.exit(skipped.length ? 1 : 0);
     });
 

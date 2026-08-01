@@ -15,6 +15,7 @@ import {
   unresolvedTitles,
 } from './daemon-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
+import { snapshotTick, resetSnapshotter } from './snapshotter.js';
 
 function getClaudeWtConfig() {
   return mergeClaudeWtConfig(getConfig().claudeWt);
@@ -164,6 +165,19 @@ async function claudeWtTick() {
   }
   prevActiveWindowId = activeWindowId;
 
+  // Снимок расклада. Пока состав и координаты не менялись, тут только склейка
+  // строки из id сессий; getMons() и запись файла случаются лишь по решению.
+  try {
+    snapshotTick({
+      cfg,
+      slots: nextState.slots,
+      openSessionIds: nextWindows.filter(w => w.sessionId).map(w => w.sessionId),
+      nowMs: Date.now(),
+    });
+  } catch (e) {
+    console.error(`[claude-wt] snapshot failed: ${e.message}`);
+  }
+
   liveState = nextState;
   const fingerprint = layoutFingerprint(nextState);
   if (fingerprint !== lastWritten) {
@@ -187,6 +201,7 @@ function startClaudeWt() {
   prevWindows = [];
   lastWritten = '';
   prevActiveWindowId = 0;
+  resetSnapshotter();
   terminals = new Map();
   notTerminals = new Set();
   reportedTitles = new Set();

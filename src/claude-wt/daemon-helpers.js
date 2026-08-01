@@ -13,6 +13,7 @@ const CLAUDE_WT_DEFAULTS = {
   debug: false,
   launch: { command: 'wt.exe', args: [] },
   restore: { auto: false, windowTimeoutMs: 30000, launchDelayMs: 2000, settleMs: 500 },
+  snapshots: { enabled: true, path: '', debounceMs: 60000, keep: 20 },
 };
 
 /** Deep-ish merge: launch and restore are merged key by key, everything else replaced. */
@@ -23,6 +24,7 @@ function mergeClaudeWtConfig(raw) {
     ...cfg,
     launch: { ...CLAUDE_WT_DEFAULTS.launch, args: [...CLAUDE_WT_DEFAULTS.launch.args], ...(cfg.launch ?? {}) },
     restore: { ...CLAUDE_WT_DEFAULTS.restore, ...(cfg.restore ?? {}) },
+    snapshots: { ...CLAUDE_WT_DEFAULTS.snapshots, ...(cfg.snapshots ?? {}) },
   };
 }
 
