@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { loadSessionIndex } from './sessions.js';
+import { loadSessionIndex, invalidateSessionIndex } from './sessions.js';
 
 // loadSessionIndex keeps its cache at module scope, keyed by path. Every test
 // therefore writes to its own file inside the temp dir, so nothing leaks from
@@ -79,6 +79,17 @@ describe('loadSessionIndex', () => {
     writeDump(p, dumpWith('home'), T0);
     expect(loadSessionIndex(p, '', base + 1000).home).toBeUndefined();
     expect(loadSessionIndex(p, '', base + 20000).home)
+      .toEqual({ id: 's0', cwd: '/p0', title: 'home', ambiguous: false });
+  });
+
+  it('invalidateSessionIndex forces a re-read even within the age window', () => {
+    const p = freshPath();
+    writeDump(p, dumpWith('ccfzf'), T0);
+    const base = 1_000_000;
+    loadSessionIndex(p, '', base);
+    writeDump(p, dumpWith('home'), T0);
+    invalidateSessionIndex();
+    expect(loadSessionIndex(p, '', base + 1000).home)
       .toEqual({ id: 's0', cwd: '/p0', title: 'home', ambiguous: false });
   });
 

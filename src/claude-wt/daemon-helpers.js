@@ -12,17 +12,24 @@ const CLAUDE_WT_DEFAULTS = {
   desktop: true,
   debug: false,
   launch: { command: 'wt.exe', args: [] },
+  // Fresh session in a project folder (project hotkeys). Placeholders: {cwd}, {name}.
+  launchNew: { command: 'wt.exe', args: [] },
   restore: { auto: false, windowTimeoutMs: 30000, launchDelayMs: 2000, settleMs: 500 },
   snapshots: { enabled: true, path: '', debounceMs: 60000, keep: 20 },
 };
 
-/** Deep-ish merge: launch and restore are merged key by key, everything else replaced. */
+/** Deep-ish merge: launch / launchNew / restore / snapshots merged key by key. */
 function mergeClaudeWtConfig(raw) {
   const cfg = raw ?? {};
   return {
     ...CLAUDE_WT_DEFAULTS,
     ...cfg,
     launch: { ...CLAUDE_WT_DEFAULTS.launch, args: [...CLAUDE_WT_DEFAULTS.launch.args], ...(cfg.launch ?? {}) },
+    launchNew: {
+      ...CLAUDE_WT_DEFAULTS.launchNew,
+      args: [...CLAUDE_WT_DEFAULTS.launchNew.args],
+      ...(cfg.launchNew ?? {}),
+    },
     restore: { ...CLAUDE_WT_DEFAULTS.restore, ...(cfg.restore ?? {}) },
     snapshots: { ...CLAUDE_WT_DEFAULTS.snapshots, ...(cfg.snapshots ?? {}) },
   };

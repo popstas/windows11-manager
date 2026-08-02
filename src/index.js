@@ -200,6 +200,18 @@ async function start() {
     process.exit(0);
   });
 
+  claudeWt
+    .command('open-project')
+    .description('focus the last open session for a project cwd, or spawn a fresh named Claude')
+    .requiredOption('--cwd <path>', 'Linux project directory')
+    .requiredOption('--name <name>', 'display name for a newly spawned session')
+    .action(async (options) => {
+      const mod = await import('./claude-wt/project.js');
+      const res = await mod.openClaudeProject({ cwd: options.cwd, name: options.name });
+      console.log(JSON.stringify(res, null, 2));
+      process.exit(res.ok ? 0 : 1);
+    });
+
   program.allowExcessArguments();
   program.parse();
 }

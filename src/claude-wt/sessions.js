@@ -77,5 +77,10 @@ function loadSessionIndex(filePath, progressDir = '', nowMs = Date.now()) {
   return cache.index;
 }
 
+/** Drop the cached dump so the next loadSessionIndex re-reads from disk. */
+function invalidateSessionIndex() {
+  cache = { path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {} };
+}
+
 export { indexSessions, compareSessions } from './sessions-helpers.js';
-export { loadSessionIndex };
+export { loadSessionIndex, invalidateSessionIndex };

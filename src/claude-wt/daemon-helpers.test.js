@@ -33,9 +33,21 @@ describe('mergeClaudeWtConfig', () => {
     });
   });
 
+  it('merges launchNew the same way as launch', () => {
+    const cfg = mergeClaudeWtConfig({
+      launchNew: { args: ['ssh', '-t', "cd '{cwd}' && claude -n '{name}'"] },
+    });
+    expect(cfg.launchNew).toEqual({
+      command: 'wt.exe',
+      args: ['ssh', '-t', "cd '{cwd}' && claude -n '{name}'"],
+    });
+  });
+
   it('does not leak edits back into the defaults', () => {
     mergeClaudeWtConfig({}).launch.args.push('mutated');
+    mergeClaudeWtConfig({}).launchNew.args.push('mutated');
     expect(CLAUDE_WT_DEFAULTS.launch.args).toEqual([]);
+    expect(CLAUDE_WT_DEFAULTS.launchNew.args).toEqual([]);
   });
 });
 

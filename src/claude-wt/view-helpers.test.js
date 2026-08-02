@@ -43,6 +43,16 @@ describe('buildSessionList', () => {
     expect(a1.title).toBe('ccfzf');
     expect(a1.cwd).toBe('/p/ccfzf');
     expect(a1.desktop).toBe(2);
+    expect(a1.focusedAt).toBe(0);
+  });
+
+  it('carries focusedAt from the slot', () => {
+    const withFocus = {
+      ...slots,
+      a1: { ...slots.a1, focusedAt: 1700000000 },
+    };
+    const list = buildSessionList({ slots: withFocus, openMap: new Map([['a1', 777]]), mons });
+    expect(list.find(s => s.id === 'a1').focusedAt).toBe(1700000000);
   });
 
   it('marks a session with no window as closed and its desktop as unknown', () => {
