@@ -119,10 +119,12 @@ describe('normalizeProjects', () => {
   it('keeps complete entries and drops incomplete ones', () => {
     expect(normalizeProjects([
       { name: 'home', cwd: '/p/home', hotkey: 'Ctrl+F11', profile: 'home' },
+      { name: 'silent', cwd: '/p/silent', profile: '  ' },
       { name: 'x' },
       null,
     ])).toEqual([
       { name: 'home', cwd: '/p/home', hotkey: 'Ctrl+F11', profile: 'home' },
+      { name: 'silent', cwd: '/p/silent', profile: '' },
     ]);
   });
 });
@@ -133,6 +135,7 @@ describe('profileForCwd', () => {
     projects: [
       { name: 'home', cwd: '/p/home', profile: 'home' },
       { name: 'ez', cwd: '/p/ExpertizeMe' },
+      { name: 'silent', cwd: '/p/silent', profile: '' },
     ],
   };
 
@@ -142,6 +145,10 @@ describe('profileForCwd', () => {
 
   it('falls back to cfg.profile when project has no profile', () => {
     expect(profileForCwd('/p/ExpertizeMe', cfg)).toBe('popstas');
+  });
+
+  it('honors an explicitly empty project profile', () => {
+    expect(profileForCwd('/p/silent', cfg)).toBe('');
   });
 
   it('falls back to cfg.profile when cwd is unknown', () => {

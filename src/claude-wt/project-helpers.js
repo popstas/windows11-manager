@@ -36,7 +36,7 @@ function normalizeProjects(raw) {
     if (!p || typeof p.name !== 'string' || !p.name || typeof p.cwd !== 'string' || !p.cwd) continue;
     const entry = { name: p.name, cwd: p.cwd };
     if (typeof p.hotkey === 'string' && p.hotkey.trim()) entry.hotkey = p.hotkey.trim();
-    if (typeof p.profile === 'string' && p.profile.trim()) entry.profile = p.profile.trim();
+    if (typeof p.profile === 'string') entry.profile = p.profile.trim();
     out.push(entry);
   }
   return out;
@@ -47,7 +47,7 @@ function profileForCwd(cwd, cfg = {}) {
   const hit = typeof cwd === 'string' && cwd
     ? projects.find(p => p.cwd === cwd)
     : undefined;
-  if (hit && typeof hit.profile === 'string' && hit.profile) return hit.profile;
+  if (hit) return hit.profile ?? (typeof cfg.profile === 'string' ? cfg.profile : '');
   return typeof cfg.profile === 'string' ? cfg.profile : '';
 }
 
