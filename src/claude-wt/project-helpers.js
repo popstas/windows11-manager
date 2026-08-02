@@ -63,7 +63,7 @@ function planWtLaunch({ launch, vars = {}, profile }) {
       .replaceAll('{name}', safeName)
   );
   return {
-    command: launch.command,
+    command: launch?.command,
     args: applyWtProfile(substituted, profile),
   };
 }
