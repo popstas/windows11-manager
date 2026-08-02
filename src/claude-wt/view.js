@@ -8,6 +8,7 @@ import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { buildSessionList } from './view-helpers.js';
 import { loadProgress } from './progress.js';
 import { loadMeta } from './meta.js';
+import { listSnapshots } from './snapshotter.js';
 
 /**
  * Session id -> hwnd for every claude terminal on screen right now.
@@ -49,4 +50,20 @@ function claudeWtSessions() {
   };
 }
 
-export { openSessionMap, claudeWtSessions };
+/**
+ * Remembered layouts for the picker / MQTT menu.
+ *
+ * Reads the snapshots file directly so this works even when the daemon is not
+ * the process answering the call (windows-mqtt loads the library separately).
+ */
+function claudeWtSnapshots() {
+  const cfg = getClaudeWtConfig();
+  if (!cfg.enabled) return { ok: false, reason: 'claudeWt.enabled is false in config' };
+  try {
+    return { ok: true, snapshots: listSnapshots(cfg) };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+export { openSessionMap, claudeWtSessions, claudeWtSnapshots };
