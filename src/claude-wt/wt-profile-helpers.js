@@ -1,14 +1,33 @@
-/** Strip existing -p pairs and optionally reinject a WT profile. Pure. */
+/**
+ * Strip existing WT `-p` pairs from the option prefix and optionally reinject
+ * a profile. Stops at the first positional (non-flag) token so inner commands
+ * like `ssh -p 2222` keep their own `-p`. Pure.
+ */
 function applyWtProfile(args, profile) {
   const src = Array.isArray(args) ? args : [];
   const stripped = [];
-  for (let i = 0; i < src.length; i++) {
-    if (src[i] === '-p') {
+  let i = 0;
+  while (i < src.length) {
+    const t = src[i];
+    if (typeof t === 'string' && !t.startsWith('-')) break; // end of wt prefix
+    if (t === '-p') {
       i += 1; // skip profile name
+      if (i < src.length) i += 1;
       continue;
     }
-    stripped.push(src[i]);
+    stripped.push(t);
+    i += 1;
+    // Value for a wt flag that takes one (`-w <n>`, `--window <n>`, …).
+    if ((t === '-w' || t === '--window') && i < src.length) {
+      stripped.push(src[i]);
+      i += 1;
+    }
   }
+  while (i < src.length) {
+    stripped.push(src[i]);
+    i += 1;
+  }
+
   const name = typeof profile === 'string' ? profile.trim() : '';
   if (!name) return stripped;
 

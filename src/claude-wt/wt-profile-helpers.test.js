@@ -30,4 +30,13 @@ describe('applyWtProfile', () => {
     applyWtProfile(args, 'x');
     expect(args).toEqual(['-w', '-1', 'ssh']);
   });
+
+  it('keeps ssh -p <port> after the wt option prefix', () => {
+    expect(applyWtProfile(
+      ['-w', '-1', 'ssh', '-p', '2222', 'host'],
+      'home',
+    )).toEqual([
+      '-w', '-1', '-p', 'home', 'ssh', '-p', '2222', 'host',
+    ]);
+  });
 });
