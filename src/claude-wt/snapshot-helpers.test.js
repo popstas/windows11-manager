@@ -224,6 +224,16 @@ describe('planSnapshotRestore', () => {
     expect(item.args).toEqual(['ssh', 'ccfzf --session a']);
   });
 
+  it('applies WT profile to snapshot restore args', () => {
+    const [item] = planSnapshotRestore({
+      snapshot,
+      openSessionIds: new Set(['b', 'c']),
+      launch: { command: 'wt.exe', args: ['-w', '-1', 'ssh', 'ccfzf --session {id}'] },
+      profile: 'popstas',
+    });
+    expect(item.args).toEqual(['-w', '-1', '-p', 'popstas', 'ssh', 'ccfzf --session a']);
+  });
+
   it('narrows to the requested sessions when asked', () => {
     const plan = planSnapshotRestore({ snapshot, openSessionIds: new Set(), sessionIds: ['b'], launch });
     expect(plan.map(p => p.sessionId)).toEqual(['b']);

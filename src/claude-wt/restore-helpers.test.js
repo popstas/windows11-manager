@@ -76,6 +76,20 @@ describe('planRestore', () => {
       '--session a1 --title a1',
     ]);
   });
+
+  it('applies WT profile after {id} substitution', () => {
+    const launch = { command: 'wt.exe', args: ['-w', '-1', 'ssh', '-t', 'ccfzf --session {id}'] };
+    expect(planRestore({ state: state(), launch, profile: 'popstas' })[0].args).toEqual([
+      '-w', '-1', '-p', 'popstas', 'ssh', '-t', 'ccfzf --session a1',
+    ]);
+  });
+
+  it('strips baked-in -p when profile is empty', () => {
+    const launch = { command: 'wt.exe', args: ['-w', '-1', '-p', 'old', 'ssh'] };
+    expect(planRestore({ state: state(), launch, profile: '' })[0].args).toEqual([
+      '-w', '-1', 'ssh',
+    ]);
+  });
 });
 
 describe('partitionPlan', () => {

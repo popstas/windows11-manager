@@ -1,5 +1,7 @@
 /** Pure helper functions for claude-wt snapshots. No external I/O. */
 
+import { applyWtProfile } from './wt-profile-helpers.js';
+
 const SNAPSHOTS_VERSION = 1;
 
 const SNAPSHOT_DEFAULTS = {
@@ -156,7 +158,7 @@ function snapshotsFingerprint(snapshots) {
  * Координаты берутся из снимка, а не из текущих слотов, — в этом весь смысл
  * хранить копию.
  */
-function planSnapshotRestore({ snapshot, openSessionIds, sessionIds, launch }) {
+function planSnapshotRestore({ snapshot, openSessionIds, sessionIds, launch, profile }) {
   const open = openSessionIds ?? new Set();
   const wanted = sessionIds?.length ? new Set(sessionIds) : null;
   return (snapshot?.sessions ?? [])
@@ -166,7 +168,10 @@ function planSnapshotRestore({ snapshot, openSessionIds, sessionIds, launch }) {
       sessionId: s.id,
       title: s.title,
       command: launch?.command,
-      args: (launch?.args ?? []).map(arg => arg.replaceAll('{id}', s.id)),
+      args: applyWtProfile(
+        (launch?.args ?? []).map(arg => arg.replaceAll('{id}', s.id)),
+        profile,
+      ),
       bounds: s.bounds,
       desktop: s.desktop,
     }));
