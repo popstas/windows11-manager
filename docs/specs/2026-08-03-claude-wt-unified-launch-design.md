@@ -1,7 +1,7 @@
 # Claude WT unified launch
 
 Дата: 2026-08-03
-Статус: черновик (ожидает ревью)
+Статус: утверждён
 
 Связанный спек: `docs/specs/2026-08-02-claude-wt-profile-design.md`
 (частично перекрывается: таблица Resolution для restore/snapshot и владение `claudeProjects`).
