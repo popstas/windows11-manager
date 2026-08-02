@@ -55,6 +55,26 @@ describe('buildSessionList', () => {
     expect(b2.monitorBounds).toBe(null);
   });
 
+  it('carries money and context through from the hook record', () => {
+    const progress = { a1: { state: 'active', updated: 5, costUsd: 12, contextPct: 47 } };
+    const list = buildSessionList({ slots, openMap: new Map([['a1', 777]]), mons, progress });
+    const a1 = list.find(s => s.id === 'a1');
+    expect(a1.agentCostUsd).toBe(12);
+    expect(a1.agentContextPct).toBe(47);
+    // Сессия без перехватчика статуслайна: ноль, а не undefined — читателю
+    // ниже по цепочке отличать «не знаем» приходится по нему.
+    const b2 = list.find(s => s.id === 'b2');
+    expect(b2.agentCostUsd).toBe(0);
+    expect(b2.agentContextPct).toBe(0);
+  });
+
+  it('carries session start time from meta', () => {
+    const meta = { a1: { started: 1785613874 } };
+    const list = buildSessionList({ slots, openMap: new Map([['a1', 777]]), mons, meta });
+    expect(list.find(s => s.id === 'a1').agentStarted).toBe(1785613874);
+    expect(list.find(s => s.id === 'b2').agentStarted).toBe(0);
+  });
+
   it('returns an empty list when there are no slots', () => {
     expect(buildSessionList({ slots: undefined, openMap: new Map(), mons })).toEqual([]);
   });

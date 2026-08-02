@@ -5,9 +5,20 @@ describe('normalizeProgress', () => {
   it('keeps a well-formed record', () => {
     expect(normalizeProgress({
       state: 'active', updated: 100, message: 'hi', summary: '', lastSummary: 'Закоммитил',
+      costUsd: 12, contextPct: 47,
     })).toEqual({
       state: 'active', updated: 100, event: '', message: 'hi', summary: '', lastSummary: 'Закоммитил',
+      costUsd: 12, contextPct: 47,
     });
+  });
+
+  it('treats missing money and context as zero', () => {
+    // Их пишет не хук, а перехватчик статуслайна, и стоит он не у каждой
+    // сессии: ноль здесь означает «не знаем», и показывать его как «$0» нельзя.
+    const bare = normalizeProgress({ state: 'active', updated: 100 });
+    expect(bare.costUsd).toBe(0);
+    expect(bare.contextPct).toBe(0);
+    expect(normalizeProgress({ state: 'active', updated: 1, costUsd: '12' }).costUsd).toBe(0);
   });
 
   it('treats a missing summary as no summary', () => {
@@ -28,7 +39,10 @@ describe('normalizeProgress', () => {
     // another process: an unrecognised state must not reach the picker, yet
     // the write itself still proves the session was alive at that moment.
     expect(normalizeProgress({ state: 'unknown', updated: 42 }))
-      .toEqual({ state: null, updated: 42, event: '', message: '', summary: '', lastSummary: '' });
+      .toEqual({
+        state: null, updated: 42, event: '', message: '', summary: '', lastSummary: '',
+        costUsd: 0, contextPct: 0,
+      });
   });
 
   it('returns null when there is neither a state nor a time', () => {
@@ -40,7 +54,10 @@ describe('normalizeProgress', () => {
 
   it('ignores a non-numeric timestamp', () => {
     expect(normalizeProgress({ state: 'idle', updated: 'soon' }))
-      .toEqual({ state: 'idle', updated: 0, event: '', message: '', summary: '', lastSummary: '' });
+      .toEqual({
+        state: 'idle', updated: 0, event: '', message: '', summary: '', lastSummary: '',
+        costUsd: 0, contextPct: 0,
+      });
   });
 
   it('ignores a non-string message', () => {

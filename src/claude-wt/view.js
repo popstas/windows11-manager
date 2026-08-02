@@ -7,6 +7,7 @@ import { stripTitleDecoration } from './title-helpers.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { buildSessionList } from './view-helpers.js';
 import { loadProgress } from './progress.js';
+import { loadMeta } from './meta.js';
 
 /**
  * Session id -> hwnd for every claude terminal on screen right now.
@@ -37,12 +38,14 @@ function claudeWtSessions() {
   if (!cfg.statePath) return { ok: false, reason: 'claudeWt.statePath is not set in config' };
   const state = readState(cfg.statePath);
   const openMap = openSessionMap(cfg, state);
-  // Прогресс читается только здесь — то есть пока открыт пикер. Каталог лежит
-  // на сетевом диске, и в тике демона ему не место.
-  const progress = loadProgress(cfg.progressDir, Object.keys(state.slots));
+  // Прогресс и мета читаются только здесь — то есть пока открыт пикер. Каталог
+  // лежит на сетевом диске, и в тике демона им не место.
+  const ids = Object.keys(state.slots);
+  const progress = loadProgress(cfg.progressDir, ids);
+  const meta = loadMeta(cfg.progressDir, ids);
   return {
     ok: true,
-    sessions: buildSessionList({ slots: state.slots, openMap, mons: getMons(), progress }),
+    sessions: buildSessionList({ slots: state.slots, openMap, mons: getMons(), progress, meta }),
   };
 }
 

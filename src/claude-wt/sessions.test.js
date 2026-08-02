@@ -67,6 +67,21 @@ describe('loadSessionIndex', () => {
     expect(index.ccfzf).toBeUndefined();
   });
 
+  it('re-reads the file once the cached index is older than its max age', () => {
+    const p = freshPath();
+    writeDump(p, dumpWith('ccfzf'), T0);
+    const base = 1_000_000;
+    loadSessionIndex(p, '', base);
+    // Тот же mtime, другое содержимое — ровно то, что видит долгоживущий
+    // процесс на сетевом диске: клиент SMB отдаёт ему закэшированные атрибуты,
+    // и кэш, который верит одному mtime, привязывает окна к сессиям, которых в
+    // дампе давно нет.
+    writeDump(p, dumpWith('home'), T0);
+    expect(loadSessionIndex(p, '', base + 1000).home).toBeUndefined();
+    expect(loadSessionIndex(p, '', base + 20000).home)
+      .toEqual({ id: 's0', cwd: '/p0', title: 'home', ambiguous: false });
+  });
+
   it('yields an empty index for a path that does not exist', () => {
     expect(loadSessionIndex(path.join(dir, 'never-written.json'))).toEqual({});
   });

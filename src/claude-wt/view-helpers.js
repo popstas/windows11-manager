@@ -23,11 +23,12 @@ function monitorNumberForBounds(mons, bounds) {
   return null;
 }
 
-function buildSessionList({ slots, openMap, mons, progress = {} }) {
+function buildSessionList({ slots, openMap, mons, progress = {}, meta = {} }) {
   return Object.entries(slots ?? {}).map(([id, slot]) => {
     const bounds = slot.bounds ?? null;
     const monitor = monitorNumberForBounds(mons, bounds);
     const agent = progress[id] ?? null;
+    const sessionMeta = meta[id] ?? null;
     return {
       id,
       title: slot.titles?.[0] ?? '',
@@ -56,6 +57,14 @@ function buildSessionList({ slots, openMap, mons, progress = {} }) {
       // То же самое, но не стёртое у работающей сессии: «на чём остановилась в
       // прошлый раз» — вопрос отдельный от «что говорит сейчас».
       agentLastSummary: agent?.lastSummary ?? '',
+      // Целые доллары и целые проценты контекста. Ноль — данных нет: перехват
+      // статуслайна стоит не у всех сессий, и отличать «не знаем» от «ничего не
+      // потратила» приходится по нулю, других признаков тут нет.
+      agentCostUsd: agent?.costUsd ?? 0,
+      agentContextPct: agent?.contextPct ?? 0,
+      // Когда сессия стартовала (SessionStart → meta.json). Ноль — хук метаданных
+      // не писал: сортировка oldest/newest кладёт такие строки в конец.
+      agentStarted: sessionMeta?.started ?? 0,
       // Epoch-секунды. Пикер показывает возраст относительно now, поэтому
       // отдаём метку времени, а не отформатированную строку: форматирование
       // на секунду устаревает быстрее, чем долетает.
