@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { trackTitle, duplicateTitles, resolveSession } from './tracker-helpers.js';
+import { trackTitle, titleWinnerIds, resolveSession } from './tracker-helpers.js';
 
 const win = (over = {}) => ({ id: 1, title: 'ccfzf', bounds: { x: 0, y: 0, width: 800, height: 600 }, ...over });
 
@@ -32,14 +32,17 @@ describe('trackTitle', () => {
   });
 });
 
-describe('duplicateTitles', () => {
-  it('reports a title shown by two windows at once', () => {
-    const dup = duplicateTitles([win({ id: 1 }), win({ id: 2 }), win({ id: 3, title: 'other' })]);
-    expect([...dup]).toEqual(['ccfzf']);
+describe('titleWinnerIds', () => {
+  it('picks the largest hwnd when two windows share a title', () => {
+    const winners = titleWinnerIds([win({ id: 1 }), win({ id: 2 }), win({ id: 3, title: 'other' })]);
+    expect(winners.get('ccfzf')).toBe(2);
+    expect(winners.get('other')).toBe(3);
   });
 
-  it('reports nothing when every title is unique', () => {
-    expect(duplicateTitles([win({ id: 1 }), win({ id: 2, title: 'other' })]).size).toBe(0);
+  it('maps every unique title to its only window', () => {
+    const winners = titleWinnerIds([win({ id: 1 }), win({ id: 2, title: 'other' })]);
+    expect(winners.get('ccfzf')).toBe(1);
+    expect(winners.get('other')).toBe(2);
   });
 });
 
@@ -55,12 +58,12 @@ describe('resolveSession', () => {
     expect(resolveSession('ccfzf', {}, slots)).toEqual({ id: 'a1', cwd: '/p', ambiguous: false });
   });
 
-  it('marks the fallback ambiguous when two slots claim the same title', () => {
+  it('picks the most recently seen slot when two claim the same title', () => {
     const slots = {
       a1: { titles: ['ccfzf'], cwd: '/p', bounds: {}, desktop: null, lastSeen: 10 },
       b2: { titles: ['ccfzf'], cwd: '/q', bounds: {}, desktop: null, lastSeen: 20 },
     };
-    expect(resolveSession('ccfzf', {}, slots).ambiguous).toBe(true);
+    expect(resolveSession('ccfzf', {}, slots)).toEqual({ id: 'b2', cwd: '/q', ambiguous: true });
   });
 
   it('returns null for a shell prompt title', () => {
@@ -129,21 +132,24 @@ describe('step', () => {
     expect(out.nextState.slots).toEqual({});
   });
 
-  it('does not touch either window when two of them show the same title', () => {
+  it('binds the larger hwnd when two windows show the same title', () => {
     const w = [
       { id: 1, title: 'ccfzf', bounds: bounds(10, 20) },
       { id: 2, title: 'ccfzf', bounds: bounds(30, 40) },
     ];
     const out = run([w, w]);
-    expect(out.actions).toEqual([]);
-    expect(out.nextState.slots).toEqual({});
+    expect(out.nextState.slots.a1.bounds).toEqual(bounds(30, 40));
+    expect(out.bindings).toEqual([{ windowId: 2, sessionId: 'a1' }]);
+    expect(out.nextWindows.find(x => x.id === 1).sessionId).toBe(null);
+    expect(out.nextWindows.find(x => x.id === 2).sessionId).toBe('a1');
   });
 
-  it('refuses to bind an ambiguous title', () => {
+  it('binds an ambiguous dump title to the index best', () => {
     const w = [{ id: 1, title: 'ccfzf', bounds: bounds(10, 20) }];
     const ambiguous = { ccfzf: { id: 'a1', cwd: '/p', title: 'ccfzf', ambiguous: true } };
     const out = run([w, w], { sessionIndex: ambiguous });
-    expect(out.nextState.slots).toEqual({});
+    expect(out.nextState.slots.a1.bounds).toEqual(bounds(10, 20));
+    expect(out.bindings).toEqual([{ windowId: 1, sessionId: 'a1' }]);
   });
 
   it('never records a minimized window', () => {
@@ -304,7 +310,7 @@ describe('step late session resolution', () => {
     expect(out.nextState.lastLayout).toEqual([]);
   });
 
-  it('refuses a late binding when two windows share the title', () => {
+  it('late-binds the larger hwnd when two windows share the title', () => {
     const two = [
       { id: 1, title: 'cup-dashboard', bounds: bounds(10, 20) },
       { id: 2, title: 'cup-dashboard', bounds: bounds(30, 40) },
@@ -315,7 +321,8 @@ describe('step late session resolution', () => {
       out = step({ prevWindows, windows: two, sessionIndex, state: out.nextState, now: 1000 + i * 1000 });
       prevWindows = out.nextWindows;
     });
-    expect(out.nextState.slots).toEqual({});
+    expect(out.nextState.slots.c3.bounds).toEqual(bounds(30, 40));
+    expect(out.bindings).toEqual([{ windowId: 2, sessionId: 'c3' }]);
   });
 });
 

@@ -31,7 +31,7 @@ function openSessionIds(cfg, state) {
   const ids = new Set();
   for (const w of terminalWindows()) {
     const resolved = resolveSession(stripTitleDecoration(w.getTitle()), sessionIndex, state.slots);
-    if (resolved && !resolved.ambiguous) ids.add(resolved.id);
+    if (resolved) ids.add(resolved.id);
   }
   return ids;
 }

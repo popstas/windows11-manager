@@ -30,8 +30,9 @@ function compareSessions(a, b) {
 
 /**
  * Build a title -> session index out of a ccfzf dump.
- * A title shared by two equally good sessions is marked ambiguous:
- * the tracker refuses to move a window it cannot attribute.
+ * A title shared by two equally good sessions is still marked ambiguous for
+ * diagnostics, but the tracker binds to `best` anyway — refusing left windows
+ * stranded when the dump could not break a tie.
  *
  * Keyed by the decoration-stripped title, because that is the form the window
  * title arrives in: the dump holds "Check branch commit count" while the window

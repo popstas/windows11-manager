@@ -21,7 +21,11 @@ function openSessionMap(cfg, state) {
   const map = new Map();
   for (const w of getWindows().filter(isTerminalWindow)) {
     const resolved = resolveSession(stripTitleDecoration(w.getTitle()), sessionIndex, state.slots);
-    if (resolved && !resolved.ambiguous) map.set(resolved.id, w.id);
+    if (!resolved) continue;
+    // Same title on two windows: keep the larger hwnd (newest). Ties in the
+    // dump no longer block — resolveSession already picked a best id.
+    const prev = map.get(resolved.id);
+    if (prev === undefined || w.id > prev) map.set(resolved.id, w.id);
   }
   return map;
 }
