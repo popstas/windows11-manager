@@ -78,6 +78,17 @@ describe('buildSessionList', () => {
     expect(b2.agentContextPct).toBe(0);
   });
 
+  it('carries the last user prompt through from the hook record', () => {
+    const progress = {
+      a1: { state: 'review', updated: 5, prompt: 'добавь тесты', summary: 'Готово.' },
+    };
+    const list = buildSessionList({ slots, openMap: new Map([['a1', 777]]), mons, progress });
+    const a1 = list.find(s => s.id === 'a1');
+    expect(a1.agentPrompt).toBe('добавь тесты');
+    expect(a1.agentSummary).toBe('Готово.');
+    expect(list.find(s => s.id === 'b2').agentPrompt).toBe('');
+  });
+
   it('carries session start time from meta', () => {
     const meta = { a1: { started: 1785613874 } };
     const list = buildSessionList({ slots, openMap: new Map([['a1', 777]]), mons, meta });

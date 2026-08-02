@@ -20,6 +20,8 @@ description: Use when working on claude-wt session tracking anywhere in the chai
 
 **Туда:** хук → `V:/.claude/claude-wt/<id>.state.json` → `loadProgress()` → `claudeWtSessions()` → пикер и MQTT Discovery → сущности Home Assistant → шаблоны в `conf/openhasp.yaml` → текст объекта на плате.
 
+В `state.json` хук кладёт и `summary` (первая строка последнего ответа), и `prompt` (последний запрос человека). Пикер рисует оба под карточкой; на панели openHASP пока только `summary`.
+
 **Деньги и контекст входят сбоку.** В stdin хука нет ни токенов, ни стоимости, ни времени сессии — только `session_id`, `transcript_path`, `cwd`, `permission_mode`, `effort`. Всё это есть у команды статуслайна: `context_window` (вместе с размером окна) и `cost` приходят ей готовыми. Поэтому вход статуслайна перехватывает `claude-wt-statusline.sh` и кладёт в `<id>.status.json` рядом, а `wt-progress.sh` на своём следующем событии складывает числа в `state.json` — у читателя на Windows остаётся один файл на сессию. Размер окна из транскрипта не вычислить, и без него проценты не посчитать: у одной сессии 200k, у соседней миллион.
 
 **Обратно:** нажатие на плате → `home/room/pc/windows/claude-focus-slot` (номер строки, не id сессии) → `claudeFocusSlot()` → фокус окна. Демон видит переход фокуса на своём тике и ставит `focusedAt` — отсюда «просмотрено».

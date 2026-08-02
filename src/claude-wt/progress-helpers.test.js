@@ -5,10 +5,10 @@ describe('normalizeProgress', () => {
   it('keeps a well-formed record', () => {
     expect(normalizeProgress({
       state: 'active', updated: 100, message: 'hi', summary: '', lastSummary: 'Закоммитил',
-      costUsd: 12, contextPct: 47,
+      prompt: 'добавь тесты', costUsd: 12, contextPct: 47,
     })).toEqual({
       state: 'active', updated: 100, event: '', message: 'hi', summary: '', lastSummary: 'Закоммитил',
-      costUsd: 12, contextPct: 47,
+      prompt: 'добавь тесты', costUsd: 12, contextPct: 47,
     });
   });
 
@@ -28,6 +28,12 @@ describe('normalizeProgress', () => {
     expect(normalizeProgress({ state: 'active', updated: 100, summary: 42 })?.summary).toBe('');
   });
 
+  it('treats a missing prompt as no prompt', () => {
+    // То же, что у summary: старый хук поля не писал, а нестрока — мусор.
+    expect(normalizeProgress({ state: 'active', updated: 100 })?.prompt).toBe('');
+    expect(normalizeProgress({ state: 'active', updated: 100, prompt: 7 })?.prompt).toBe('');
+  });
+
   it('accepts every state the hook writes', () => {
     for (const state of ['active', 'question', 'review', 'idle']) {
       expect(normalizeProgress({ state, updated: 1 })?.state).toBe(state);
@@ -41,7 +47,7 @@ describe('normalizeProgress', () => {
     expect(normalizeProgress({ state: 'unknown', updated: 42 }))
       .toEqual({
         state: null, updated: 42, event: '', message: '', summary: '', lastSummary: '',
-        costUsd: 0, contextPct: 0,
+        prompt: '', costUsd: 0, contextPct: 0,
       });
   });
 
@@ -56,7 +62,7 @@ describe('normalizeProgress', () => {
     expect(normalizeProgress({ state: 'idle', updated: 'soon' }))
       .toEqual({
         state: 'idle', updated: 0, event: '', message: '', summary: '', lastSummary: '',
-        costUsd: 0, contextPct: 0,
+        prompt: '', costUsd: 0, contextPct: 0,
       });
   });
 
