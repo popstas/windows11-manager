@@ -36,10 +36,10 @@ function findOpenTerminalByTitle(title) {
  * Focus the last open Claude session for a project cwd, or spawn a fresh
  * `claude -n <basename(cwd)>` there when none is on screen.
  *
- * @param {{ cwd: string, name: string }} opts
+ * @param {{ cwd: string, name: string, profile?: string }} opts
  * @returns {Promise<{ ok: boolean, action?: string, reason?: string, sessionId?: string, sessionName?: string }>}
  */
-async function openClaudeProject({ cwd, name } = {}) {
+async function openClaudeProject({ cwd, name, profile } = {}) {
   if (typeof cwd !== 'string' || !cwd || typeof name !== 'string' || !name) {
     return { ok: false, reason: 'cwd and name are required' };
   }
@@ -74,7 +74,13 @@ async function openClaudeProject({ cwd, name } = {}) {
   if (!cfg.launchNew?.command) {
     return { ok: false, reason: 'claudeWt.launchNew.command is not set in config' };
   }
-  const { command, args } = planLaunchNew({ launchNew: cfg.launchNew, cwd, name: sessionName });
+  const effectiveProfile = profile ?? cfg.profile ?? '';
+  const { command, args } = planLaunchNew({
+    launchNew: cfg.launchNew,
+    cwd,
+    name: sessionName,
+    profile: effectiveProfile,
+  });
   try {
     spawn(command, args, { detached: true, stdio: 'ignore' }).unref();
   } catch (e) {

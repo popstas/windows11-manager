@@ -1,5 +1,7 @@
 /** Pure helpers for opening a Claude project by cwd. No I/O. */
 
+import { applyWtProfile } from './wt-profile-helpers.js';
+
 /** Last path segment of a Linux cwd; used as `claude -n` display name. */
 function basenameOfCwd(cwd) {
   if (typeof cwd !== 'string' || !cwd) return '';
@@ -32,14 +34,15 @@ function escapeForSingleQuoted(value) {
  * `{cwd}` and `{name}` in each arg are replaced with single-quote-safe text
  * (templates should wrap them in `'…'` themselves).
  */
-function planLaunchNew({ launchNew, cwd, name }) {
+function planLaunchNew({ launchNew, cwd, name, profile }) {
   const safeCwd = escapeForSingleQuoted(cwd ?? '');
   const safeName = escapeForSingleQuoted(name ?? '');
+  const substituted = (launchNew.args ?? []).map(arg =>
+    String(arg).replaceAll('{cwd}', safeCwd).replaceAll('{name}', safeName)
+  );
   return {
     command: launchNew.command,
-    args: (launchNew.args ?? []).map(arg =>
-      String(arg).replaceAll('{cwd}', safeCwd).replaceAll('{name}', safeName)
-    ),
+    args: applyWtProfile(substituted, profile),
   };
 }
 

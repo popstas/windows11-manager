@@ -123,16 +123,17 @@ module.exports = {
     statePath: 'C:\\Users\\popstas\\AppData\\Local\\windows11-manager\\claude-wt.json',
     desktop: true, // return the window to its virtual desktop too
     debug: false,  // log terminal titles that could not be matched to a session
+    // profile: 'your_wt_profile', // optional; omit → no -p
     launch: {
       command: 'wt.exe',
-      args: ['-w', '-1', '-p', 'popstas', 'ssh', '-A', 'popstas@pc-virt.popstas.pro',
+      args: ['-w', '-1', 'ssh', '-A', 'popstas@pc-virt.popstas.pro',
              '-t', 'ccfzf --session {id} --kiosk'],
     },
     // Fresh Claude in a project folder (project hotkeys). {cwd} and {name}
     // are substituted; wrap them in single quotes in the remote command.
     launchNew: {
       command: 'wt.exe',
-      args: ['-w', '-1', '-p', 'popstas', 'ssh', '-A', 'popstas@pc-virt.popstas.pro',
+      args: ['-w', '-1', 'ssh', '-A', 'popstas@pc-virt.popstas.pro',
              '-t', "cd '{cwd}' && exec claude -n '{name}'"],
     },
     restore: { auto: false, windowTimeoutMs: 30000, launchDelayMs: 2000, settleMs: 500 },

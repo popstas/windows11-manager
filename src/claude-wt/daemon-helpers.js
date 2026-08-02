@@ -11,6 +11,7 @@ const CLAUDE_WT_DEFAULTS = {
   progressDir: '',
   desktop: true,
   debug: false,
+  profile: '',
   launch: { command: 'wt.exe', args: [] },
   // Fresh session in a project folder (project hotkeys). Placeholders: {cwd}, {name}.
   launchNew: { command: 'wt.exe', args: [] },

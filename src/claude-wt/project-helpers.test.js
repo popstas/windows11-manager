@@ -84,4 +84,31 @@ describe('planLaunchNew', () => {
     const out = planLaunchNew({ launchNew, cwd: "/p/it's", name: "n'm" });
     expect(out.args[2]).toBe("cd '/p/it'\\''s' && exec claude -n 'n'\\''m'");
   });
+
+  it('applies a WT profile after substitution', () => {
+    expect(planLaunchNew({
+      launchNew: {
+        command: 'wt.exe',
+        args: ['-w', '-1', 'ssh', '-t', "cd '{cwd}' && exec claude -n '{name}'"],
+      },
+      cwd: '/p/home',
+      name: 'home',
+      profile: 'home',
+    })).toEqual({
+      command: 'wt.exe',
+      args: ['-w', '-1', '-p', 'home', 'ssh', '-t', "cd '/p/home' && exec claude -n 'home'"],
+    });
+  });
+
+  it('strips a baked-in -p when profile is empty', () => {
+    expect(planLaunchNew({
+      launchNew: {
+        command: 'wt.exe',
+        args: ['-w', '-1', '-p', 'popstas', 'ssh'],
+      },
+      cwd: '/p',
+      name: 'x',
+      profile: '',
+    }).args).toEqual(['-w', '-1', 'ssh']);
+  });
 });
