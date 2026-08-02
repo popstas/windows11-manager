@@ -1,6 +1,6 @@
 /** Pure helper functions for claude-wt snapshots. No external I/O. */
 
-import { applyWtProfile } from './wt-profile-helpers.js';
+import { planWtLaunch } from './project-helpers.js';
 
 const SNAPSHOTS_VERSION = 1;
 
@@ -158,23 +158,28 @@ function snapshotsFingerprint(snapshots) {
  * Координаты берутся из снимка, а не из текущих слотов, — в этом весь смысл
  * хранить копию.
  */
-function planSnapshotRestore({ snapshot, openSessionIds, sessionIds, launch, profile }) {
+function planSnapshotRestore({ snapshot, openSessionIds, sessionIds, launch, resolveProfile }) {
   const open = openSessionIds ?? new Set();
   const wanted = sessionIds?.length ? new Set(sessionIds) : null;
+  const resolve = typeof resolveProfile === 'function' ? resolveProfile : () => '';
   return (snapshot?.sessions ?? [])
     .filter(s => !open.has(s.id))
     .filter(s => !wanted || wanted.has(s.id))
-    .map(s => ({
-      sessionId: s.id,
-      title: s.title,
-      command: launch?.command,
-      args: applyWtProfile(
-        (launch?.args ?? []).map(arg => arg.replaceAll('{id}', s.id)),
-        profile,
-      ),
-      bounds: s.bounds,
-      desktop: s.desktop,
-    }));
+    .map(s => {
+      const planned = planWtLaunch({
+        launch,
+        vars: { id: s.id },
+        profile: resolve(s.cwd ?? ''),
+      });
+      return {
+        sessionId: s.id,
+        title: s.title,
+        command: planned.command,
+        args: planned.args,
+        bounds: s.bounds,
+        desktop: s.desktop,
+      };
+    });
 }
 
 /**

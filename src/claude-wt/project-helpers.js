@@ -51,21 +51,30 @@ function profileForCwd(cwd, cfg = {}) {
   return typeof cfg.profile === 'string' ? cfg.profile : '';
 }
 
+/** Build a WT spawn descriptor from a launch template. */
+function planWtLaunch({ launch, vars = {}, profile }) {
+  const id = vars.id ?? '';
+  const safeCwd = escapeForSingleQuoted(vars.cwd ?? '');
+  const safeName = escapeForSingleQuoted(vars.name ?? '');
+  const substituted = (launch?.args ?? []).map(arg =>
+    String(arg)
+      .replaceAll('{id}', id)
+      .replaceAll('{cwd}', safeCwd)
+      .replaceAll('{name}', safeName)
+  );
+  return {
+    command: launch.command,
+    args: applyWtProfile(substituted, profile),
+  };
+}
+
 /**
  * Build the spawn descriptor for a fresh Claude session in a project folder.
  * `{cwd}` and `{name}` in each arg are replaced with single-quote-safe text
  * (templates should wrap them in `'…'` themselves).
  */
 function planLaunchNew({ launchNew, cwd, name, profile }) {
-  const safeCwd = escapeForSingleQuoted(cwd ?? '');
-  const safeName = escapeForSingleQuoted(name ?? '');
-  const substituted = (launchNew.args ?? []).map(arg =>
-    String(arg).replaceAll('{cwd}', safeCwd).replaceAll('{name}', safeName)
-  );
-  return {
-    command: launchNew.command,
-    args: applyWtProfile(substituted, profile),
-  };
+  return planWtLaunch({ launch: launchNew, vars: { cwd, name }, profile });
 }
 
 export {
@@ -74,5 +83,6 @@ export {
   escapeForSingleQuoted,
   normalizeProjects,
   profileForCwd,
+  planWtLaunch,
   planLaunchNew,
 };

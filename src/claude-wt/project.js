@@ -4,7 +4,7 @@ import { virtualDesktop } from '../virtual-desktop.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { claudeWtSessions } from './view.js';
 import { stripTitleDecoration } from './title-helpers.js';
-import { basenameOfCwd, pickOpenProjectSession, planLaunchNew } from './project-helpers.js';
+import { basenameOfCwd, pickOpenProjectSession, planLaunchNew, profileForCwd } from './project-helpers.js';
 
 async function focusTerminalWindow(windowId) {
   try {
@@ -74,7 +74,7 @@ async function openClaudeProject({ cwd, name, profile } = {}) {
   if (!cfg.launchNew?.command) {
     return { ok: false, reason: 'claudeWt.launchNew.command is not set in config' };
   }
-  const effectiveProfile = profile ?? cfg.profile ?? '';
+  const effectiveProfile = profile ?? profileForCwd(cwd, cfg);
   const { command, args } = planLaunchNew({
     launchNew: cfg.launchNew,
     cwd,

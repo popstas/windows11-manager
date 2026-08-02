@@ -3,6 +3,7 @@ import {
   basenameOfCwd,
   pickOpenProjectSession,
   escapeForSingleQuoted,
+  planWtLaunch,
   planLaunchNew,
   normalizeProjects,
   profileForCwd,
@@ -66,6 +67,25 @@ describe('escapeForSingleQuoted', () => {
 
   it('escapes single quotes for bash single-quoted strings', () => {
     expect(escapeForSingleQuoted("it's")).toBe("it'\\''s");
+  });
+});
+
+describe('planWtLaunch', () => {
+  it('substitutes id/cwd/name and applies profile', () => {
+    expect(planWtLaunch({
+      launch: {
+        command: 'wt.exe',
+        args: ['-w', '-1', 'ssh', '-t', "ccfzf --session {id} --cwd '{cwd}' --name '{name}'"],
+      },
+      vars: { id: 'a1', cwd: "/p/it's", name: "n'm" },
+      profile: 'home',
+    })).toEqual({
+      command: 'wt.exe',
+      args: [
+        '-w', '-1', '-p', 'home', 'ssh', '-t',
+        "ccfzf --session a1 --cwd '/p/it'\\''s' --name 'n'\\''m'",
+      ],
+    });
   });
 });
 

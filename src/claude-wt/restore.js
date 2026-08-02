@@ -12,6 +12,7 @@ import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds } from './restore-helpers.js';
 import { planSnapshotRestore, findSnapshot } from './snapshot-helpers.js';
 import { listSnapshots } from './snapshotter.js';
+import { profileForCwd } from './project-helpers.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -56,7 +57,8 @@ async function restoreClaudeSessions({ force = false, sessionIds } = {}) {
   const state = readState(cfg.statePath);
   const { unknown } = resolveRestoreIds({ state, sessionIds });
   for (const id of unknown) console.error(`[claude-wt] no remembered slot for session ${id}`);
-  const fullPlan = planRestore({ state, launch: cfg.launch, sessionIds, profile: cfg.profile });
+  const resolveProfile = cwd => profileForCwd(cwd, cfg);
+  const fullPlan = planRestore({ state, launch: cfg.launch, sessionIds, resolveProfile });
   const restored = [];
   const skipped = [];
   if (!fullPlan.length) {
@@ -161,12 +163,13 @@ async function restoreSnapshot({ id, sessionIds } = {}) {
     return { restored, skipped: snapshot.sessions.map(s => s.id) };
   }
   const state = readState(cfg.statePath);
+  const resolveProfile = cwd => profileForCwd(cwd, cfg);
   const plan = planSnapshotRestore({
     snapshot,
     openSessionIds: openSessionIds(cfg, state),
     sessionIds,
     launch: cfg.launch,
-    profile: cfg.profile,
+    resolveProfile,
   });
   if (!plan.length) {
     console.log(`[claude-wt] snapshot ${snapshot.id}: every session is already open, nothing to restore`);

@@ -195,9 +195,9 @@ describe('planSnapshotRestore', () => {
   const snapshot = {
     id: 'x',
     sessions: [
-      { id: 'a', title: 'alpha', bounds, desktop: 1 },
-      { id: 'b', title: 'beta', bounds: { ...bounds, x: 500 }, desktop: 2 },
-      { id: 'c', title: 'gamma', bounds, desktop: 1 },
+      { id: 'a', title: 'alpha', cwd: '/a', bounds, desktop: 1 },
+      { id: 'b', title: 'beta', cwd: '/b', bounds: { ...bounds, x: 500 }, desktop: 2 },
+      { id: 'c', title: 'gamma', cwd: '/c', bounds, desktop: 1 },
     ],
   };
   const launch = { command: 'wt.exe', args: ['ssh', 'ccfzf --session {id}'] };
@@ -229,9 +229,19 @@ describe('planSnapshotRestore', () => {
       snapshot,
       openSessionIds: new Set(['b', 'c']),
       launch: { command: 'wt.exe', args: ['-w', '-1', 'ssh', 'ccfzf --session {id}'] },
-      profile: 'popstas',
+      resolveProfile: () => 'popstas',
     });
     expect(item.args).toEqual(['-w', '-1', '-p', 'popstas', 'ssh', 'ccfzf --session a']);
+  });
+
+  it('resolves profile per snapshot session cwd', () => {
+    const [item] = planSnapshotRestore({
+      snapshot,
+      openSessionIds: new Set(['b', 'c']),
+      launch: { command: 'wt.exe', args: ['-w', '-1', 'ssh', 'ccfzf --session {id}'] },
+      resolveProfile: cwd => cwd === '/a' ? 'ExpertizeMe' : 'popstas',
+    });
+    expect(item.args).toEqual(['-w', '-1', '-p', 'ExpertizeMe', 'ssh', 'ccfzf --session a']);
   });
 
   it('narrows to the requested sessions when asked', () => {
