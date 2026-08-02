@@ -66,9 +66,11 @@ describe('normalizeProgress', () => {
 });
 
 describe('lastActivityAt', () => {
-  it('prefers whichever source saw the session more recently', () => {
+  it('prefers the hook over the slot even when the slot is newer', () => {
+    // lastSeen тикает каждую секунду, пока окно на экране — это не действие
+    // агента. Без этого предпочтения у всех живых сессий справа всегда «now».
+    expect(lastActivityAt({ lastSeen: 300 }, { updated: 200 })).toBe(200);
     expect(lastActivityAt({ lastSeen: 100 }, { updated: 200 })).toBe(200);
-    expect(lastActivityAt({ lastSeen: 300 }, { updated: 200 })).toBe(300);
   });
 
   it('falls back to the slot when there is no hook data', () => {
