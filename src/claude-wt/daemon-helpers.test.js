@@ -21,6 +21,18 @@ describe('mergeClaudeWtConfig', () => {
     expect(cfg.stableTicks).toBe(CLAUDE_WT_DEFAULTS.stableTicks);
   });
 
+  it('normalizes configured projects', () => {
+    const cfg = mergeClaudeWtConfig({
+      projects: [
+        { name: 'home', cwd: '/p/home', hotkey: ' Ctrl+F11 ', profile: ' home ' },
+        { name: 'missing-cwd' },
+      ],
+    });
+    expect(cfg.projects).toEqual([
+      { name: 'home', cwd: '/p/home', hotkey: 'Ctrl+F11', profile: 'home' },
+    ]);
+  });
+
   it('merges the nested launch and restore blocks instead of replacing them', () => {
     // Задать один windowTimeoutMs, не продублировав auto, должно быть можно.
     const cfg = mergeClaudeWtConfig({
@@ -46,8 +58,10 @@ describe('mergeClaudeWtConfig', () => {
   it('does not leak edits back into the defaults', () => {
     mergeClaudeWtConfig({}).launch.args.push('mutated');
     mergeClaudeWtConfig({}).launchNew.args.push('mutated');
+    mergeClaudeWtConfig({}).projects.push({ name: 'mutated', cwd: '/mutated' });
     expect(CLAUDE_WT_DEFAULTS.launch.args).toEqual([]);
     expect(CLAUDE_WT_DEFAULTS.launchNew.args).toEqual([]);
+    expect(CLAUDE_WT_DEFAULTS.projects).toEqual([]);
   });
 });
 

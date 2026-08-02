@@ -29,6 +29,28 @@ function escapeForSingleQuoted(value) {
   return String(value).replace(/'/g, `'\\''`);
 }
 
+function normalizeProjects(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const p of raw) {
+    if (!p || typeof p.name !== 'string' || !p.name || typeof p.cwd !== 'string' || !p.cwd) continue;
+    const entry = { name: p.name, cwd: p.cwd };
+    if (typeof p.hotkey === 'string' && p.hotkey.trim()) entry.hotkey = p.hotkey.trim();
+    if (typeof p.profile === 'string' && p.profile.trim()) entry.profile = p.profile.trim();
+    out.push(entry);
+  }
+  return out;
+}
+
+function profileForCwd(cwd, cfg = {}) {
+  const projects = Array.isArray(cfg.projects) ? cfg.projects : [];
+  const hit = typeof cwd === 'string' && cwd
+    ? projects.find(p => p.cwd === cwd)
+    : undefined;
+  if (hit && typeof hit.profile === 'string' && hit.profile) return hit.profile;
+  return typeof cfg.profile === 'string' ? cfg.profile : '';
+}
+
 /**
  * Build the spawn descriptor for a fresh Claude session in a project folder.
  * `{cwd}` and `{name}` in each arg are replaced with single-quote-safe text
@@ -46,4 +68,11 @@ function planLaunchNew({ launchNew, cwd, name, profile }) {
   };
 }
 
-export { basenameOfCwd, pickOpenProjectSession, escapeForSingleQuoted, planLaunchNew };
+export {
+  basenameOfCwd,
+  pickOpenProjectSession,
+  escapeForSingleQuoted,
+  normalizeProjects,
+  profileForCwd,
+  planLaunchNew,
+};

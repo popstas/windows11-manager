@@ -124,6 +124,9 @@ module.exports = {
     desktop: true, // return the window to its virtual desktop too
     debug: false,  // log terminal titles that could not be matched to a session
     // profile: 'your_wt_profile', // optional; omit → no -p
+    // projects: [
+    //   { name: 'home', cwd: '/path/to/home', hotkey: 'Ctrl+F11', profile: 'home' },
+    // ],
     launch: {
       command: 'wt.exe',
       args: ['-w', '-1', 'ssh', '-A', 'popstas@pc-virt.popstas.pro',

@@ -21,6 +21,10 @@ function getClaudeWtConfig() {
   return mergeClaudeWtConfig(getConfig().claudeWt);
 }
 
+function claudeWtProjects() {
+  return getClaudeWtConfig().projects;
+}
+
 function isTerminalWindow(w) {
   return isTerminalPath(w?.path);
 }
@@ -240,6 +244,7 @@ function claudeWtStatus() {
 export { CLAUDE_WT_DEFAULTS } from './daemon-helpers.js';
 export {
   getClaudeWtConfig,
+  claudeWtProjects,
   isTerminalWindow,
   startClaudeWt,
   stopClaudeWt,

@@ -4,6 +4,8 @@ import {
   pickOpenProjectSession,
   escapeForSingleQuoted,
   planLaunchNew,
+  normalizeProjects,
+  profileForCwd,
 } from './project-helpers.js';
 
 describe('basenameOfCwd', () => {
@@ -110,5 +112,43 @@ describe('planLaunchNew', () => {
       name: 'x',
       profile: '',
     }).args).toEqual(['-w', '-1', 'ssh']);
+  });
+});
+
+describe('normalizeProjects', () => {
+  it('keeps complete entries and drops incomplete ones', () => {
+    expect(normalizeProjects([
+      { name: 'home', cwd: '/p/home', hotkey: 'Ctrl+F11', profile: 'home' },
+      { name: 'x' },
+      null,
+    ])).toEqual([
+      { name: 'home', cwd: '/p/home', hotkey: 'Ctrl+F11', profile: 'home' },
+    ]);
+  });
+});
+
+describe('profileForCwd', () => {
+  const cfg = {
+    profile: 'popstas',
+    projects: [
+      { name: 'home', cwd: '/p/home', profile: 'home' },
+      { name: 'ez', cwd: '/p/ExpertizeMe' },
+    ],
+  };
+
+  it('uses project profile on exact cwd match', () => {
+    expect(profileForCwd('/p/home', cfg)).toBe('home');
+  });
+
+  it('falls back to cfg.profile when project has no profile', () => {
+    expect(profileForCwd('/p/ExpertizeMe', cfg)).toBe('popstas');
+  });
+
+  it('falls back to cfg.profile when cwd is unknown', () => {
+    expect(profileForCwd('/other', cfg)).toBe('popstas');
+  });
+
+  it('returns empty when no project and no cfg.profile', () => {
+    expect(profileForCwd('/other', { profile: '', projects: [] })).toBe('');
   });
 });

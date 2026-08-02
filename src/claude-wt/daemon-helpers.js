@@ -1,5 +1,7 @@
 /** Pure helper functions for the claude-wt daemon. No external I/O. */
 
+import { normalizeProjects } from './project-helpers.js';
+
 const CLAUDE_WT_DEFAULTS = {
   enabled: true,
   interval: 1000,
@@ -12,6 +14,7 @@ const CLAUDE_WT_DEFAULTS = {
   desktop: true,
   debug: false,
   profile: '',
+  projects: [],
   launch: { command: 'wt.exe', args: [] },
   // Fresh session in a project folder (project hotkeys). Placeholders: {cwd}, {name}.
   launchNew: { command: 'wt.exe', args: [] },
@@ -25,6 +28,7 @@ function mergeClaudeWtConfig(raw) {
   return {
     ...CLAUDE_WT_DEFAULTS,
     ...cfg,
+    projects: normalizeProjects(cfg.projects ?? CLAUDE_WT_DEFAULTS.projects),
     launch: { ...CLAUDE_WT_DEFAULTS.launch, args: [...CLAUDE_WT_DEFAULTS.launch.args], ...(cfg.launch ?? {}) },
     launchNew: {
       ...CLAUDE_WT_DEFAULTS.launchNew,
