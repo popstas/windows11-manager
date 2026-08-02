@@ -14,9 +14,11 @@ description: Use when working on claude-wt session tracking anywhere in the chai
 | Часть | Где | Роль |
 |---|---|---|
 | Хуки агента | pc-virt, `~/.claude/hooks/`, с Windows это `V:` | Пишут `<id>.state.json` на каждое событие агента |
-| Демон и библиотека | `D:/projects/js/windows11-manager`, `src/claude-wt/` | Следит за окнами, читает состояния, снимки, CLI |
-| Приложение | `D:/projects/js/windows-mqtt` | Пикер, MQTT, экспорт в Home Assistant. Зависит от первого через `file:../windows11-manager` |
+| Демон и библиотека | `D:/projects/js/windows11-manager`, `src/claude-wt/` | Следит за окнами, читает состояния, снимки, CLI; `claudeWt.projects` (cwd → profile/hotkey) в `windows11-manager.config.js` |
+| Приложение | `D:/projects/js/windows-mqtt` | Пикер, MQTT, экспорт в Home Assistant. Зависит от первого через `file:../windows11-manager`; проекты берёт через `claudeWtProjects()`, не из yaml |
 | Панель | shome, `~/projects/smarthome/home-assistant/config/`, с Windows это `R:` | Генератор конфига openHASP, Node-RED, плата `openhasp5` |
+
+**Project hotkeys.** Список `claudeWt.projects` живёт только в конфиге manager’а. При старте Rust в windows-mqtt один раз зовёт `node --input-type=module -e "import * as m from 'windows11-manager'; … claudeWtProjects()"` и регистрирует хоткеи. Если Ctrl+F11/F12 пропали — смотреть лог дампа (stderr / `server-log`), а не yaml.
 
 ## Поток
 
@@ -33,6 +35,8 @@ description: Use when working on claude-wt session tracking anywhere in the chai
 ## Правила, за которые уже заплачено
 
 **Бюджет опроса.** Ни `getWindows()`, ни чтения номера рабочего стола в цикле демона — см. AGENTS.md. Чтение транскриптов и каталога состояний с сетевого диска подчиняется тому же правилу: `loadProgress()` вызывается только из view-слоя, сводку считает хук на своей стороне, где файл локальный.
+
+**Один spawn для WT.** Restore / snapshot / project hotkey / picker Terminal собирают argv через `planWtLaunch` + `profileForCwd(cwd)`. Профиль — из `claudeWt.projects` по exact cwd, иначе `claudeWt.profile`.
 
 **`mtime` на сетевом диске врёт.** Долгоживущий процесс минутами получает от `statSync()` прежнюю отметку, пока свежий видит новую: клиент SMB отдаёт закэшированные атрибуты. Кэш, который верит одному mtime, отдаёт устаревшее содержимое. Срок годности поэтому есть и у записей `progress.js` (3 с), и у индекса сессий в `sessions.js` (15 с — дамп на двести килобайт против файлов по три сотни байт). Без второго демон 15 минут привязывал окна к id перезапустившихся сессий, и те просто пропадали из списка вместе со своими сводками.
 
