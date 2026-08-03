@@ -89,6 +89,21 @@ describe('buildSessionList', () => {
     expect(list.find(s => s.id === 'b2').agentPrompt).toBe('');
   });
 
+  it('describes a session by its summary, and by the last one while it works', () => {
+    const progress = {
+      a1: { state: 'review', updated: 5, summary: 'Готово.', lastSummary: 'Чинил тесты' },
+      b2: { state: 'active', updated: 5, summary: '', lastSummary: 'Готовлю бриф' },
+    };
+    const list = buildSessionList({ slots, openMap: new Map([['a1', 777]]), mons, progress });
+    expect(list.find(s => s.id === 'a1').agentDescription).toBe('Готово.');
+    expect(list.find(s => s.id === 'b2').agentDescription).toBe('Готовлю бриф');
+  });
+
+  it('leaves the description empty when the hook has not fired', () => {
+    const list = buildSessionList({ slots, openMap: new Map(), mons });
+    expect(list.find(s => s.id === 'a1').agentDescription).toBe('');
+  });
+
   it('carries session start time from meta', () => {
     const meta = { a1: { started: 1785613874 } };
     const list = buildSessionList({ slots, openMap: new Map([['a1', 777]]), mons, meta });

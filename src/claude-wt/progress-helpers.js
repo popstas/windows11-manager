@@ -52,6 +52,24 @@ function normalizeProgress(raw) {
 }
 
 /**
+ * Что сессия говорит о себе одной строкой.
+ *
+ * Свежая сводка, а у работающей её нет: `summary` отвечает за текущий ход, а он
+ * ещё идёт. Тогда берётся последняя известная — «на чём остановилась» полезнее
+ * пустоты, и спрашивают ровно это.
+ *
+ * Считается здесь, чтобы строка была одна на всех читателей: пикер склеивал
+ * `summary || lastSummary` у себя, а панель openHASP брала голый `summary` — и у
+ * работающей сессии её строка на плате оставалась пустой (`-`), хотя в пикере
+ * текст был.
+ */
+function sessionDescription(progress) {
+  const summary = typeof progress?.summary === 'string' ? progress.summary.trim() : '';
+  if (summary) return summary;
+  return typeof progress?.lastSummary === 'string' ? progress.lastSummary.trim() : '';
+}
+
+/**
  * Когда сессия последний раз подавала признаки жизни, в epoch-секундах.
  *
  * Хук знает это точнее: он срабатывает на события самого агента. `lastSeen`
@@ -86,4 +104,6 @@ function seenSinceUpdate(slot, progress) {
   return focusedAt >= updated;
 }
 
-export { AGENT_STATES, normalizeProgress, lastActivityAt, seenSinceUpdate };
+export {
+  AGENT_STATES, normalizeProgress, sessionDescription, lastActivityAt, seenSinceUpdate,
+};

@@ -1,5 +1,5 @@
 /** Pure helpers for the session picker view. No external I/O. */
-import { lastActivityAt, seenSinceUpdate } from './progress-helpers.js';
+import { lastActivityAt, seenSinceUpdate, sessionDescription } from './progress-helpers.js';
 
 /**
  * Monitor number for a window, taken from its centre point.
@@ -57,6 +57,11 @@ function buildSessionList({ slots, openMap, mons, progress = {}, meta = {} }) {
       // То же самое, но не стёртое у работающей сессии: «на чём остановилась в
       // прошлый раз» — вопрос отдельный от «что говорит сейчас».
       agentLastSummary: agent?.lastSummary ?? '',
+      // Одна строка «что сессия говорит о себе»: сводка, а у работающей —
+      // последняя известная. Собрана здесь, чтобы пикер, Home Assistant и плата
+      // показывали одно и то же; каждый, кто склеивал это у себя, рано или
+      // поздно расходился с соседом.
+      agentDescription: sessionDescription(agent),
       // Последний запрос человека. Пикер кладёт его строкой над сводкой ответа:
       // «что спросили» и «чем ответили» — разные вещи, и глазом их проще
       // разделить, чем читать подряд в одной подсказке.

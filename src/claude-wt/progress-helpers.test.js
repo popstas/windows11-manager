@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeProgress, lastActivityAt, seenSinceUpdate } from './progress-helpers.js';
+import {
+  normalizeProgress, sessionDescription, lastActivityAt, seenSinceUpdate,
+} from './progress-helpers.js';
 
 describe('normalizeProgress', () => {
   it('keeps a well-formed record', () => {
@@ -68,6 +70,25 @@ describe('normalizeProgress', () => {
 
   it('ignores a non-string message', () => {
     expect(normalizeProgress({ state: 'question', updated: 5, message: { a: 1 } }).message).toBe('');
+  });
+});
+
+describe('sessionDescription', () => {
+  it('prefers the fresh summary', () => {
+    expect(sessionDescription({ summary: 'Готово.', lastSummary: 'Чинил тесты' })).toBe('Готово.');
+  });
+
+  it('falls back to the last one while the session works', () => {
+    // Именно этот случай и был виден на плате: у работающей сессии сводки нет,
+    // и строка оставалась пустой, хотя сказать ей было что.
+    expect(sessionDescription({ summary: '', lastSummary: 'Готовлю бриф' })).toBe('Готовлю бриф');
+    expect(sessionDescription({ summary: '   ', lastSummary: 'Готовлю бриф' })).toBe('Готовлю бриф');
+  });
+
+  it('returns an empty string when there is nothing to say', () => {
+    expect(sessionDescription({ summary: '', lastSummary: '' })).toBe('');
+    expect(sessionDescription(null)).toBe('');
+    expect(sessionDescription({ summary: 42, lastSummary: 7 })).toBe('');
   });
 });
 
