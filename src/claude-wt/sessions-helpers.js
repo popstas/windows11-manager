@@ -44,6 +44,11 @@ function indexSessions(dump, activityAt) {
   const byTitle = new Map();
   for (const s of sessions) {
     if (!s?.id || !s?.title) continue;
+    // У фонового агента нет своего окна: он форкнут от родителя и живёт под
+    // демоном. Заголовок при этом наследуется, так что в индексе он был бы
+    // соперником родителю за его же окно — и выигрывал бы, потому что
+    // работает именно он. Окно уехало бы к сессии, которой в нём нет.
+    if (s.kind === 'background') continue;
     const key = stripTitleDecoration(s.title);
     if (!key) continue;
     if (!byTitle.has(key)) byTitle.set(key, []);
@@ -69,4 +74,59 @@ function indexSessions(dump, activityAt) {
   return index;
 }
 
-export { compareSessions, byActivityThen, indexSessions };
+/**
+ * Родитель -> id его фоновых агентов, новейший первым.
+ *
+ * `claude agents` уводит сессию в фон: интерактивный процесс уходит, работа
+ * продолжается в форке под демоном, а окно остаётся с заголовком родителя. Без
+ * этой связи работающий агент не виден нигде — своего окна у него нет, а строка
+ * родителя стоит с той сводкой, на которой он ушёл в фон.
+ *
+ * Родитель без окна (сессия закрыта, а агент работает) тоже сюда попадает:
+ * решает, показывать ли такую строку, тот, у кого есть слоты.
+ */
+function indexBackgroundAgents(dump) {
+  const sessions = Array.isArray(dump?.sessions) ? dump.sessions : [];
+  const byParent = new Map();
+  for (const s of sessions) {
+    if (!s?.id || s.kind !== 'background' || !s.parent) continue;
+    if (!byParent.has(s.parent)) byParent.set(s.parent, []);
+    byParent.get(s.parent).push(s);
+  }
+  const index = {};
+  for (const [parent, list] of byParent) {
+    index[parent] = [...list]
+      .sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0))
+      .map(s => ({ id: s.id, title: s.title ?? '', live: Boolean(s.live) }));
+  }
+  return index;
+}
+
+// Дамп штампует `generated` за миг до переименования, так что в норме
+// содержимое отстаёт от mtime на доли секунды. Тридцать секунд — заведомо
+// больше любой честной разницы и заведомо меньше промежутка между дампами.
+const STALE_TOLERANCE_MS = 30000;
+
+/**
+ * Содержимое дампа старее, чем отметка файла, из которого оно прочитано.
+ *
+ * Так выглядит враньё SMB: `V:\.ccfzf.sessions.json` переписывается на pc-virt
+ * локально (tmp + rename), мимо шары, — редиректор не узнаёт, что его кэш
+ * чтения протух, и обновляет только метаданные. Замерено 2026-08-03: statSync
+ * показывал свежий mtime, а readFileSync пятнадцать минут отдавал прежние
+ * байты и прежний размер.
+ *
+ * Само по себе это ещё полбеды, но кэш индекса ключуется по mtime — устаревшие
+ * байты закреплялись за новой отметкой, и сессия, открытая после прошлого
+ * дампа, не появлялась нигде: ни в пикере, ни на плате.
+ */
+function isStaleRead(mtimeMs, generated) {
+  const generatedMs = Number(generated) * 1000;
+  if (!Number.isFinite(generatedMs) || !Number.isFinite(mtimeMs)) return false;
+  return mtimeMs - generatedMs > STALE_TOLERANCE_MS;
+}
+
+export {
+  compareSessions, byActivityThen, indexSessions, indexBackgroundAgents,
+  isStaleRead, STALE_TOLERANCE_MS,
+};

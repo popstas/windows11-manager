@@ -1,8 +1,8 @@
 import fs from 'node:fs';
-import { indexSessions } from './sessions-helpers.js';
+import { indexSessions, indexBackgroundAgents, isStaleRead } from './sessions-helpers.js';
 import { progressStamp, activityAt } from './progress.js';
 
-let cache = { path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {} };
+let cache = { path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {}, agents: {} };
 let lastWarnedAt = 0;
 const WARN_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -22,6 +22,31 @@ const WARN_INTERVAL_MS = 5 * 60 * 1000;
 // узнаёт о перезапущенной сессии не быстрее, а заголовок окна ещё должен
 // устояться два тика.
 const MAX_AGE_MS = 15000;
+
+/**
+ * Прочитать дамп, не поверив кэшу SMB на слово.
+ *
+ * Когда содержимое отстаёт от mtime (см. `isStaleRead`), файл открывается с
+ * правом записи и сразу закрывается. Ничего не пишется: смысл в самом открытии
+ * — запрос на запись ломает read lease, редиректор выбрасывает свой кэш, и
+ * второе чтение приходит уже с сервера. Проверено на живом дампе: до открытия
+ * читалось поколение пятиминутной давности, после — текущее.
+ *
+ * Не получилось открыть (шара только на чтение, файл переписывают прямо
+ * сейчас) — отдаём то, что прочиталось: устаревший индекс лучше пустого.
+ */
+function readDump(filePath, mtimeMs) {
+  const parse = () => JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  const dump = parse();
+  if (!isStaleRead(mtimeMs, dump?.generated)) return dump;
+  try {
+    fs.closeSync(fs.openSync(filePath, 'r+'));
+  } catch (e) {
+    warnThrottled(`session dump read cache stuck (${filePath}): ${e.message}`);
+    return dump;
+  }
+  return parse();
+}
 
 /** The daemon ticks once a second; an unthrottled warning would be its own problem. */
 function warnThrottled(message) {
@@ -46,14 +71,14 @@ function warnThrottled(message) {
  *   keep serving data the file no longer contains.
  * Either way the tracker degrades to its own title history rather than throwing.
  */
-function loadSessionIndex(filePath, progressDir = '', nowMs = Date.now()) {
-  if (!filePath) return {};
+function loadDump(filePath, progressDir = '', nowMs = Date.now()) {
+  if (!filePath) return { index: {}, agents: {} };
   let stat;
   try {
     stat = fs.statSync(filePath);
   } catch (e) {
     warnThrottled(`session dump unreachable (${filePath}): ${e.message}`);
-    return cache.path === filePath ? cache.index : {};
+    return cache.path === filePath ? cache : { index: {}, agents: {} };
   }
   // Индекс зависит не только от дампа: у спорных заголовков победителя выбирают
   // отметки хуков, а они меняются независимо. Каталог состояний меняет mtime
@@ -62,25 +87,44 @@ function loadSessionIndex(filePath, progressDir = '', nowMs = Date.now()) {
   const stamp = progressStamp(progressDir);
   if (cache.path === filePath && cache.mtimeMs === stat.mtimeMs && cache.stamp === stamp
       && nowMs - cache.readAt < MAX_AGE_MS) {
-    return cache.index;
+    return cache;
   }
   try {
+    const dump = readDump(filePath, stat.mtimeMs);
     const index = indexSessions(
-      JSON.parse(fs.readFileSync(filePath, 'utf8')),
+      dump,
       progressDir ? id => activityAt(progressDir, id) : undefined,
     );
-    cache = { path: filePath, mtimeMs: stat.mtimeMs, stamp, readAt: nowMs, index };
+    cache = {
+      path: filePath, mtimeMs: stat.mtimeMs, stamp, readAt: nowMs,
+      index, agents: indexBackgroundAgents(dump),
+    };
   } catch (e) {
     warnThrottled(`session dump unreadable (${filePath}): ${e.message}`);
-    cache = { path: filePath, mtimeMs: stat.mtimeMs, stamp, readAt: nowMs, index: {} };
+    cache = {
+      path: filePath, mtimeMs: stat.mtimeMs, stamp, readAt: nowMs, index: {}, agents: {},
+    };
   }
-  return cache.index;
+  return cache;
+}
+
+/** Title -> session, for binding a window to the session running in it. */
+function loadSessionIndex(filePath, progressDir = '', nowMs = Date.now()) {
+  return loadDump(filePath, progressDir, nowMs).index;
+}
+
+/**
+ * Родитель -> его фоновые агенты. Из того же дампа и того же кэша: тик демона
+ * этого не спрашивает, а view-слой всё равно читает индекс рядом.
+ */
+function loadBackgroundAgents(filePath, progressDir = '', nowMs = Date.now()) {
+  return loadDump(filePath, progressDir, nowMs).agents;
 }
 
 /** Drop the cached dump so the next loadSessionIndex re-reads from disk. */
 function invalidateSessionIndex() {
-  cache = { path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {} };
+  cache = { path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {}, agents: {} };
 }
 
-export { indexSessions, compareSessions } from './sessions-helpers.js';
-export { loadSessionIndex, invalidateSessionIndex };
+export { indexSessions, indexBackgroundAgents, compareSessions, isStaleRead } from './sessions-helpers.js';
+export { loadSessionIndex, loadBackgroundAgents, invalidateSessionIndex };

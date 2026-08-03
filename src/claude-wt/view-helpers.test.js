@@ -115,3 +115,50 @@ describe('buildSessionList', () => {
     expect(buildSessionList({ slots: undefined, openMap: new Map(), mons })).toEqual([]);
   });
 });
+
+describe('background agents in the session list', () => {
+  const slots = { parent: { titles: ['shared'], cwd: '/p', bounds: null, lastSeen: 10 } };
+  const agents = { parent: [{ id: 'child', title: 'shared', live: true }] };
+  const row = ({ progress }) => buildSessionList({
+    slots, openMap: new Map(), mons, progress, agents,
+  })[0];
+
+  it('shows the background agent as the state of its parent row', () => {
+    // Сессия ушла в фон: интерактивный процесс погас на 100, форк работает и
+    // пишет на 900. Строка остаётся родительской — окно и слот его.
+    const r = row({ progress: {
+      parent: { state: 'active', updated: 100, lastSummary: 'ушёл в фон' },
+      child: { state: 'question', updated: 900, summary: 'спрашиваю разрешение', costUsd: 7 },
+    } });
+    expect(r.id).toBe('parent');
+    expect(r.agentState).toBe('question');
+    expect(r.agentDescription).toBe('спрашиваю разрешение');
+    expect(r.agentCostUsd).toBe(7);
+    expect(r.lastActivity).toBe(900);
+    expect(r.agentBackground).toBe(true);
+    expect(r.agentSessionId).toBe('child');
+  });
+
+  it('gives the session itself back the row once it outruns the agent', () => {
+    const r = row({ progress: {
+      parent: { state: 'active', updated: 900, summary: 'вернулся' },
+      child: { state: 'idle', updated: 100, summary: 'старое' },
+    } });
+    expect(r.agentDescription).toBe('вернулся');
+    expect(r.agentBackground).toBe(false);
+    expect(r.agentSessionId).toBe('parent');
+  });
+
+  it('ignores an agent that has written nothing yet', () => {
+    const r = row({ progress: { parent: { state: 'idle', updated: 100, summary: 'своё' } } });
+    expect(r.agentDescription).toBe('своё');
+    expect(r.agentBackground).toBe(false);
+  });
+
+  it('speaks for a session that left no state of its own', () => {
+    const r = row({ progress: { child: { state: 'active', updated: 900, lastSummary: 'работаю' } } });
+    expect(r.agentState).toBe('active');
+    expect(r.agentDescription).toBe('работаю');
+    expect(r.agentBackground).toBe(true);
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { indexSessions, compareSessions } from './sessions-helpers.js';
+import { indexSessions, indexBackgroundAgents, compareSessions, isStaleRead } from './sessions-helpers.js';
 
 const session = (over = {}) => ({
   id: 'a1', cwd: '/home/popstas/p', title: 'ccfzf', mtime: 100, live: false, ...over,
@@ -119,5 +119,68 @@ describe('indexSessions with agent activity', () => {
       ],
     };
     expect(indexSessions(tied, () => 0).same.ambiguous).toBe(true);
+  });
+});
+
+describe('background agents', () => {
+  const bg = (over = {}) => session({
+    id: 'child', kind: 'background', parent: 'a1', live: true, mtime: 200, ...over,
+  });
+
+  it('keeps a background agent out of the title index', () => {
+    // Форк наследует заголовок родителя и работает вместо него, то есть по
+    // любому признаку выигрывает окно, в котором его нет.
+    const index = indexSessions({ sessions: [session(), bg()] });
+    expect(index.ccfzf.id).toBe('a1');
+  });
+
+  it('leaves a title with nothing but background agents unindexed', () => {
+    expect(indexSessions({ sessions: [bg()] })).toEqual({});
+  });
+
+  it('groups background agents under their parent, newest first', () => {
+    const agents = indexBackgroundAgents({ sessions: [
+      session(),
+      bg({ id: 'old', mtime: 100 }),
+      bg({ id: 'new', mtime: 900 }),
+    ] });
+    expect(agents.a1.map(a => a.id)).toEqual(['new', 'old']);
+    expect(agents.a1[0]).toEqual({ id: 'new', title: 'ccfzf', live: true });
+  });
+
+  it('ignores a background agent whose parent is unknown', () => {
+    expect(indexBackgroundAgents({ sessions: [bg({ parent: '' })] })).toEqual({});
+  });
+
+  it('yields nothing for a dump without agents', () => {
+    expect(indexBackgroundAgents({ sessions: [session()] })).toEqual({});
+    expect(indexBackgroundAgents(null)).toEqual({});
+  });
+});
+
+describe('isStaleRead', () => {
+  const mtime = 1_700_000_000_000;
+  const at = ms => (mtime + ms) / 1000;
+
+  it('accepts content stamped a moment before the rename', () => {
+    // Так и выглядит честный дамп: `generated` ставится за миг до os.replace.
+    expect(isStaleRead(mtime, at(-200))).toBe(false);
+  });
+
+  it('accepts content stamped after the mtime', () => {
+    // Отметка файла по SMB бывает на секунду позади содержимого — это не то,
+    // что мы ловим: врёт тут метаданное, а байты свежие.
+    expect(isStaleRead(mtime, at(1000))).toBe(false);
+  });
+
+  it('catches content a whole generation behind its own file', () => {
+    expect(isStaleRead(mtime, at(-5 * 60 * 1000))).toBe(true);
+  });
+
+  it('says nothing about a dump without a timestamp', () => {
+    // Старый ccfzf без поля `generated`: гадать не о чем, читаем как есть.
+    expect(isStaleRead(mtime, undefined)).toBe(false);
+    expect(isStaleRead(mtime, 'вчера')).toBe(false);
+    expect(isStaleRead(NaN, at(-5 * 60 * 1000))).toBe(false);
   });
 });

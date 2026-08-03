@@ -23,11 +23,34 @@ function monitorNumberForBounds(mons, bounds) {
   return null;
 }
 
-function buildSessionList({ slots, openMap, mons, progress = {}, meta = {} }) {
+/**
+ * Кто на самом деле работает в этой сессии: она сама или её фоновый агент.
+ *
+ * `claude agents` уводит работу в форк под демоном: интерактивный процесс
+ * уходит, окно остаётся с прежним заголовком, и хуки с этого момента пишет
+ * форк — под своим id. Строка родителя без этого стоит с той сводкой, на
+ * которой он ушёл в фон, а работающий агент не виден нигде.
+ *
+ * Берётся тот, чья запись свежее. Родитель может ожить обратно (человек
+ * вернулся в окно), и тогда снова говорит он.
+ */
+function activeAgent(id, progress, agents) {
+  let best = { id, agent: progress[id] ?? null, background: false };
+  for (const child of agents[id] ?? []) {
+    const childAgent = progress[child.id] ?? null;
+    if (!childAgent) continue;
+    if ((childAgent.updated ?? 0) <= (best.agent?.updated ?? 0)) continue;
+    best = { id: child.id, agent: childAgent, background: true };
+  }
+  return best;
+}
+
+function buildSessionList({ slots, openMap, mons, progress = {}, meta = {}, agents = {} }) {
   return Object.entries(slots ?? {}).map(([id, slot]) => {
     const bounds = slot.bounds ?? null;
     const monitor = monitorNumberForBounds(mons, bounds);
-    const agent = progress[id] ?? null;
+    const active = activeAgent(id, progress, agents);
+    const agent = active.agent;
     const sessionMeta = meta[id] ?? null;
     return {
       id,
@@ -74,6 +97,13 @@ function buildSessionList({ slots, openMap, mons, progress = {}, meta = {} }) {
       // Когда сессия стартовала (SessionStart → meta.json). Ноль — хук метаданных
       // не писал: сортировка oldest/newest кладёт такие строки в конец.
       agentStarted: sessionMeta?.started ?? 0,
+      // Работает не сама сессия, а её фоновый агент (`claude agents`): все
+      // поля agent* выше — его. Строка при этом остаётся строкой родителя,
+      // потому что окно и слот — родительские, а у агента их нет вовсе.
+      agentBackground: active.background,
+      // Id того, чьи это поля. Совпадает с id строки, пока работает сама
+      // сессия; у фонового агента свой — по нему и искать его транскрипт.
+      agentSessionId: active.id,
       // Epoch-секунды. Пикер показывает возраст относительно now, поэтому
       // отдаём метку времени, а не отформатированную строку: форматирование
       // на секунду устаревает быстрее, чем долетает.
@@ -90,4 +120,4 @@ function buildSessionList({ slots, openMap, mons, progress = {}, meta = {} }) {
   });
 }
 
-export { monitorNumberForBounds, buildSessionList };
+export { monitorNumberForBounds, activeAgent, buildSessionList };

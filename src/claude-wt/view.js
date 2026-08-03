@@ -1,7 +1,7 @@
 import { getWindows } from '../windows.js';
 import { getMons } from '../monitors.js';
 import { readState } from './state.js';
-import { loadSessionIndex } from './sessions.js';
+import { loadSessionIndex, loadBackgroundAgents } from './sessions.js';
 import { resolveSession } from './tracker-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
@@ -45,12 +45,21 @@ function claudeWtSessions() {
   const openMap = openSessionMap(cfg, state);
   // Прогресс и мета читаются только здесь — то есть пока открыт пикер. Каталог
   // лежит на сетевом диске, и в тике демона им не место.
-  const ids = Object.keys(state.slots);
+  const slotIds = Object.keys(state.slots);
+  // Фоновый агент пишет состояние под своим id, а слота у него нет: без этого
+  // его файл никто бы не прочитал, и работающая сессия выглядела бы замершей
+  // на том, что сказала перед уходом в фон.
+  const agents = loadBackgroundAgents(cfg.sessionsFile, cfg.progressDir);
+  const ids = [...new Set(slotIds.concat(
+    slotIds.flatMap(id => (agents[id] ?? []).map(child => child.id)),
+  ))];
   const progress = loadProgress(cfg.progressDir, ids);
-  const meta = loadMeta(cfg.progressDir, ids);
+  const meta = loadMeta(cfg.progressDir, slotIds);
   return {
     ok: true,
-    sessions: buildSessionList({ slots: state.slots, openMap, mons: getMons(), progress, meta }),
+    sessions: buildSessionList({
+      slots: state.slots, openMap, mons: getMons(), progress, meta, agents,
+    }),
   };
 }
 
