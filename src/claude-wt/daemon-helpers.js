@@ -152,7 +152,10 @@ function recordTick(stats, { ok, error, nowMs }) {
  * проходе, «тики были, но давно» — на то, что что-то сломалось по дороге.
  */
 function claudeWtHealth({ running, lastTickAt, startedAt, nowMs, silenceMs, graceMs }) {
-  if (!running) return { healthy: false, reason: 'not running', ageMs: nowMs - startedAt };
+  // Ноль, а не nowMs - startedAt: остановленный демон обнуляет startedAt, и
+  // разница с началом эпохи выливалась в «последний тик 1785000000s назад».
+  // Возраста у незапущенного демона нет, и сторож этот кусок строки опускает.
+  if (!running) return { healthy: false, reason: 'not running', ageMs: 0 };
   if (!lastTickAt) {
     const ageMs = nowMs - startedAt;
     return ageMs < graceMs
@@ -165,10 +168,28 @@ function claudeWtHealth({ running, lastTickAt, startedAt, nowMs, silenceMs, grac
     : { healthy: true, reason: 'ok', ageMs };
 }
 
+/**
+ * Отстал ли тик от текущего поколения демона.
+ *
+ * Сторож поднимает демона заново ровно тогда, когда тик вероятнее всего завис:
+ * в `placeWindowByConfig()` или в `GetWindowDesktopNumber()`, который спавнит
+ * exe. Обещание такого тика переживает `startClaudeWt()`, и, досчитавшись, оно
+ * запишет дореcтартовый снимок поверх файла нового поколения, а его `.then`
+ * отметит успешный тик в счётчиках нового — то есть хронически висящий тик
+ * бесконечно обновлял бы `lastTickAt`, и сторож не сработал бы больше никогда.
+ *
+ * `tickGen === null` — тик, запущенный руками (CLI, тесты). Поколения у него
+ * нет, отгораживать нечего.
+ */
+function isStaleTick(tickGen, currentGen) {
+  return tickGen !== null && tickGen !== currentGen;
+}
+
 export {
   CLAUDE_WT_DEFAULTS,
   TICK_SILENCE_MS,
   TICK_GRACE_MS,
+  isStaleTick,
   mergeClaudeWtConfig,
   isTerminalPath,
   desktopOnlyActions,

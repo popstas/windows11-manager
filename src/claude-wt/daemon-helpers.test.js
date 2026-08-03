@@ -10,6 +10,7 @@ import {
   emptyTickStats,
   recordTick,
   claudeWtHealth,
+  isStaleTick,
 } from './daemon-helpers.js';
 
 describe('mergeClaudeWtConfig', () => {
@@ -285,6 +286,13 @@ describe('claudeWtHealth', () => {
     expect(h.reason).toBe('not running');
   });
 
+  it('не запущен — возраста нет', () => {
+    // stopClaudeWt() обнуляет startedAt, и разница с началом эпохи давала в
+    // логе сторожа «последний тик 1785000000s назад».
+    const h = claudeWtHealth({ ...base, running: false, lastTickAt: 0, startedAt: 0 });
+    expect(h.ageMs).toBe(0);
+  });
+
   it('тиков ещё не было, грейс не вышел — здоров', () => {
     const h = claudeWtHealth({ ...base, running: true, lastTickAt: 0, startedAt: 70000 });
     expect(h.healthy).toBe(true);
@@ -310,5 +318,22 @@ describe('claudeWtHealth', () => {
     expect(h.healthy).toBe(false);
     expect(h.reason).toBe('stale');
     expect(h.ageMs).toBe(70000);
+  });
+});
+
+describe('isStaleTick', () => {
+  it('тик своего поколения — свежий', () => {
+    expect(isStaleTick(3, 3)).toBe(false);
+  });
+
+  it('тик, переживший перезапуск, — отставший', () => {
+    // Зависший тик досчитывается после подъёма сторожем. Не отгородить его —
+    // и он запишет дореcтартовое состояние поверх нового, а заодно отметит
+    // успешный тик новому поколению, после чего сторож ослепнет навсегда.
+    expect(isStaleTick(3, 4)).toBe(true);
+  });
+
+  it('ручной тик без поколения не отгораживается', () => {
+    expect(isStaleTick(null, 7)).toBe(false);
   });
 });
