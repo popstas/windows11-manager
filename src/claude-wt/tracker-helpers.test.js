@@ -326,6 +326,71 @@ describe('step late session resolution', () => {
   });
 });
 
+describe('step rebinding a window whose session restarted', () => {
+  // Одно и то же окно, заголовок не менялся: человек вышел из claude и зашёл
+  // снова, дамп теперь отдаёт под этим заголовком другой id.
+  const w = [{ id: 1, title: 'ExpertizeMe', bounds: bounds(10, 20) }];
+  const old = { ExpertizeMe: { id: 'old', cwd: '/p', title: 'ExpertizeMe', ambiguous: false } };
+  const fresh = { ExpertizeMe: { id: 'new', cwd: '/p', title: 'ExpertizeMe', ambiguous: false } };
+
+  function runWithIndexes(indexes, { windows = w, state = emptyState() } = {}) {
+    let prevWindows = [];
+    let out = { nextWindows: [], actions: [], bindings: [], nextState: state };
+    indexes.forEach((sessionIndex, i) => {
+      out = step({ prevWindows, windows, sessionIndex, state: out.nextState, now: 1000 + i * 1000 });
+      prevWindows = out.nextWindows;
+    });
+    return out;
+  }
+
+  it('moves the window to the session the dump now names', () => {
+    const out = runWithIndexes([old, old, old, fresh]);
+    expect(out.nextState.slots.new.bounds).toEqual(bounds(10, 20));
+    expect(out.nextState.lastLayout).toEqual(['new']);
+  });
+
+  it('stops touching the slot of the session that left', () => {
+    // Слот прежней сессии остаётся с той отметкой, на которой её видели
+    // последний раз, — иначе мёртвая строка вечно выглядела бы свежей.
+    const out = runWithIndexes([old, old, old, fresh, fresh]);
+    expect(out.nextState.slots.old.lastSeen).toBe(3);
+    expect(out.nextState.slots.new.lastSeen).toBe(5);
+  });
+
+  it('does not move the window: it is a new session, not a return to one', () => {
+    const out = runWithIndexes([old, old, old, fresh]);
+    expect(out.actions).toEqual([]);
+  });
+
+  it('carries the desktop number over instead of asking for it again', () => {
+    const state = {
+      ...emptyState(),
+      slots: { old: upsertSlot(undefined, { title: 'ExpertizeMe', bounds: bounds(10, 20), desktop: 3, now: 1 }) },
+    };
+    const out = runWithIndexes([old, old, old, fresh], { state });
+    expect(out.nextState.slots.new.desktop).toBe(3);
+    expect(out.bindings).toEqual([]);
+  });
+
+  it('keeps the binding while the dump has not caught up', () => {
+    // Пустой индекс — это «дамп отстал», а не «сессия ушла»: окно должно
+    // остаться на своём слоте.
+    const out = runWithIndexes([old, old, old, {}, {}]);
+    expect(out.nextState.lastLayout).toEqual(['old']);
+    expect(out.nextState.slots.new).toBeUndefined();
+  });
+
+  it('leaves a minimized window on its old session', () => {
+    const away = [{ id: 1, title: 'ExpertizeMe', bounds: bounds(-32000, 20) }];
+    let out = runWithIndexes([old, old, old]);
+    out = step({
+      prevWindows: out.nextWindows, windows: away, sessionIndex: fresh,
+      state: out.nextState, now: 5000,
+    });
+    expect(out.nextState.lastLayout).toEqual(['old']);
+  });
+});
+
 describe('step with DPI rounding', () => {
   // На мониторе со 125% окно возвращается из setBounds() на пиксель меньше,
   // чем просили: 602 -> 601, 1387 -> 1386. Прогон ниже воспроизводит ровно это.

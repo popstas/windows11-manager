@@ -117,6 +117,26 @@ function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, o
       && winners.get(titleKey) !== win.id;
     if (losesToNewer) tracked.sessionId = null;
 
+    // Сессия в окне меняется и без смены заголовка: человек вышел из claude и
+    // запустил его снова в том же терминале — id новый, заголовок прежний.
+    // Привязка же делалась ровно один раз, в момент смены заголовка, и окно
+    // навсегда оставалось на прежнем id. Замерено 2026-08-03: строка
+    // `ExpertizeMe` пять часов стояла на сводке мёртвой сессии, а работающая в
+    // этом же окне не появлялась в списке вовсе — своего слота у неё не было.
+    //
+    // Судья тут только дамп. Пока он этого заголовка не знает (новая сессия ещё
+    // не попала в него), молчим: иначе окно теряло бы слот на каждое отставание
+    // дампа. Свёрнутое окно и незавершённый перенос пропускаем — у первого
+    // нечего записать в слот, у второго на привязке держится сторож pendingMove.
+    const dumpSays = sessionIndex?.[tracked.stableTitle];
+    const rebinds = Boolean(tracked.sessionId) && !losesToNewer && !titleChanged
+      && !minimized && !tracked.pendingMove
+      && Boolean(dumpSays) && dumpSays.id !== tracked.sessionId;
+    // Виртуальный стол у окна прежний — оно никуда не уезжало. Спрашивать его
+    // заново значило бы спавнить VirtualDesktop11.exe на каждую перепривязку.
+    const releasedDesktop = rebinds ? (slots[tracked.sessionId]?.desktop ?? null) : null;
+    if (rebinds) tracked.sessionId = null;
+
     if (losesToNewer) {
       // skip binding
     } else if (titleChanged) {
@@ -194,9 +214,13 @@ function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, o
         // здесь давно, и его позиция — выбор пользователя, а не то, что нужно
         // исправлять.
         slots[resolved.id] = upsertSlot(known, {
-          title: tracked.stableTitle, cwd: resolved.cwd, bounds: win.bounds, now: nowSec,
+          title: tracked.stableTitle, cwd: resolved.cwd, bounds: win.bounds,
+          desktop: releasedDesktop, now: nowSec,
         });
-        if (!known || known.desktop == null) {
+        // Спрашиваем номер стола по итоговому слоту, а не по тому, был ли он до
+        // нас: у перепривязки слот новый, но стол уже известен от предыдущей
+        // сессии этого же окна.
+        if (slots[resolved.id].desktop == null) {
           bindings.push({ windowId: win.id, sessionId: resolved.id });
         }
       }
