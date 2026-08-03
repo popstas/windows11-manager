@@ -1,6 +1,7 @@
 /** Pure helper functions for the claude-wt daemon. No external I/O. */
 
 import { normalizeProjects } from './project-helpers.js';
+import { upsertSlot } from './state-helpers.js';
 
 const CLAUDE_WT_DEFAULTS = {
   enabled: true,
@@ -165,6 +166,25 @@ function applyFocusSuppression({ marks = {}, ids = [], nowMs }) {
   };
 }
 
+/**
+ * Наложить отложенные пометки на слоты, которые тик уносит в liveState.
+ *
+ * Пометка, пришедшая посреди тика, иначе потерялась бы: она правит прежнюю
+ * карту слотов, а тик заменяет её целиком своей — see markSessionUnread() и
+ * claudeWtTick() в index.js. Id, которых в этой карте уже нет (сессия успела
+ * пропасть из состояния), тихо пропускаются — метить нечего.
+ */
+function applyPendingUnread(slots, pending) {
+  const ids = Object.keys(pending ?? {});
+  if (!ids.length) return slots;
+  const next = { ...slots };
+  for (const id of ids) {
+    if (!next[id]) continue;
+    next[id] = upsertSlot(next[id], { focusedAt: pending[id] });
+  }
+  return next;
+}
+
 /** Settled titles of terminal windows that could not be attributed to a session. */
 function unresolvedTitles(nextWindows) {
   return [...new Set(nextWindows.filter(w => w.stableTitle && !w.sessionId).map(w => w.stableTitle))];
@@ -252,6 +272,7 @@ export {
   unreadFocusedAt,
   suppressFocus,
   applyFocusSuppression,
+  applyPendingUnread,
   unresolvedTitles,
   emptyTickStats,
   recordTick,

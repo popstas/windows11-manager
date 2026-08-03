@@ -20,6 +20,7 @@ import {
   unreadFocusedAt,
   suppressFocus,
   applyFocusSuppression,
+  applyPendingUnread,
 } from './daemon-helpers.js';
 import { loadProgress } from './progress.js';
 import { activeAgent } from './view-helpers.js';
@@ -92,6 +93,12 @@ let reportedTitles = new Set();
 // демона: пометка нужна ровно на те секунды, что человек закрывает пикер, а
 // переживший перезапуск демон и так начинает с чистого экрана.
 let focusMarks = {};
+
+// Пометка, поставленная посреди тика, попала бы в карту слотов, которую тик
+// уже отцепил: step() снимает копию до первого await, а `liveState = nextState`
+// в конце уносит именно её. Поэтому пометки копятся отдельно и применяются к
+// тому состоянию, которое тик уносит с собой.
+let pendingUnread = {};
 
 // Счётчики живости. Только в памяти: сторож в windows-mqtt спрашивает их через
 // claudeWtStatus(), на диск они не едут и лишнего обращения к V: не стоят.
@@ -211,6 +218,13 @@ async function claudeWtTick(tickGen = null) {
   // Тик, начатый до перезапуска, досчитывается уже в чужом доме: и liveState, и
   // файл принадлежат новому поколению, а он принёс картину мира до рестарта.
   if (isStaleTick(tickGen, generation)) return;
+  // Пометки, пришедшие через markSessionUnread() пока этот тик был в полёте
+  // (после того, как step() отцепил свою копию слотов от liveState), иначе
+  // потерялись бы: nextState.slots их не видел, а строкой ниже он целиком
+  // становится новым liveState. Наложить нужно до fingerprint — иначе на диск
+  // снова уедет состояние без пометки.
+  nextState.slots = applyPendingUnread(nextState.slots, pendingUnread);
+  pendingUnread = {};
   liveState = nextState;
   const fingerprint = layoutFingerprint(nextState);
   if (fingerprint !== lastWritten) {
@@ -244,6 +258,8 @@ function startClaudeWt({ skipCrashCheck = false } = {}) {
   prevWindows = [];
   lastWritten = '';
   prevActiveWindowId = 0;
+  focusMarks = {};
+  pendingUnread = {};
   tickStats = emptyTickStats();
   startedAt = Date.now();
   generation += 1;
@@ -337,9 +353,15 @@ function markSessionUnread(id) {
   // Без записи хука сессия и так не «прочитана»: гасить нечего.
   if (!updated) return { ok: false, reason: 'no agent record yet' };
 
-  const ids = sameTitleSessionIds(liveState.slots, id).filter(x => liveState.slots[x]);
+  const ids = sameTitleSessionIds(liveState.slots, id);
+  const unreadAt = unreadFocusedAt(updated);
   for (const sid of ids) {
-    liveState.slots[sid] = upsertSlot(liveState.slots[sid], { focusedAt: unreadFocusedAt(updated) });
+    liveState.slots[sid] = upsertSlot(liveState.slots[sid], { focusedAt: unreadAt });
+    // Тик, который окажется в полёте прямо сейчас, унесёт свою собственную копию
+    // слотов мимо этой правки — см. комментарий у pendingUnread. Дублируем
+    // пометку сюда, чтобы claudeWtTick() наложил её поверх nextState перед тем,
+    // как тот станет новым liveState.
+    pendingUnread[sid] = unreadAt;
   }
   focusMarks = suppressFocus(focusMarks, ids, Date.now());
   writeState(cfg.statePath, liveState);

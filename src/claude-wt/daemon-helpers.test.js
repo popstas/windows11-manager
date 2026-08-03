@@ -16,6 +16,7 @@ import {
   unreadFocusedAt,
   suppressFocus,
   applyFocusSuppression,
+  applyPendingUnread,
 } from './daemon-helpers.js';
 
 describe('mergeClaudeWtConfig', () => {
@@ -403,5 +404,32 @@ describe('focus suppression', () => {
 
   it('survives being called with nothing at all', () => {
     expect(applyFocusSuppression({ nowMs: 5 })).toEqual({ ids: [], marks: {} });
+  });
+});
+
+describe('applyPendingUnread', () => {
+  const slots = {
+    alpha: { titles: ['work'], cwd: '/a', bounds: null, desktop: null, focusedAt: 100, lastSeen: 5 },
+    beta: { titles: ['other'], cwd: '/b', bounds: null, desktop: null, focusedAt: 200, lastSeen: 9 },
+  };
+
+  it('stamps focusedAt on a slot that made it into the map the tick carries out', () => {
+    const next = applyPendingUnread(slots, { alpha: 42 });
+    expect(next.alpha.focusedAt).toBe(42);
+  });
+
+  it('ignores an id that fell out of the slots the tick is about to keep', () => {
+    const next = applyPendingUnread(slots, { gamma: 1 });
+    expect(next).toEqual(slots);
+  });
+
+  it('returns the same slots when nothing is pending', () => {
+    expect(applyPendingUnread(slots, {})).toBe(slots);
+  });
+
+  it('leaves the rest of the slot and neighbouring slots untouched', () => {
+    const next = applyPendingUnread(slots, { alpha: 42 });
+    expect(next.alpha).toEqual({ ...slots.alpha, focusedAt: 42 });
+    expect(next.beta).toBe(slots.beta);
   });
 });
