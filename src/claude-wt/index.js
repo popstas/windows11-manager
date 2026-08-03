@@ -3,7 +3,7 @@ import { getVisibleWindowIds, getWindowById, getActiveWindowId } from '../window
 import { placeWindowByConfig } from '../placement.js';
 import { getWindowsMonitors } from '../monitors.js';
 import { virtualDesktop } from '../virtual-desktop.js';
-import { loadSessionIndex } from './sessions.js';
+import { loadSessionIndex, loadBackgroundAgents } from './sessions.js';
 import { readState, writeState, upsertSlot } from './state.js';
 import { step } from './tracker-helpers.js';
 import {
@@ -16,7 +16,13 @@ import {
   emptyTickStats,
   recordTick,
   isStaleTick,
+  sameTitleSessionIds,
+  unreadFocusedAt,
+  suppressFocus,
+  applyFocusSuppression,
 } from './daemon-helpers.js';
+import { loadProgress } from './progress.js';
+import { activeAgent } from './view-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { snapshotTick, resetSnapshotter } from './snapshotter.js';
 
@@ -81,6 +87,11 @@ let lastWritten = '';
 let liveState = null;
 let prevActiveWindowId = 0;
 let reportedTitles = new Set();
+
+// Сессии, чей следующий переход фокуса не считается просмотром. Живёт в памяти
+// демона: пометка нужна ровно на те секунды, что человек закрывает пикер, а
+// переживший перезапуск демон и так начинает с чистого экрана.
+let focusMarks = {};
 
 // Счётчики живости. Только в памяти: сторож в windows-mqtt спрашивает их через
 // claudeWtStatus(), на диск они не едут и лишнего обращения к V: не стоят.
@@ -169,9 +180,13 @@ async function claudeWtTick(tickGen = null) {
   // окна — один GetForegroundWindow, без initWindow, — и записывается только в
   // момент перехода фокуса на окно, привязанное к сессии.
   const activeWindowId = getActiveWindowId();
-  const focused = focusedSessionIds({
+  const caught = focusedSessionIds({
     activeWindowId, prevActiveWindowId, windows: nextWindows, slots: nextState.slots,
   });
+  const { ids: focused, marks } = applyFocusSuppression({
+    marks: focusMarks, ids: caught, nowMs: Date.now(),
+  });
+  focusMarks = marks;
   if (focused.length) {
     const seenAt = Math.floor(Date.now() / 1000);
     for (const id of focused) {
@@ -296,6 +311,42 @@ function claudeWtStatus() {
   };
 }
 
+/**
+ * Вернуть сессию в непрочитанное.
+ *
+ * Живёт здесь, а не во view-слое, потому что состояние демона — это `liveState`
+ * в памяти этого модуля: правка файла снаружи была бы затёрта следующим тиком.
+ * Файл при этом пишется сразу — пикер читает состояние с диска, а ждать
+ * следующего изменения расклада значило бы ждать неизвестно сколько.
+ *
+ * Запись агента берётся та же, по которой пикер рисует кружок: у сессии, чью
+ * работу увёл фоновый агент, это запись форка, и отматывать надо относительно
+ * неё.
+ */
+function markSessionUnread(id) {
+  const cfg = getClaudeWtConfig();
+  if (!cfg.enabled) return { ok: false, reason: 'claudeWt.enabled is false in config' };
+  if (!cfg.statePath) return { ok: false, reason: 'claudeWt.statePath is not set in config' };
+  if (!liveState) liveState = readState(cfg.statePath);
+  if (!liveState.slots[id]) return { ok: false, reason: `unknown session ${id}` };
+
+  const agents = loadBackgroundAgents(cfg.sessionsFile, cfg.progressDir);
+  const childIds = (agents[id] ?? []).map(child => child.id);
+  const progress = loadProgress(cfg.progressDir, [id, ...childIds]);
+  const updated = activeAgent(id, progress, agents).agent?.updated ?? 0;
+  // Без записи хука сессия и так не «прочитана»: гасить нечего.
+  if (!updated) return { ok: false, reason: 'no agent record yet' };
+
+  const ids = sameTitleSessionIds(liveState.slots, id).filter(x => liveState.slots[x]);
+  for (const sid of ids) {
+    liveState.slots[sid] = upsertSlot(liveState.slots[sid], { focusedAt: unreadFocusedAt(updated) });
+  }
+  focusMarks = suppressFocus(focusMarks, ids, Date.now());
+  writeState(cfg.statePath, liveState);
+  lastWritten = layoutFingerprint(liveState);
+  return { ok: true, ids };
+}
+
 // Наружу, а не только внутрь: сторож в windows-mqtt принимает решение по этому
 // же диагнозу и этим же порогам — иначе они разъедутся в двух репозиториях.
 export {
@@ -312,4 +363,5 @@ export {
   stopClaudeWt,
   claudeWtStatus,
   claudeWtTick,
+  markSessionUnread,
 };
