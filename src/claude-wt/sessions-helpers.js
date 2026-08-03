@@ -102,31 +102,4 @@ function indexBackgroundAgents(dump) {
   return index;
 }
 
-// Дамп штампует `generated` за миг до переименования, так что в норме
-// содержимое отстаёт от mtime на доли секунды. Тридцать секунд — заведомо
-// больше любой честной разницы и заведомо меньше промежутка между дампами.
-const STALE_TOLERANCE_MS = 30000;
-
-/**
- * Содержимое дампа старее, чем отметка файла, из которого оно прочитано.
- *
- * Так выглядит враньё SMB: `V:\.ccfzf.sessions.json` переписывается на pc-virt
- * локально (tmp + rename), мимо шары, — редиректор не узнаёт, что его кэш
- * чтения протух, и обновляет только метаданные. Замерено 2026-08-03: statSync
- * показывал свежий mtime, а readFileSync пятнадцать минут отдавал прежние
- * байты и прежний размер.
- *
- * Само по себе это ещё полбеды, но кэш индекса ключуется по mtime — устаревшие
- * байты закреплялись за новой отметкой, и сессия, открытая после прошлого
- * дампа, не появлялась нигде: ни в пикере, ни на плате.
- */
-function isStaleRead(mtimeMs, generated) {
-  const generatedMs = Number(generated) * 1000;
-  if (!Number.isFinite(generatedMs) || !Number.isFinite(mtimeMs)) return false;
-  return mtimeMs - generatedMs > STALE_TOLERANCE_MS;
-}
-
-export {
-  compareSessions, byActivityThen, indexSessions, indexBackgroundAgents,
-  isStaleRead, STALE_TOLERANCE_MS,
-};
+export { compareSessions, byActivityThen, indexSessions, indexBackgroundAgents };

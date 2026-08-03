@@ -161,3 +161,37 @@ describe('warning throttle', () => {
     expect(errors).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('loadSessionIndex against a lying read cache', () => {
+  // Кэш SMB отдаёт содержимое поколением назад, и отличить это чтение от
+  // честного нельзя — поэтому дамп читается только после сброса кэша. Локально
+  // сбрасывать нечего; здесь проверяется, что сам сброс ничего не ломает.
+  it('reads the dump after asking the OS to drop what it cached', () => {
+    const p = freshPath();
+    writeDump(p, dumpWith('ccfzf'), T0);
+    expect(loadSessionIndex(p).ccfzf.id).toBe('s0');
+  });
+
+  it('leaves the file it opened untouched', () => {
+    // Открытие на запись — единственный способ сломать read lease, но писать в
+    // дамп мы не имеем права: его владелец на той стороне.
+    const p = freshPath();
+    writeDump(p, dumpWith('ccfzf'), T0);
+    const before = fs.readFileSync(p, 'utf8');
+    loadSessionIndex(p);
+    expect(fs.readFileSync(p, 'utf8')).toBe(before);
+  });
+
+  it('still reads a dump it cannot open for writing', () => {
+    const p = freshPath();
+    writeDump(p, dumpWith('ccfzf'), T0);
+    fs.chmodSync(p, 0o444);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(loadSessionIndex(p).ccfzf.id).toBe('s0');
+    } finally {
+      errors.mockRestore();
+      fs.chmodSync(p, 0o644);
+    }
+  });
+});

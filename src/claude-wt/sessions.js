@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { indexSessions, indexBackgroundAgents, isStaleRead } from './sessions-helpers.js';
+import { indexSessions, indexBackgroundAgents } from './sessions-helpers.js';
 import { progressStamp, activityAt } from './progress.js';
 
 let cache = { path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {}, agents: {} };
@@ -26,26 +26,36 @@ const MAX_AGE_MS = 15000;
 /**
  * Прочитать дамп, не поверив кэшу SMB на слово.
  *
- * Когда содержимое отстаёт от mtime (см. `isStaleRead`), файл открывается с
- * правом записи и сразу закрывается. Ничего не пишется: смысл в самом открытии
- * — запрос на запись ломает read lease, редиректор выбрасывает свой кэш, и
- * второе чтение приходит уже с сервера. Проверено на живом дампе: до открытия
- * читалось поколение пятиминутной давности, после — текущее.
+ * Файл сначала открывается с правом записи и сразу закрывается. Ничего не
+ * пишется: смысл в самом открытии — запрос на запись ломает read lease, и
+ * редиректор выбрасывает закэшированное содержимое. Следующее чтение приходит
+ * с сервера.
  *
- * Не получилось открыть (шара только на чтение, файл переписывают прямо
- * сейчас) — отдаём то, что прочиталось: устаревший индекс лучше пустого.
+ * Без этого дамп читается поколением назад. Он переписывается на pc-virt
+ * локально (временный файл + rename), мимо шары, — Samba не ломает клиенту
+ * lease, и тот продолжает отдавать старые байты. Замерено 2026-08-03:
+ * `V:\.ccfzf.sessions.json` пятнадцать минут читался предыдущим поколением,
+ * из-за чего сессия, открытая после прошлого дампа, не появлялась нигде — ни
+ * в пикере, ни на плате. Кэш индекса ниже ключуется по mtime, а тот успевал
+ * обновиться, так что устаревшие байты закреплялись за новой отметкой.
+ *
+ * Отличить такое чтение от честного изнутри нельзя: кэш согласован сам с
+ * собой — размер из statSync совпадает с числом прочитанных байт, потому что
+ * оба оттуда же. Разъезжается только mtime, и то не всегда: замерено и то, и
+ * другое. Поэтому не гадаем, а сбрасываем кэш на каждое перечитывание — оно
+ * и так случается не чаще раза в MAX_AGE_MS, лишнее открытие на фоне
+ * двухсоткилобайтного файла не стоит ничего.
+ *
+ * Не открылось (шара только на чтение, файл переписывают прямо сейчас) —
+ * читаем как есть: устаревший индекс лучше пустого.
  */
-function readDump(filePath, mtimeMs) {
-  const parse = () => JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  const dump = parse();
-  if (!isStaleRead(mtimeMs, dump?.generated)) return dump;
+function readDump(filePath) {
   try {
     fs.closeSync(fs.openSync(filePath, 'r+'));
   } catch (e) {
-    warnThrottled(`session dump read cache stuck (${filePath}): ${e.message}`);
-    return dump;
+    warnThrottled(`session dump cache not bustable (${filePath}): ${e.message}`);
   }
-  return parse();
+  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
 /** The daemon ticks once a second; an unthrottled warning would be its own problem. */
@@ -90,7 +100,7 @@ function loadDump(filePath, progressDir = '', nowMs = Date.now()) {
     return cache;
   }
   try {
-    const dump = readDump(filePath, stat.mtimeMs);
+    const dump = readDump(filePath);
     const index = indexSessions(
       dump,
       progressDir ? id => activityAt(progressDir, id) : undefined,
@@ -126,5 +136,5 @@ function invalidateSessionIndex() {
   cache = { path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {}, agents: {} };
 }
 
-export { indexSessions, indexBackgroundAgents, compareSessions, isStaleRead } from './sessions-helpers.js';
+export { indexSessions, indexBackgroundAgents, compareSessions } from './sessions-helpers.js';
 export { loadSessionIndex, loadBackgroundAgents, invalidateSessionIndex };
