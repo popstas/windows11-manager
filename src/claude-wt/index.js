@@ -15,6 +15,7 @@ import {
   unresolvedTitles,
   emptyTickStats,
   recordTick,
+  isStaleTick,
 } from './daemon-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { snapshotTick, resetSnapshotter } from './snapshotter.js';
@@ -85,6 +86,9 @@ let reportedTitles = new Set();
 // claudeWtStatus(), на диск они не едут и лишнего обращения к V: не стоят.
 let tickStats = emptyTickStats();
 let startedAt = 0;
+// Номер поколения демона: растёт на каждом старте и остановке. Тик уносит его с
+// собой и по возвращении сверяется — см. isStaleTick().
+let generation = 0;
 
 /** Diagnostics for the case the design cannot detect: a title we fail to match. */
 function reportUnresolved(nextWindows) {
@@ -104,7 +108,7 @@ async function place(rule, what) {
   }
 }
 
-async function claudeWtTick() {
+async function claudeWtTick(tickGen = null) {
   const cfg = getClaudeWtConfig();
   // Состояние живёт в памяти: с диска оно читается один раз при старте, дальше
   // файл — только снимок для восстановления, а не рабочая структура.
@@ -189,6 +193,9 @@ async function claudeWtTick() {
     console.error(`[claude-wt] snapshot failed: ${e.message}`);
   }
 
+  // Тик, начатый до перезапуска, досчитывается уже в чужом доме: и liveState, и
+  // файл принадлежат новому поколению, а он принёс картину мира до рестарта.
+  if (isStaleTick(tickGen, generation)) return;
   liveState = nextState;
   const fingerprint = layoutFingerprint(nextState);
   if (fingerprint !== lastWritten) {
@@ -197,7 +204,17 @@ async function claudeWtTick() {
   }
 }
 
-function startClaudeWt() {
+/**
+ * Запустить демона.
+ *
+ * `skipCrashCheck` — для подъёма сторожем: `maybeRestoreOnStart()` зовёт
+ * `getWindows()` (тот самый полный перебор на ~31 мс, которого эта кодовая база
+ * избегает) и при `restore.auto` открывает терминалы. А `detectCrash()` истинен
+ * ровно в том случае, ради которого сторож и заведён — «демон так и не записал
+ * состояние», — так что больной демон пытался бы восстанавливать сессии каждые
+ * пять минут.
+ */
+function startClaudeWt({ skipCrashCheck = false } = {}) {
   const cfg = getClaudeWtConfig();
   if (!cfg.enabled) {
     console.error('[claude-wt] claudeWt.enabled is false in config, refusing to start');
@@ -214,22 +231,34 @@ function startClaudeWt() {
   prevActiveWindowId = 0;
   tickStats = emptyTickStats();
   startedAt = Date.now();
+  generation += 1;
   resetSnapshotter();
   terminals = new Map();
   notTerminals = new Set();
   reportedTitles = new Set();
   console.log(`[claude-wt] watching every ${cfg.interval}ms, state: ${cfg.statePath}`);
-  // Динамический импорт: restore.js импортирует этот модуль, статический импорт
-  // в обратную сторону дал бы цикл.
-  import('./restore.js')
-    .then(mod => mod.maybeRestoreOnStart())
-    .catch(e => console.error(`[claude-wt] crash check failed: ${e.message}`));
+  if (!skipCrashCheck) {
+    // Динамический импорт: restore.js импортирует этот модуль, статический импорт
+    // в обратную сторону дал бы цикл.
+    import('./restore.js')
+      .then(mod => mod.maybeRestoreOnStart())
+      .catch(e => console.error(`[claude-wt] crash check failed: ${e.message}`));
+  }
+  // Поколение снимается здесь, а не внутри тика: у всех тиков этого интервала
+  // оно одно, и по нему видно, что вернувшийся тик принадлежит прошлой жизни.
+  const gen = generation;
   intervalId = setInterval(() => {
-    claudeWtTick().then(
-      () => { tickStats = recordTick(tickStats, { ok: true, nowMs: Date.now() }); },
+    claudeWtTick(gen).then(
+      () => {
+        if (isStaleTick(gen, generation)) return;
+        tickStats = recordTick(tickStats, { ok: true, nowMs: Date.now() });
+      },
       e => {
-        tickStats = recordTick(tickStats, { ok: false, error: e.message, nowMs: Date.now() });
+        // Ошибка пишется в любом случае: даже опоздавший тик рассказывает, на
+        // чём именно демон завис, — ради этого всё и затевалось.
         console.error(`[claude-wt] tick failed: ${e.message}`);
+        if (isStaleTick(gen, generation)) return;
+        tickStats = recordTick(tickStats, { ok: false, error: e.message, nowMs: Date.now() });
       },
     );
   }, cfg.interval);
@@ -243,6 +272,9 @@ function stopClaudeWt() {
     // свежий демон болен ещё до первого своего тика.
     tickStats = emptyTickStats();
     startedAt = 0;
+    // Тик, оставшийся в полёте на момент остановки, тоже отгораживаем: пусть
+    // его результат никуда не едет, даже если демона больше не поднимут.
+    generation += 1;
   }
 }
 
