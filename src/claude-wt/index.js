@@ -13,6 +13,8 @@ import {
   layoutFingerprint,
   focusedSessionIds,
   unresolvedTitles,
+  emptyTickStats,
+  recordTick,
 } from './daemon-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { snapshotTick, resetSnapshotter } from './snapshotter.js';
@@ -78,6 +80,11 @@ let lastWritten = '';
 let liveState = null;
 let prevActiveWindowId = 0;
 let reportedTitles = new Set();
+
+// Счётчики живости. Только в памяти: сторож в windows-mqtt спрашивает их через
+// claudeWtStatus(), на диск они не едут и лишнего обращения к V: не стоят.
+let tickStats = emptyTickStats();
+let startedAt = 0;
 
 /** Diagnostics for the case the design cannot detect: a title we fail to match. */
 function reportUnresolved(nextWindows) {
@@ -205,6 +212,8 @@ function startClaudeWt() {
   prevWindows = [];
   lastWritten = '';
   prevActiveWindowId = 0;
+  tickStats = emptyTickStats();
+  startedAt = Date.now();
   resetSnapshotter();
   terminals = new Map();
   notTerminals = new Set();
@@ -216,7 +225,13 @@ function startClaudeWt() {
     .then(mod => mod.maybeRestoreOnStart())
     .catch(e => console.error(`[claude-wt] crash check failed: ${e.message}`));
   intervalId = setInterval(() => {
-    claudeWtTick().catch(e => console.error(`[claude-wt] tick failed: ${e.message}`));
+    claudeWtTick().then(
+      () => { tickStats = recordTick(tickStats, { ok: true, nowMs: Date.now() }); },
+      e => {
+        tickStats = recordTick(tickStats, { ok: false, error: e.message, nowMs: Date.now() });
+        console.error(`[claude-wt] tick failed: ${e.message}`);
+      },
+    );
   }, cfg.interval);
 }
 
@@ -224,6 +239,10 @@ function stopClaudeWt() {
   if (intervalId !== null) {
     clearInterval(intervalId);
     intervalId = null;
+    // Иначе после перезапуска сторож увидит чужую статистику и решит, что
+    // свежий демон болен ещё до первого своего тика.
+    tickStats = emptyTickStats();
+    startedAt = 0;
   }
 }
 
@@ -232,6 +251,10 @@ function claudeWtStatus() {
   const state = liveState ?? readState(cfg.statePath);
   return {
     running: intervalId !== null,
+    startedAt,
+    lastTickAt: tickStats.lastTickAt,
+    tickFailures: tickStats.tickFailures,
+    lastTickError: tickStats.lastTickError,
     slots: Object.entries(state.slots).map(([id, slot]) => ({
       id, title: slot.titles[0], bounds: slot.bounds, desktop: slot.desktop, lastSeen: slot.lastSeen,
     })),
@@ -241,7 +264,14 @@ function claudeWtStatus() {
   };
 }
 
-export { CLAUDE_WT_DEFAULTS } from './daemon-helpers.js';
+// Наружу, а не только внутрь: сторож в windows-mqtt принимает решение по этому
+// же диагнозу и этим же порогам — иначе они разъедутся в двух репозиториях.
+export {
+  CLAUDE_WT_DEFAULTS,
+  TICK_SILENCE_MS,
+  TICK_GRACE_MS,
+  claudeWtHealth,
+} from './daemon-helpers.js';
 export {
   getClaudeWtConfig,
   claudeWtProjects,
