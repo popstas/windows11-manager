@@ -10,7 +10,7 @@ describe('normalizeProgress', () => {
       prompt: 'добавь тесты', costUsd: 12, contextPct: 47,
     })).toEqual({
       state: 'active', updated: 100, event: '', message: 'hi', summary: '', lastSummary: 'Закоммитил',
-      prompt: 'добавь тесты', costUsd: 12, contextPct: 47,
+      prompt: 'добавь тесты', costUsd: 12, contextPct: 47, branch: '', pr_url: '',
     });
   });
 
@@ -49,7 +49,7 @@ describe('normalizeProgress', () => {
     expect(normalizeProgress({ state: 'unknown', updated: 42 }))
       .toEqual({
         state: null, updated: 42, event: '', message: '', summary: '', lastSummary: '',
-        prompt: '', costUsd: 0, contextPct: 0,
+        prompt: '', costUsd: 0, contextPct: 0, branch: '', pr_url: '',
       });
   });
 
@@ -64,7 +64,7 @@ describe('normalizeProgress', () => {
     expect(normalizeProgress({ state: 'idle', updated: 'soon' }))
       .toEqual({
         state: 'idle', updated: 0, event: '', message: '', summary: '', lastSummary: '',
-        prompt: '', costUsd: 0, contextPct: 0,
+        prompt: '', costUsd: 0, contextPct: 0, branch: '', pr_url: '',
       });
   });
 
@@ -140,5 +140,36 @@ describe('seenSinceUpdate', () => {
   it('returns false when the agent said nothing, because there was nothing to see', () => {
     expect(seenSinceUpdate({ focusedAt: 500 }, null)).toBe(false);
     expect(seenSinceUpdate({ focusedAt: 500 }, { updated: 0 })).toBe(false);
+  });
+});
+
+describe('normalizeProgress with a PR', () => {
+  it('keeps a github pull request url and the branch', () => {
+    const out = normalizeProgress({
+      state: 'idle', updated: 5,
+      branch: 'feat/x', pr_url: 'https://github.com/popstas/ccfzf/pull/3',
+    });
+    expect(out.branch).toBe('feat/x');
+    expect(out.pr_url).toBe('https://github.com/popstas/ccfzf/pull/3');
+  });
+
+  it('drops anything that is not a github pull request url', () => {
+    // Строку пишет чужой процесс на другой машине, а уходит она в аргумент
+    // `start`. Ворота одни — здесь.
+    for (const bad of [
+      'http://github.com/a/b/pull/1',
+      'https://github.com.evil.tld/a/b/pull/1',
+      'https://github.com/a/b/issues/1',
+      'https://github.com/a/b/pull/1 && calc.exe',
+      42,
+    ]) {
+      expect(normalizeProgress({ state: 'idle', updated: 5, pr_url: bad }).pr_url).toBe('');
+    }
+  });
+
+  it('defaults both fields to empty strings', () => {
+    const out = normalizeProgress({ state: 'idle', updated: 5 });
+    expect(out.branch).toBe('');
+    expect(out.pr_url).toBe('');
   });
 });

@@ -94,6 +94,10 @@ function buildSessionList({ slots, openMap, mons, progress = {}, meta = {}, agen
       // потратила» приходится по нулю, других признаков тут нет.
       agentCostUsd: agent?.costUsd ?? 0,
       agentContextPct: agent?.contextPct ?? 0,
+      // Ветка и PR. Имя `pr_url` держится одинаковым во всей цепочке — от
+      // файла хука до пункта меню, — чтобы поле искалось по одному слову.
+      branch: agent?.branch ?? '',
+      pr_url: agent?.pr_url ?? '',
       // Когда сессия стартовала (SessionStart → meta.json). Ноль — хук метаданных
       // не писал: сортировка oldest/newest кладёт такие строки в конец.
       agentStarted: sessionMeta?.started ?? 0,

@@ -162,3 +162,32 @@ describe('background agents in the session list', () => {
     expect(r.agentBackground).toBe(true);
   });
 });
+
+describe('buildSessionList with a PR', () => {
+  it('passes the branch and the pull request url through to the row', () => {
+    const [row] = buildSessionList({
+      slots: { a: { titles: ['x'], bounds: { x: 0, y: 0, width: 10, height: 10 } } },
+      openMap: new Map(),
+      mons: [],
+      progress: {
+        a: {
+          state: 'idle', updated: 5,
+          branch: 'feat/x', pr_url: 'https://github.com/popstas/ccfzf/pull/3',
+        },
+      },
+    });
+    expect(row.branch).toBe('feat/x');
+    expect(row.pr_url).toBe('https://github.com/popstas/ccfzf/pull/3');
+  });
+
+  it('gives empty strings when the hook knows no branch', () => {
+    const [row] = buildSessionList({
+      slots: { a: { titles: ['x'], bounds: { x: 0, y: 0, width: 10, height: 10 } } },
+      openMap: new Map(),
+      mons: [],
+      progress: { a: { state: 'idle', updated: 5 } },
+    });
+    expect(row.branch).toBe('');
+    expect(row.pr_url).toBe('');
+  });
+});

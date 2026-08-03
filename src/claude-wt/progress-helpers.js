@@ -5,6 +5,12 @@
 // рисовать по нему кружок было бы враньём, а не осторожностью.
 const AGENT_STATES = ['active', 'question', 'review', 'idle'];
 
+// Единственная форма ссылки, которую мы согласны показать и тем более отдать в
+// аргумент `start`: строку пишет хук на другой машине из текста, который
+// сочинил агент. Проверка целой строки, а не поиск подстроки — «…/pull/1 &&
+// calc.exe» тоже содержит валидный префикс.
+const PR_URL_RE = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/;
+
 /**
  * Привести запись хука к тому, на что можно смотреть.
  *
@@ -48,6 +54,11 @@ function normalizeProgress(raw) {
     // вовсе, а показывать «$0 0%» значило бы утверждать, что она бесплатна.
     costUsd: Number.isFinite(raw.costUsd) ? raw.costUsd : 0,
     contextPct: Number.isFinite(raw.contextPct) ? raw.contextPct : 0,
+    // Ветка проекта и PR, который сессия сделала. Считает хук: ветку он берёт
+    // у git, ссылку — из хвоста транскрипта, и держит карту «ветка → PR», так
+    // что поле переживает и рестарт сессии под новым id.
+    branch: typeof raw.branch === 'string' ? raw.branch : '',
+    pr_url: typeof raw.pr_url === 'string' && PR_URL_RE.test(raw.pr_url) ? raw.pr_url : '',
   };
 }
 
