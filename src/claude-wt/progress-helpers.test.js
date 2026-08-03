@@ -167,6 +167,21 @@ describe('normalizeProgress with a PR', () => {
     }
   });
 
+  it('drops a payload hidden inside the owner/repo segment, not just after the number', () => {
+    // Старая форма `[^/]+` пропускала эти строки целиком: полезная нагрузка
+    // сидит внутри сегмента, а не в хвосте после номера, который отсекает
+    // якорь `$`. Строка без экранирования уходит в `cmd.exe /c start`.
+    for (const bad of [
+      'https://github.com/a&whoami/b/pull/1',
+      'https://github.com/a/b|whoami/pull/1',
+      'https://github.com/a"whoami/b/pull/1',
+      'https://github.com/a b/whoami/pull/1',
+      'https://github.com/a\nwhoami/b/pull/1',
+    ]) {
+      expect(normalizeProgress({ state: 'idle', updated: 5, pr_url: bad }).pr_url).toBe('');
+    }
+  });
+
   it('defaults both fields to empty strings', () => {
     const out = normalizeProgress({ state: 'idle', updated: 5 });
     expect(out.branch).toBe('');
