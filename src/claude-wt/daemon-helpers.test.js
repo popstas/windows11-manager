@@ -7,6 +7,9 @@ import {
   layoutFingerprint,
   focusedSessionIds,
   unresolvedTitles,
+  emptyTickStats,
+  recordTick,
+  claudeWtHealth,
 } from './daemon-helpers.js';
 
 describe('mergeClaudeWtConfig', () => {
@@ -249,5 +252,63 @@ describe('focusedSessionIds', () => {
   it('ignores an empty foreground handle', () => {
     // GetForegroundWindow returns 0 when the foreground is being handed over.
     expect(focusedSessionIds({ activeWindowId: 0, prevActiveWindowId: 1, windows, slots })).toEqual([]);
+  });
+});
+
+describe('recordTick', () => {
+  it('успех двигает отметку и обнуляет счётчик неудач', () => {
+    const before = { lastTickAt: 100, tickFailures: 3, lastTickError: 'boom' };
+    expect(recordTick(before, { ok: true, nowMs: 500 })).toEqual({
+      lastTickAt: 500, tickFailures: 0, lastTickError: '',
+    });
+  });
+
+  it('неудача копит счётчик и не двигает отметку', () => {
+    const before = { lastTickAt: 100, tickFailures: 1, lastTickError: '' };
+    expect(recordTick(before, { ok: false, error: 'EBUSY', nowMs: 500 })).toEqual({
+      lastTickAt: 100, tickFailures: 2, lastTickError: 'EBUSY',
+    });
+  });
+
+  it('неудача без текста ошибки не роняет вызов', () => {
+    const before = emptyTickStats();
+    expect(recordTick(before, { ok: false, nowMs: 500 }).lastTickError).toBe('unknown error');
+  });
+});
+
+describe('claudeWtHealth', () => {
+  const base = { startedAt: 0, nowMs: 100000, silenceMs: 60000, graceMs: 60000 };
+
+  it('не запущен — болен', () => {
+    const h = claudeWtHealth({ ...base, running: false, lastTickAt: 99000 });
+    expect(h.healthy).toBe(false);
+    expect(h.reason).toBe('not running');
+  });
+
+  it('тиков ещё не было, грейс не вышел — здоров', () => {
+    const h = claudeWtHealth({ ...base, running: true, lastTickAt: 0, startedAt: 70000 });
+    expect(h.healthy).toBe(true);
+    expect(h.reason).toBe('starting');
+  });
+
+  it('грейс вышел, тиков нет — болен', () => {
+    const h = claudeWtHealth({ ...base, running: true, lastTickAt: 0, startedAt: 10000 });
+    expect(h.healthy).toBe(false);
+    expect(h.reason).toBe('no ticks');
+    expect(h.ageMs).toBe(90000);
+  });
+
+  it('свежий тик — здоров', () => {
+    const h = claudeWtHealth({ ...base, running: true, lastTickAt: 99000 });
+    expect(h.healthy).toBe(true);
+    expect(h.reason).toBe('ok');
+    expect(h.ageMs).toBe(1000);
+  });
+
+  it('тик старше порога — болен', () => {
+    const h = claudeWtHealth({ ...base, running: true, lastTickAt: 30000 });
+    expect(h.healthy).toBe(false);
+    expect(h.reason).toBe('stale');
+    expect(h.ageMs).toBe(70000);
   });
 });

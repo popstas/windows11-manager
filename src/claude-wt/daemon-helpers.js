@@ -118,12 +118,64 @@ function unresolvedTitles(nextWindows) {
   return [...new Set(nextWindows.filter(w => w.stableTitle && !w.sessionId).map(w => w.stableTitle))];
 }
 
+// Минута молчания при тике раз в секунду — это не флуктуация, а поломка.
+const TICK_SILENCE_MS = 60000;
+// Столько демону дают на первый успешный тик после старта: maybeRestoreOnStart()
+// и первый разбор дампа с сетевого диска занимают заметно больше одного тика.
+const TICK_GRACE_MS = 60000;
+
+function emptyTickStats() {
+  return { lastTickAt: 0, tickFailures: 0, lastTickError: '' };
+}
+
+/**
+ * Учёт одного тика.
+ *
+ * Отметка времени двигается только на успехе — то есть когда тик дошёл до
+ * записи состояния. Упавший тик её не трогает: иначе демон, падающий каждую
+ * секунду, выглядел бы здоровее всех.
+ */
+function recordTick(stats, { ok, error, nowMs }) {
+  if (ok) return { lastTickAt: nowMs, tickFailures: 0, lastTickError: '' };
+  return {
+    lastTickAt: stats.lastTickAt,
+    tickFailures: stats.tickFailures + 1,
+    lastTickError: error || 'unknown error',
+  };
+}
+
+/**
+ * Здоров ли демон, по данным, которые он о себе отдаёт.
+ *
+ * Различает три беды, и это существенно: «интервал не заведён» лечится
+ * перезапуском, «тиков не было ни одного» указывает на падение в первом же
+ * проходе, «тики были, но давно» — на то, что что-то сломалось по дороге.
+ */
+function claudeWtHealth({ running, lastTickAt, startedAt, nowMs, silenceMs, graceMs }) {
+  if (!running) return { healthy: false, reason: 'not running', ageMs: nowMs - startedAt };
+  if (!lastTickAt) {
+    const ageMs = nowMs - startedAt;
+    return ageMs < graceMs
+      ? { healthy: true, reason: 'starting', ageMs }
+      : { healthy: false, reason: 'no ticks', ageMs };
+  }
+  const ageMs = nowMs - lastTickAt;
+  return ageMs > silenceMs
+    ? { healthy: false, reason: 'stale', ageMs }
+    : { healthy: true, reason: 'ok', ageMs };
+}
+
 export {
   CLAUDE_WT_DEFAULTS,
+  TICK_SILENCE_MS,
+  TICK_GRACE_MS,
   mergeClaudeWtConfig,
   isTerminalPath,
   desktopOnlyActions,
   layoutFingerprint,
   focusedSessionIds,
   unresolvedTitles,
+  emptyTickStats,
+  recordTick,
+  claudeWtHealth,
 };
