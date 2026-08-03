@@ -100,17 +100,69 @@ function focusedSessionIds({ activeWindowId, prevActiveWindowId, windows = [], s
   if (!activeWindowId || activeWindowId === prevActiveWindowId) return [];
   const sessionId = windows.find(w => w.id === activeWindowId)?.sessionId;
   if (!sessionId) return [];
+  return sameTitleSessionIds(slots, sessionId);
+}
 
-  // Заголовок делят несколько сессий: одна и та же работа, переоткрытая
-  // заново, оставляет слот на каждый id. Но одновременно на экране живёт
-  // ровно одно окно с таким названием — то, на которое сейчас смотрят, — а
-  // значит просмотренным становится и всё, что трекер завёл под этим же
-  // именем. Иначе близнецы навсегда остаются оранжевыми: фокус достаётся
-  // одному из них, а в списке горят оба.
-  const title = slots[sessionId]?.titles?.[0];
+/**
+ * Сколько держится пометка «следующий фокус не считать». Пикер — окно поверх, и
+ * на Esc фокус возвращается тому окну, из которого пришли: без этого только что
+ * поставленная пометка гасла бы через секунду после закрытия списка. Пятнадцать
+ * секунд хватает, чтобы дочитать список и закрыть его; дольше держать нельзя —
+ * запись переживёт настоящий, осознанный переход в окно.
+ */
+const FOCUS_SUPPRESS_MS = 15000;
+
+/**
+ * Слоты, которые делят с этим первый заголовок.
+ *
+ * Одна и та же работа, переоткрытая заново, оставляет слот на каждый id, но
+ * окно с таким названием на экране одно. Всё, что делает фокус или пометка,
+ * должно относиться ко всем близнецам сразу — иначе в списке горит один, а
+ * гаснет другой.
+ */
+function sameTitleSessionIds(slots, sessionId) {
+  const title = slots?.[sessionId]?.titles?.[0];
   if (!title) return [sessionId];
   const sameTitle = Object.keys(slots).filter(id => slots[id]?.titles?.[0] === title);
   return sameTitle.includes(sessionId) ? sameTitle : [sessionId, ...sameTitle];
+}
+
+/**
+ * Какую метку фокуса писать, чтобы сессия снова стала непрочитанной.
+ *
+ * Секунда до записи агента, а не ноль: `seenSinceUpdate()` сравнивает эти два
+ * числа и вернёт `false` в обоих случаях, но ноль выкидывает слот из порядка
+ * `project-helpers.js`, по которому хоткей проекта выбирает последнюю сессию.
+ * Пометка непрочитанным не должна перекладывать Ctrl+F11.
+ */
+function unreadFocusedAt(updated) {
+  return updated > 0 ? updated - 1 : 0;
+}
+
+/** Поставить пометку «пропустить следующий фокус» на каждый id. */
+function suppressFocus(marks, ids, nowMs) {
+  const next = { ...marks };
+  for (const id of ids) next[id] = nowMs + FOCUS_SUPPRESS_MS;
+  return next;
+}
+
+/**
+ * Отсеять из пойманного фокуса то, что только что пометили непрочитанным.
+ *
+ * Пометка одноразовая и сгорает при первом же переходе: второй раз подряд в то
+ * же окно человек заходит уже осознанно, и это настоящий просмотр. Просроченные
+ * записи выбрасываются здесь же — отдельной чистки нет, потому что эта функция
+ * вызывается каждый тик.
+ */
+function applyFocusSuppression({ marks = {}, ids = [], nowMs }) {
+  const nextMarks = {};
+  for (const [id, until] of Object.entries(marks)) {
+    if (until > nowMs && !ids.includes(id)) nextMarks[id] = until;
+  }
+  return {
+    ids: ids.filter(id => !((marks[id] ?? 0) > nowMs)),
+    marks: nextMarks,
+  };
 }
 
 /** Settled titles of terminal windows that could not be attributed to a session. */
@@ -189,12 +241,17 @@ export {
   CLAUDE_WT_DEFAULTS,
   TICK_SILENCE_MS,
   TICK_GRACE_MS,
+  FOCUS_SUPPRESS_MS,
   isStaleTick,
   mergeClaudeWtConfig,
   isTerminalPath,
   desktopOnlyActions,
   layoutFingerprint,
   focusedSessionIds,
+  sameTitleSessionIds,
+  unreadFocusedAt,
+  suppressFocus,
+  applyFocusSuppression,
   unresolvedTitles,
   emptyTickStats,
   recordTick,

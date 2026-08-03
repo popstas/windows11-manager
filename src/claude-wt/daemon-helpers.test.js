@@ -11,6 +11,11 @@ import {
   recordTick,
   claudeWtHealth,
   isStaleTick,
+  FOCUS_SUPPRESS_MS,
+  sameTitleSessionIds,
+  unreadFocusedAt,
+  suppressFocus,
+  applyFocusSuppression,
 } from './daemon-helpers.js';
 
 describe('mergeClaudeWtConfig', () => {
@@ -335,5 +340,68 @@ describe('isStaleTick', () => {
 
   it('ручной тик без поколения не отгораживается', () => {
     expect(isStaleTick(null, 7)).toBe(false);
+  });
+});
+
+describe('sameTitleSessionIds', () => {
+  const slots = {
+    alpha: { titles: ['work'] },
+    'alpha-old': { titles: ['work'] },
+    beta: { titles: ['other'] },
+    nameless: { titles: [] },
+  };
+
+  it('returns every slot sharing the first title', () => {
+    expect(sameTitleSessionIds(slots, 'alpha').sort()).toEqual(['alpha', 'alpha-old']);
+  });
+
+  it('returns the session itself when it has no title', () => {
+    expect(sameTitleSessionIds(slots, 'nameless')).toEqual(['nameless']);
+    expect(sameTitleSessionIds(slots, 'missing')).toEqual(['missing']);
+  });
+});
+
+describe('unreadFocusedAt', () => {
+  it('is one second before the agent record, so the session reads as unseen', () => {
+    expect(unreadFocusedAt(1000)).toBe(999);
+  });
+
+  it('is zero without an agent record', () => {
+    expect(unreadFocusedAt(0)).toBe(0);
+  });
+});
+
+describe('focus suppression', () => {
+  it('swallows the first focus after a mark and forgets it', () => {
+    const marks = suppressFocus({}, ['alpha'], 1000);
+    expect(marks.alpha).toBe(1000 + FOCUS_SUPPRESS_MS);
+
+    const first = applyFocusSuppression({ marks, ids: ['alpha'], nowMs: 2000 });
+    expect(first.ids).toEqual([]);
+    expect(first.marks).toEqual({});
+
+    // Пометка одноразовая: следующий переход в окно — уже осознанный.
+    const second = applyFocusSuppression({ marks: first.marks, ids: ['alpha'], nowMs: 3000 });
+    expect(second.ids).toEqual(['alpha']);
+  });
+
+  it('lets through sessions that were never marked', () => {
+    const marks = suppressFocus({}, ['alpha'], 1000);
+    const out = applyFocusSuppression({ marks, ids: ['beta'], nowMs: 2000 });
+    expect(out.ids).toEqual(['beta']);
+    expect(out.marks.alpha).toBe(1000 + FOCUS_SUPPRESS_MS);
+  });
+
+  it('drops marks that outlived the TTL', () => {
+    const marks = suppressFocus({}, ['alpha'], 1000);
+    const out = applyFocusSuppression({
+      marks, ids: ['alpha'], nowMs: 1000 + FOCUS_SUPPRESS_MS + 1,
+    });
+    expect(out.ids).toEqual(['alpha']);
+    expect(out.marks).toEqual({});
+  });
+
+  it('survives being called with nothing at all', () => {
+    expect(applyFocusSuppression({ nowMs: 5 })).toEqual({ ids: [], marks: {} });
   });
 });
