@@ -78,6 +78,14 @@ describe('buildSessionList', () => {
     expect(b2.agentContextPct).toBe(0);
   });
 
+  it('carries the start of the current turn through from the hook record', () => {
+    // Отдельно от agentStarted: тот про всю сессию, а спрашивают про ход.
+    const progress = { a1: { state: 'active', updated: 5, turnAt: 3 } };
+    const list = buildSessionList({ slots, openMap: new Map([['a1', 777]]), mons, progress });
+    expect(list.find(s => s.id === 'a1').agentTurnAt).toBe(3);
+    expect(list.find(s => s.id === 'b2').agentTurnAt).toBe(0);
+  });
+
   it('carries the last user prompt through from the hook record', () => {
     const progress = {
       a1: { state: 'review', updated: 5, prompt: 'добавь тесты', summary: 'Готово.' },

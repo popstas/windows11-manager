@@ -10,7 +10,7 @@ describe('normalizeProgress', () => {
       prompt: 'добавь тесты', costUsd: 12, contextPct: 47,
     })).toEqual({
       state: 'active', updated: 100, event: '', message: 'hi', summary: '', lastSummary: 'Закоммитил',
-      prompt: 'добавь тесты', costUsd: 12, contextPct: 47, branch: '', pr_url: '',
+      prompt: 'добавь тесты', question: '', costUsd: 12, contextPct: 47, turnAt: 0, branch: '', pr_url: '',
     });
   });
 
@@ -21,6 +21,14 @@ describe('normalizeProgress', () => {
     expect(bare.costUsd).toBe(0);
     expect(bare.contextPct).toBe(0);
     expect(normalizeProgress({ state: 'active', updated: 1, costUsd: '12' }).costUsd).toBe(0);
+  });
+
+  it('treats a missing turn mark as no turn mark', () => {
+    // Ноль — «сессия старше правки в хуке», и показывающий откатывается на
+    // прежний возраст, а не рисует ход длиной с эпоху Unix.
+    expect(normalizeProgress({ state: 'active', updated: 100 }).turnAt).toBe(0);
+    expect(normalizeProgress({ state: 'active', updated: 100, turnAt: '100' }).turnAt).toBe(0);
+    expect(normalizeProgress({ state: 'active', updated: 100, turnAt: 90 }).turnAt).toBe(90);
   });
 
   it('treats a missing summary as no summary', () => {
@@ -49,7 +57,7 @@ describe('normalizeProgress', () => {
     expect(normalizeProgress({ state: 'unknown', updated: 42 }))
       .toEqual({
         state: null, updated: 42, event: '', message: '', summary: '', lastSummary: '',
-        prompt: '', costUsd: 0, contextPct: 0, branch: '', pr_url: '',
+        prompt: '', question: '', costUsd: 0, contextPct: 0, turnAt: 0, branch: '', pr_url: '',
       });
   });
 
@@ -64,7 +72,7 @@ describe('normalizeProgress', () => {
     expect(normalizeProgress({ state: 'idle', updated: 'soon' }))
       .toEqual({
         state: 'idle', updated: 0, event: '', message: '', summary: '', lastSummary: '',
-        prompt: '', costUsd: 0, contextPct: 0, branch: '', pr_url: '',
+        prompt: '', question: '', costUsd: 0, contextPct: 0, turnAt: 0, branch: '', pr_url: '',
       });
   });
 
@@ -89,6 +97,28 @@ describe('sessionDescription', () => {
     expect(sessionDescription({ summary: '', lastSummary: '' })).toBe('');
     expect(sessionDescription(null)).toBe('');
     expect(sessionDescription({ summary: 42, lastSummary: 7 })).toBe('');
+  });
+
+  it('lets the pending question win over any summary', () => {
+    // Сессия на вопросе ничем не закончила, и сводка говорит о прошлом ходе. У
+    // shared там висела ссылка на PR — ответ на прошлый вопрос человека, — пока
+    // на экране стоял вопрос агента.
+    expect(sessionDescription({
+      state: 'question',
+      question: 'Что делаем дальше',
+      summary: 'https://github.com/popstas/obsidian-agent-workspace/pull/3',
+    })).toBe('Что делаем дальше');
+  });
+
+  it('ignores a question left over from a call that is already answered', () => {
+    // Поле стирает хук на tool-done, но состояние `question` приходит и на
+    // запрос разрешения — вопрос показывается только пока сессия в нём стоит.
+    expect(sessionDescription({
+      state: 'review', question: 'Что делаем дальше', summary: 'Готово.',
+    })).toBe('Готово.');
+    expect(sessionDescription({
+      state: 'question', question: '   ', summary: 'Готово.',
+    })).toBe('Готово.');
   });
 });
 

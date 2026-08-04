@@ -52,6 +52,10 @@ function normalizeProgress(raw) {
     // рядом со сводкой ответа. Не стирается у работающей: вопрос уже задан,
     // и пикер показывает его под карточкой вместе с ответом.
     prompt: typeof raw.prompt === 'string' ? raw.prompt : '',
+    // Вопрос, на котором сессия стоит прямо сейчас: хук снимает его с аргументов
+    // AskUserQuestion. Живёт только пока вызов не закрыт — у ждущей сессии это
+    // единственное, что о ней стоит сказать, а после ответа поле пустеет.
+    question: typeof raw.question === 'string' ? raw.question : '',
     // Сколько сессия стоила и насколько забит её контекст. Хуку этого не дают
     // — в его stdin нет ни токенов, ни денег; числа приходят от перехватчика
     // статуслайна и попадают в тот же файл (claude-wt-statusline.sh).
@@ -61,6 +65,12 @@ function normalizeProgress(raw) {
     // вовсе, а показывать «$0 0%» значило бы утверждать, что она бесплатна.
     costUsd: Number.isFinite(raw.costUsd) ? raw.costUsd : 0,
     contextPct: Number.isFinite(raw.contextPct) ? raw.contextPct : 0,
+    // Начало текущего хода: момент последнего промпта. Ставит хук на своём
+    // событии start. Ни `updated`, ни `started` из meta.json на вопрос «сколько
+    // уже работает эта команда» не отвечают — первый сдвигается каждым вызовом
+    // инструмента, второй считает всю сессию. Ноль — «сессия старше правки»,
+    // и показывающий откатывается на прежний возраст.
+    turnAt: Number.isFinite(raw.turnAt) ? raw.turnAt : 0,
     // Ветка проекта и PR, который сессия сделала. Считает хук: ветку он берёт
     // у git, ссылку — из хвоста транскрипта, и держит карту «ветка → PR», так
     // что поле переживает и рестарт сессии под новым id.
@@ -80,8 +90,15 @@ function normalizeProgress(raw) {
  * `summary || lastSummary` у себя, а панель openHASP брала голый `summary` — и у
  * работающей сессии её строка на плате оставалась пустой (`-`), хотя в пикере
  * текст был.
+ *
+ * У сессии, стоящей на вопросе, всё это перебивает сам вопрос. Сводка отвечает
+ * «чем закончила», а такая сессия ничем не закончила — она ждёт, и в списке от
+ * неё нужно ровно одно: что у неё спросили. У shared там висела ссылка на PR —
+ * ответ на прошлый вопрос человека, — пока на экране стоял вопрос агента.
  */
 function sessionDescription(progress) {
+  const question = typeof progress?.question === 'string' ? progress.question.trim() : '';
+  if (question && progress?.state === 'question') return question;
   const summary = typeof progress?.summary === 'string' ? progress.summary.trim() : '';
   if (summary) return summary;
   return typeof progress?.lastSummary === 'string' ? progress.lastSummary.trim() : '';
