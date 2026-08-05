@@ -314,6 +314,11 @@ function claudeWtStatus() {
   const state = liveState ?? readState(cfg.statePath);
   return {
     running: intervalId !== null,
+    // Не диагностика, а рабочее поле: Windows отдаёт передний план только тому,
+    // кто им уже владеет, поэтому ccfzf-picker перед POST /claude-wt/focus
+    // зовёт AllowSetForegroundWindow на этот pid. Без него focusSession()
+    // отчитается об успехе, а окно только мигнёт кнопкой на таскбаре.
+    pid: process.pid,
     startedAt,
     lastTickAt: tickStats.lastTickAt,
     tickFailures: tickStats.tickFailures,

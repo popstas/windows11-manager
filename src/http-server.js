@@ -63,6 +63,16 @@ function startHttpServer(port = 9722) {
           res.end(JSON.stringify(claudeWtStatus()));
           return;
         }
+        case '/claude-wt/focus': {
+          const { focusSession } = await import('./claude-wt/focus.js');
+          const result = await focusSession(body.id);
+          // 200 и на отказе: отказ здесь — не поломка сервера, а «окна нет», и
+          // разбирать его будет клиент по полю ok. Коды 4xx заставили бы его
+          // читать ответ двумя разными способами.
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(result));
+          return;
+        }
         default:
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Not found' }));
