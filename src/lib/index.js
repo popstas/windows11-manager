@@ -12,3 +12,7 @@ export * from '../claude-wt/restore.js';
 export * from '../claude-wt/view.js';
 export * from '../claude-wt/project.js';
 export { invalidateSessionIndex } from '../claude-wt/sessions.js';
+// Наружу, чтобы сервер поднимался внутри уже работающего процесса демона, а не
+// отдельной командой рядом. `claudeWtStatus()` отдаёт `liveState` из памяти — в
+// чужом процессе он читал бы состояние с диска, то есть позапрошлый расклад.
+export { startHttpServer } from '../http-server.js';
