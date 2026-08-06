@@ -134,10 +134,15 @@ module.exports = {
     },
     // Fresh Claude in a project folder (project hotkeys). {cwd} and {name}
     // are substituted; wrap them in single quotes in the remote command.
+    // Run through an *interactive* shell with the cd inside it: `ssh host cmd`
+    // is non-interactive (zsh reads only .zshenv), so rc-file exports and
+    // chpwd hooks — OTEL_RESOURCE_ATTRIBUTES project= among them — never ran.
+    // cwd/name are positional args: quotes nested inside the inner script do
+    // not survive Windows Terminal's command line on the way to ssh.
     launchNew: {
       command: 'wt.exe',
       args: ['-w', '-1', 'ssh', '-A', 'popstas@pc-virt.popstas.pro',
-             '-t', "cd '{cwd}' && exec claude -n '{name}'"],
+             '-t', `exec $SHELL -ic 'cd -- "$1" && exec claude -n "$2"' claude-wt '{cwd}' '{name}'`],
     },
     restore: { auto: false, windowTimeoutMs: 30000, launchDelayMs: 2000, settleMs: 500 },
   },
