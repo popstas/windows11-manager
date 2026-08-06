@@ -89,7 +89,4 @@ async function openClaudeProject({ cwd, name, profile } = {}) {
   return { ok: true, action: 'spawn', cwd, name: sessionName, sessionName };
 }
 
-// focusTerminalWindow / findOpenTerminalByTitle наружу — их же зовёт focus.js,
-// обслуживающий POST /claude-wt/focus. Второй экземпляр «переключить стол и
-// поднять окно» разошёлся бы с этим на первой же правке.
-export { openClaudeProject, focusTerminalWindow, findOpenTerminalByTitle };
+export { openClaudeProject };

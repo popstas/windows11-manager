@@ -12,7 +12,7 @@ export * from '../claude-wt/restore.js';
 export * from '../claude-wt/view.js';
 export * from '../claude-wt/project.js';
 export { invalidateSessionIndex } from '../claude-wt/sessions.js';
-// Наружу, чтобы сервер поднимался внутри уже работающего процесса демона, а не
-// отдельной командой рядом. `claudeWtStatus()` отдаёт `liveState` из памяти — в
-// чужом процессе он читал бы состояние с диска, то есть позапрошлый расклад.
-export { startHttpServer } from '../http-server.js';
+// startHttpServer наружу не отдаётся намеренно. Поднятый внутри процесса демона
+// (так его звал windows-mqtt по ключу claudeWtHttpPort), он вешал событийный
+// цикл через две-три минуты после старта. Отдельной командой `--port` сервер
+// работает как работал — там он в своём процессе и демону ничем не мешает.
