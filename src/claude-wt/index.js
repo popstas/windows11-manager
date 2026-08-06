@@ -1,3 +1,4 @@
+import os from 'node:os';
 import { getConfig } from '../config.js';
 import { getVisibleWindowIds, getWindowById, getActiveWindowId } from '../windows.js';
 import { placeWindowByConfig } from '../placement.js';
@@ -5,6 +6,12 @@ import { getWindowsMonitors } from '../monitors.js';
 import { virtualDesktop } from '../virtual-desktop.js';
 import { loadSessionIndex, loadBackgroundAgents } from './sessions.js';
 import { readState, writeState, upsertSlot } from './state.js';
+import {
+  buildWindowsFile,
+  windowsFingerprint,
+  shouldWriteWindowsFile,
+  writeWindowsFile,
+} from './windows-file.js';
 import { step } from './tracker-helpers.js';
 import {
   mergeClaudeWtConfig,
@@ -85,6 +92,11 @@ function snapshot() {
 let intervalId = null;
 let prevWindows = [];
 let lastWritten = '';
+// Отпечаток и время последней записи опубликованного файла окон. Отдельно от
+// lastWritten: тот сторожит расклад целиком (координаты, вернувшиеся сессии), а
+// этот — только то, что видно чужому читателю.
+let lastWindowsFingerprint = '';
+let lastWindowsWrite = 0;
 let liveState = null;
 let prevActiveWindowId = 0;
 let reportedTitles = new Set();
@@ -231,6 +243,34 @@ async function claudeWtTick(tickGen = null) {
     writeState(cfg.statePath, nextState);
     lastWritten = fingerprint;
   }
+  publishWindows(cfg, nextWindows, nextState.slots);
+}
+
+/**
+ * Опубликовать файл окон — необязательную добавку для читателей на той стороне.
+ *
+ * Ошибка записи гасится строкой в лог. Файл нужен ccfzf ради одной пометки в
+ * списке сессий, и недоступный сетевой диск не повод ронять тик, который следит
+ * за окнами: без пометки человек проживёт, без слежения — нет.
+ */
+function publishWindows(cfg, windows, slots) {
+  if (!cfg.windowsFile) return;
+  const nowMs = Date.now();
+  const payload = buildWindowsFile({
+    windows, slots, host: os.hostname(), pid: process.pid, nowMs,
+  });
+  const fingerprint = windowsFingerprint(payload.windows);
+  const due = shouldWriteWindowsFile({
+    fingerprint, lastFingerprint: lastWindowsFingerprint, lastWriteMs: lastWindowsWrite, nowMs,
+  });
+  if (!due) return;
+  try {
+    writeWindowsFile(cfg.windowsFile, payload);
+    lastWindowsFingerprint = fingerprint;
+    lastWindowsWrite = nowMs;
+  } catch (e) {
+    console.error(`[claude-wt] windows file write failed: ${e.message}`);
+  }
 }
 
 /**
@@ -257,6 +297,10 @@ function startClaudeWt({ skipCrashCheck = false } = {}) {
   liveState = null;
   prevWindows = [];
   lastWritten = '';
+  // Свежий демон обязан опубликовать файл первым же тиком: pid в нём сменился,
+  // а по старому читатель выдал бы право на передний план мёртвому процессу.
+  lastWindowsFingerprint = '';
+  lastWindowsWrite = 0;
   prevActiveWindowId = 0;
   focusMarks = {};
   pendingUnread = {};

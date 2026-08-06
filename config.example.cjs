@@ -121,6 +121,13 @@ module.exports = {
     stableTicks: 2,
     sessionsFile: 'V:\\.ccfzf.sessions.json',
     statePath: 'C:\\Users\\popstas\\AppData\\Local\\windows11-manager\\claude-wt.json',
+    // Published for readers on the agent's side: which session has a window
+    // open right now, on which desktop, on which host. ccfzf picks it up to
+    // mark its session list; ccfzf-picker then knows whether that window is on
+    // the machine in front of the human, and which pid to hand the foreground
+    // to. Goes on the share, because the reader lives on the other machine.
+    // Empty (the default) — do not write it at all.
+    windowsFile: 'V:\\.ccfzf.sessions.claude-wt.json',
     desktop: true, // return the window to its virtual desktop too
     debug: false,  // log terminal titles that could not be matched to a session
     // profile: 'your_wt_profile', // optional; omit → no -p
