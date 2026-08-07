@@ -23,6 +23,11 @@ const WINDOWS_FILE_HEARTBEAT_MS = 30_000;
  *
  * `host` отвечает читателю на вопрос «моя ли это машина»: поднимать окно на
  * чужом экране бессмысленно, а знать, что оно есть, полезно везде.
+ *
+ * `focusedAt` — отметка «человек посмотрел на это окно», из которой здесь
+ * считается `agentSeen`. Своей у читателя нет и быть не может: окон он не
+ * видит, и без этой его список продолжал бы звать к сессии, на которую уже
+ * сходили руками.
  */
 function buildWindowsFile({ windows, slots, host, pid, nowMs }) {
   const out = {};
@@ -34,6 +39,7 @@ function buildWindowsFile({ windows, slots, host, pid, nowMs }) {
       title: typeof w.title === 'string' ? w.title : '',
       desktop: Number.isFinite(slot?.desktop) ? slot.desktop : null,
       lastSeen: Number.isFinite(slot?.lastSeen) ? slot.lastSeen : 0,
+      focusedAt: Number.isFinite(slot?.focusedAt) ? slot.focusedAt : 0,
     };
   }
   // Секунды, а не миллисекунды: рядом лежит `lastSeen` в секундах, и читатель —
@@ -47,10 +53,17 @@ function buildWindowsFile({ windows, slots, host, pid, nowMs }) {
  * Заголовок входит наравне с составом и столами: он приходит уже очищенным от
  * украшений статуса (stripTitleDecoration), поэтому меняется на смену проекта
  * или имени сессии, а не на каждый ход агента.
+ *
+ * `focusedAt` входит туда же, и это не бесплатно: переход фокуса на окно
+ * сессии заставляет переписать файл. Иначе отметка о взгляде ждала бы
+ * сердцебиения — до тридцати секунд, — и у читателя кружок гас бы через
+ * полминуты после того, как на сессию сходили, а возврат в непрочитанное
+ * ровно столько же держался бы погашенным. Переходов фокуса немного, и они
+ * и так двигают состояние на диске.
  */
 function windowsFingerprint(windows) {
   return Object.entries(windows ?? {})
-    .map(([id, w]) => `${id}\u0000${w.desktop}\u0000${w.title}`)
+    .map(([id, w]) => `${id}\u0000${w.desktop}\u0000${w.title}\u0000${w.focusedAt}`)
     .sort()
     .join('\u0001');
 }

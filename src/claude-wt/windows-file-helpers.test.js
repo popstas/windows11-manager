@@ -13,7 +13,7 @@ const WINDOWS = [
 ];
 
 const SLOTS = {
-  aaa: { titles: ['ccfzf-picker'], desktop: 2, lastSeen: 1700 },
+  aaa: { titles: ['ccfzf-picker'], desktop: 2, lastSeen: 1700, focusedAt: 1650 },
   bbb: { titles: ['notes'], desktop: null, lastSeen: 1690 },
   // Сессия, чьё окно закрыли: слот остался, окна нет.
   ccc: { titles: ['gone'], desktop: 1, lastSeen: 900 },
@@ -31,7 +31,20 @@ describe('buildWindowsFile', () => {
     const out = buildWindowsFile({
       windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000,
     });
-    expect(out.windows.aaa).toEqual({ title: 'ccfzf-picker', desktop: 2, lastSeen: 1700 });
+    expect(out.windows.aaa).toEqual({
+      title: 'ccfzf-picker', desktop: 2, lastSeen: 1700, focusedAt: 1650,
+    });
+  });
+
+  // Отметка «человек посмотрел на это окно» едет читателю на другой машине: у
+  // него своей нет вовсе, а без неё его список продолжает звать к сессии, на
+  // которую уже сходили.
+  it('carries focusedAt from the slot, zero when the slot never had focus', () => {
+    const out = buildWindowsFile({
+      windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000,
+    });
+    expect(out.windows.aaa.focusedAt).toBe(1650);
+    expect(out.windows.bbb.focusedAt).toBe(0);
   });
 
   it('carries host, pid and a generated stamp in seconds', () => {
@@ -45,7 +58,9 @@ describe('buildWindowsFile', () => {
     const out = buildWindowsFile({
       windows: [{ title: 'fresh', sessionId: 'zzz' }], slots: {}, host: 'pc', pid: 1, nowMs: 0,
     });
-    expect(out.windows.zzz).toEqual({ title: 'fresh', desktop: null, lastSeen: 0 });
+    expect(out.windows.zzz).toEqual({
+      title: 'fresh', desktop: null, lastSeen: 0, focusedAt: 0,
+    });
   });
 
   it('survives missing windows and slots', () => {
@@ -65,6 +80,16 @@ describe('windowsFingerprint', () => {
     expect(windowsFingerprint({ one: { desktop: 2, title: 'x' } })).not.toBe(windowsFingerprint(base));
     expect(windowsFingerprint({ one: { desktop: 1, title: 'y' } })).not.toBe(windowsFingerprint(base));
     expect(windowsFingerprint({})).not.toBe(windowsFingerprint(base));
+  });
+
+  // Иначе взгляд на окно доезжал бы до читателя только сердцебиением, раз в
+  // тридцать секунд: кружок в чужом списке гас бы через полминуты после того,
+  // как на сессию сходили, а возврат в непрочитанное — столько же держался бы
+  // погашенным.
+  it('notices a fresh focus stamp', () => {
+    const base = { one: { desktop: 1, title: 'x', focusedAt: 100 } };
+    expect(windowsFingerprint({ one: { desktop: 1, title: 'x', focusedAt: 200 } }))
+      .not.toBe(windowsFingerprint(base));
   });
 
   it('does not confuse two layouts whose titles differ only by a space', () => {
