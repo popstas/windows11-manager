@@ -45,6 +45,15 @@ describe('claude-focus', () => {
     expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledWith({ sessionIds: ['abc'] });
   });
 
+  it('удавшееся восстановление оставляет след в журнале', async () => {
+    // Слова те же, что были в windows-mqtt/src/modules/windows.js: успех был
+    // единственным исходом, о котором не сообщал никто.
+    const d = deps({ winMan: { getWindowById: vi.fn().mockReturnValue(null) } });
+    await claudeCommands(d)['claude-focus']({ id: 'abc' });
+    expect(d.log).toHaveBeenCalledWith('claude-wt restored 1, skipped 0');
+    expect(d.notify).not.toHaveBeenCalled();
+  });
+
   it('сообщает человеку о неизвестной сессии', async () => {
     const d = deps();
     await claudeCommands(d)['claude-focus']({ id: 'zzz' });

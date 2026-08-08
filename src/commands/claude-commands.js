@@ -37,7 +37,8 @@ function claudeCommands({ winMan, log, notify, slots }) {
 
   async function restoreOne(id) {
     try {
-      const { restored } = await winMan.restoreClaudeSessions({ sessionIds: [id] });
+      const { restored, skipped } = await winMan.restoreClaudeSessions({ sessionIds: [id] });
+      log(`claude-wt restored ${restored.length}, skipped ${skipped.length}`);
       if (!restored.length) notify(`claude-wt: не удалось поднять сессию ${id}`);
     } catch (e) {
       log(`claude-wt restore failed: ${e.message}`, 'error');
