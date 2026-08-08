@@ -29,7 +29,7 @@ This repository contains a Node.js tool for managing window placement on Windows
 ## Conventions
 - Tray menu items call node CLI commands via shell plugin, not direct FFI
 - Use `get_project_path(app)` to resolve the node project path from settings
-- MQTT lifecycle managed in AppState behind Mutex (`mqtt_running`/`mqtt_child`)
+- MQTT lifecycle managed in AppState behind Mutex (`mqtt_running`/`mqtt_child`/`mqtt_desired`)
 
 ## Tauri app architecture
 
@@ -37,7 +37,7 @@ This repository contains a Node.js tool for managing window placement on Windows
 - **children.rs** -- child-process supervision shared by all three Node children (`ChildKind::{Mqtt,ClaudeWt,Autoplacer}`): reads each child's stdout/stderr into the `log` facade (so it lands in `data/windows11-manager.log` next to the rest of the app log -- check there first when a child looks like it's doing nothing), and computes the exponential restart backoff (`next_restart_attempt`, `restart_delay_secs`: 2s doubling to a 60s ceiling, reset to 1 after 60s of healthy uptime).
 - **logging.rs** -- file logging with `fern`.
 - MQTT itself is not a Rust module here: `node src/index.js mqtt` (the client in `src/mqtt/` plus the Home Assistant export in `src/claude-wt/ha/`) runs as a child process spawned from `lib.rs`, and the tray shows `MQTT: running/stopped` from that process's presence, not from a connection state -- `on_child_exit()` now flips it the moment the process actually dies, not just on manual toggle. The old `mqtt.rs` (rumqttc client) and `ws_server.rs` (WebSocket bridge to node) are gone -- so is `src/ws-client.js` on the node side.
-- `setup()` auto-starts the claude-wt daemon (`claude_wt_enabled` setting, defaults `true`) and MQTT (`mqtt_enabled`, if the user has it checked) at launch, the same way the tray toggles do. **Only the claude-wt daemon is resurrected automatically** if it exits (crashed or killed, backoff above) -- MQTT and the autoplacer are not: if either dies, the tray flips to "stopped" and stdout/stderr are in the log, but starting it again is a manual tray click. Stopping claude-wt from the tray clears the "should be running" flag first, so the supervisor does not fight a deliberate stop.
+- `setup()` auto-starts the claude-wt daemon (`claude_wt_enabled` setting, defaults `true`) and MQTT (`mqtt_enabled`, if the user has it checked) at launch, the same way the tray toggles do. **The claude-wt daemon and the MQTT service are both resurrected automatically** if they exit (crashed or killed, backoff above) -- the autoplacer is not. MQTT earned this once it stopped being just an MQTT client: the same child now carries the Home Assistant export, the window statistics, the autoplacer and the claude-wt watchdog, so an unnoticed exit takes out half the supervision of the machine. Each child has its own `*_desired` flag and its own attempt counter (`claude_wt_desired`/`mqtt_desired`); stopping either from the tray -- and the app-exit path -- clears the flag first, so the supervisor does not fight a deliberate stop.
 - Use `run_node_command(app, &[args], "Label")` helper to spawn node CLI commands from Rust with logging.
 - Settings stored via `tauri-plugin-store` in `settings.json` (project_path, MQTT config, etc.).
 - Build: `cd tauri-app/src-tauri && . "$HOME/.cargo/env" && cargo build`.

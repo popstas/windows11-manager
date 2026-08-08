@@ -102,6 +102,14 @@ struct AppState {
     mqtt_running: bool,
     mqtt_child: Option<tauri_plugin_shell::process::CommandChild>,
     mqtt_generation: u64,
+    /// Служба должна работать. Ровно та же роль, что и у `claude_wt_desired`:
+    /// когда-то этот ребёнок был просто клиентом MQTT, и его смерть стоила
+    /// панели в Home Assistant. Теперь в нём же живут экспорт сессий,
+    /// статистика окон, автоматическая расстановка и сторож демона claude-wt —
+    /// то есть незамеченное падение уносит половину надзора за машиной.
+    mqtt_desired: bool,
+    /// Сколько раз подряд служба не смогла прожить [`children::HEALTHY_UPTIME_SECS`].
+    mqtt_restart_attempts: u32,
     update_download_url: Option<String>,
 }
 
@@ -119,6 +127,8 @@ impl AppState {
             mqtt_running: false,
             mqtt_child: None,
             mqtt_generation: 0,
+            mqtt_desired: false,
+            mqtt_restart_attempts: 0,
             update_download_url: None,
         }
     }
@@ -520,22 +530,33 @@ fn on_child_exit(
         uptime_secs
     );
 
-    // Поднимаем только демона и только если его не выключил оператор. Убит он
-    // при этом снаружи (в том числе node-стороной, заметившей молчание) или
-    // упал сам — разницы нет, для нас это одинаковое «процесса больше нет».
-    let restart = kind == ChildKind::ClaudeWt && s.claude_wt_desired;
-    let delay = if restart {
-        let attempt = next_restart_attempt(s.claude_wt_restart_attempts, uptime_secs);
-        s.claude_wt_restart_attempts = attempt;
+    // Поднимаем ребёнка, только если его не выключил оператор. Убит он при этом
+    // снаружи (в том числе node-стороной, заметившей молчание) или упал сам —
+    // разницы нет, для нас это одинаковое «процесса больше нет».
+    let delay = match kind {
+        ChildKind::ClaudeWt if s.claude_wt_desired => {
+            let attempt = next_restart_attempt(s.claude_wt_restart_attempts, uptime_secs);
+            s.claude_wt_restart_attempts = attempt;
+            Some(attempt)
+        }
+        ChildKind::Mqtt if s.mqtt_desired => {
+            let attempt = next_restart_attempt(s.mqtt_restart_attempts, uptime_secs);
+            s.mqtt_restart_attempts = attempt;
+            Some(attempt)
+        }
+        _ => None,
+    }
+    .map(|attempt| {
         let delay = restart_delay_secs(attempt);
         warn!(
-            "claude-wt: restarting in {}s after exit with {} (attempt {})",
-            delay, reason, attempt
+            "{}: restarting in {}s after exit with {} (attempt {})",
+            kind.label(),
+            delay,
+            reason,
+            attempt
         );
-        Some(delay)
-    } else {
-        None
-    };
+        delay
+    });
     drop(s);
 
     update_tray_label(app, kind, false);
@@ -549,7 +570,11 @@ fn on_child_exit(
         ChildKind::Mqtt => {}
     }
     if let Some(delay) = delay {
-        schedule_claude_wt_restart(app, delay);
+        match kind {
+            ChildKind::ClaudeWt => schedule_claude_wt_restart(app, delay),
+            ChildKind::Mqtt => schedule_mqtt_restart(app, delay),
+            ChildKind::Autoplacer => {}
+        }
     }
 }
 
@@ -714,6 +739,36 @@ fn toggle_claude_wt(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) 
 }
 
 fn start_mqtt_service(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
+    let mut app_state = state.lock().unwrap();
+    start_mqtt_locked(app, &mut app_state);
+}
+
+/// Подъём службы MQTT через `delay_secs`. Как и у демона, перед подъёмом ещё раз
+/// спрашивает состояние: за время паузы оператор мог и выключить службу из трея,
+/// и поднять её руками.
+fn schedule_mqtt_restart(app: &tauri::AppHandle, delay_secs: u64) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
+        let running = {
+            let state = app.state::<Mutex<AppState>>();
+            let mut s = state.lock().unwrap();
+            if !s.mqtt_desired || s.mqtt_running {
+                return;
+            }
+            start_mqtt_locked(&app, &mut s);
+            s.mqtt_running
+        };
+        update_tray_label(&app, ChildKind::Mqtt, running);
+    });
+}
+
+/// Запуск службы MQTT при уже взятом мьютексе.
+///
+/// Как и у демона claude-wt, неудача самого `spawn` (нет node в PATH, кривой
+/// путь проекта) считается попыткой: следующая уезжает по откату, иначе цикл
+/// «не смог запустить → пробуем снова» крутился бы без паузы.
+fn start_mqtt_locked(app: &tauri::AppHandle, s: &mut AppState) {
     let settings = load_settings_from_store(app);
     if settings.mqtt_host.is_empty() || settings.mqtt_topic.is_empty() {
         warn!("MQTT host or topic not configured");
@@ -726,6 +781,10 @@ fn start_mqtt_service(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>
         open_settings_window(app);
         return;
     }
+
+    // Ставится после проверок настроек: без хоста, темы или пути проекта поднимать
+    // нечего, и откат крутился бы вокруг заведомо невозможного запуска.
+    s.mqtt_desired = true;
 
     // Spawn the Node.js MQTT service. Credentials go through the environment,
     // never argv, since argv is world-readable in the process list.
@@ -741,21 +800,29 @@ fn start_mqtt_service(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>
         .env("W11M_MQTT_BASE", settings.mqtt_topic)
         .spawn();
 
-    let mut app_state = state.lock().unwrap();
-
     match mqtt_child {
         Ok((rx, child)) => {
-            app_state.mqtt_generation += 1;
-            let generation = app_state.mqtt_generation;
-            app_state.mqtt_child = Some(child);
-            app_state.mqtt_running = true;
+            s.mqtt_generation += 1;
+            let generation = s.mqtt_generation;
+            s.mqtt_child = Some(child);
+            s.mqtt_running = true;
             let app_handle = app.clone();
             pump_output(ChildKind::Mqtt, rx, move |reason, uptime| {
                 on_child_exit(&app_handle, ChildKind::Mqtt, generation, reason, uptime);
             });
             info!("MQTT service started");
         }
-        Err(e) => error!("Failed to start MQTT service: {}", e),
+        Err(e) => {
+            s.mqtt_running = false;
+            let attempt = next_restart_attempt(s.mqtt_restart_attempts, 0);
+            s.mqtt_restart_attempts = attempt;
+            let delay = restart_delay_secs(attempt);
+            error!(
+                "Failed to start MQTT service: {} (retrying in {}s, attempt {})",
+                e, delay, attempt
+            );
+            schedule_mqtt_restart(app, delay);
+        }
     }
 }
 
@@ -764,7 +831,13 @@ fn stop_mqtt_service(state: &State<'_, Mutex<AppState>>) {
     stop_mqtt_state(&mut app_state);
 }
 
+/// Остановка службы по воле оператора (или на выходе из приложения): подъём
+/// после неё не нужен, и «Stop MQTT» в трее обязан значить именно stop.
 fn stop_mqtt_state(app_state: &mut AppState) {
+    app_state.mqtt_desired = false;
+    app_state.mqtt_restart_attempts = 0;
+    // Смена поколения: событие о смерти убитого процесса придёт позже и уже не
+    // будет относиться к текущему состоянию.
     app_state.mqtt_generation += 1;
     if let Some(child) = app_state.mqtt_child.take() {
         let _ = child.kill();
