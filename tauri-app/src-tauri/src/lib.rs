@@ -25,7 +25,6 @@ pub struct Settings {
     pub mqtt_username: String,
     pub mqtt_password: String,
     pub mqtt_topic: String,
-    pub ws_port: u16,
     pub restore_on_start: bool,
     pub store_before_exit: bool,
     pub store_interval: u32,
@@ -47,7 +46,6 @@ impl Default for Settings {
             mqtt_username: String::new(),
             mqtt_password: String::new(),
             mqtt_topic: String::new(),
-            ws_port: 9721,
             restore_on_start: true,
             store_before_exit: true,
             store_interval: 300,
@@ -66,7 +64,6 @@ mod tests {
     fn settings_default_values() {
         let s = Settings::default();
         assert_eq!(s.mqtt_port, 1883);
-        assert_eq!(s.ws_port, 9721);
         assert!(!s.mqtt_enabled);
         assert!(s.restore_on_start);
         assert!(s.store_before_exit);
@@ -141,10 +138,6 @@ async fn get_settings(app: tauri::AppHandle) -> Result<Settings, String> {
             .get("mqtt_topic")
             .and_then(|v| v.as_str().map(String::from))
             .unwrap_or(defaults.mqtt_topic),
-        ws_port: store
-            .get("ws_port")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(defaults.ws_port as u64) as u16,
         restore_on_start: store
             .get("restore_on_start")
             .and_then(|v| v.as_bool())
@@ -207,7 +200,6 @@ async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), 
     store.set("mqtt_username", serde_json::json!(settings.mqtt_username));
     store.set("mqtt_password", serde_json::json!(settings.mqtt_password));
     store.set("mqtt_topic", serde_json::json!(settings.mqtt_topic));
-    store.set("ws_port", serde_json::json!(settings.ws_port));
     store.set("restore_on_start", serde_json::json!(settings.restore_on_start));
     store.set("store_before_exit", serde_json::json!(settings.store_before_exit));
     store.set("store_interval", serde_json::json!(settings.store_interval));
@@ -312,7 +304,6 @@ fn load_settings_from_store(app: &tauri::AppHandle) -> Settings {
         mqtt_username: store.get("mqtt_username").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.mqtt_username),
         mqtt_password: store.get("mqtt_password").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.mqtt_password),
         mqtt_topic: store.get("mqtt_topic").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.mqtt_topic),
-        ws_port: store.get("ws_port").and_then(|v| v.as_u64()).unwrap_or(defaults.ws_port as u64) as u16,
         restore_on_start: store.get("restore_on_start").and_then(|v| v.as_bool()).unwrap_or(true),
         store_before_exit: store.get("store_before_exit").and_then(|v| v.as_bool()).unwrap_or(true),
         store_interval: store.get("store_interval").and_then(|v| v.as_u64()).unwrap_or(300) as u32,

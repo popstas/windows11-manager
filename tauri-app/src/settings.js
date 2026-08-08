@@ -22,7 +22,6 @@ async function loadSettings() {
     document.getElementById('mqtt_username').value = settings.mqtt_username;
     document.getElementById('mqtt_password').value = settings.mqtt_password;
     document.getElementById('mqtt_topic').value = settings.mqtt_topic;
-    document.getElementById('ws_port').value = settings.ws_port;
   } catch (e) {
     console.error('Failed to load settings:', e);
   }
@@ -55,7 +54,6 @@ form.addEventListener('submit', async (e) => {
     mqtt_username: document.getElementById('mqtt_username').value,
     mqtt_password: document.getElementById('mqtt_password').value,
     mqtt_topic: document.getElementById('mqtt_topic').value,
-    ws_port: parseInt(document.getElementById('ws_port').value, 10) || 9721,
   };
 
   try {
