@@ -89,8 +89,31 @@ function windowCommands({ winMan, config, log }) {
       await winMan.virtualDesktop.GoToDesktopNumber(Number(number) - 1);
     },
 
+    /**
+     * Перечитать конфиг с диска — прямо в тот объект, который держат карта
+     * команд и экспорт в Home Assistant.
+     *
+     * getConfig() отдаёт каждый раз новый объект, поэтому результат
+     * reloadConfigs() раньше просто выбрасывался, и в долгоживущих процессах
+     * (mqtt, http-server) команда не меняла ничего. Мутация на месте оживляет
+     * всё, что читается в момент вызова, — прежде всего store.custom у restore.
+     * `base` в объект дописан транспортом и в конфиге на диске его нет.
+     */
     async reload() {
-      await winMan.reloadConfigs();
+      const fresh = await winMan.reloadConfigs();
+      if (config && fresh) {
+        const { base } = config;
+        for (const key of Object.keys(config)) delete config[key];
+        Object.assign(config, fresh);
+        if (base !== undefined) config.base = base;
+      }
+      // А это собрано один раз при старте: homeassistant.slots задаёт список
+      // обработчиков claude-slot-command:N в карте команд, homeassistant.interval
+      // — уже заведённый setInterval экспорта. Молчать об этом нельзя, иначе
+      // reload по-прежнему отчитывался бы успехом, ничего не поменяв.
+      log('reload: конфиг перечитан; homeassistant.slots и homeassistant.interval '
+        + 'применятся только после перезапуска процесса', 'warn');
+      return { reloaded: true };
     },
   };
 }

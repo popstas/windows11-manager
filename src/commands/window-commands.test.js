@@ -88,4 +88,29 @@ describe('windowCommands', () => {
     await windowCommands(d).place('');
     expect(d.log).not.toHaveBeenCalled();
   });
+
+  it('reload переписывает тот же объект конфига, а не заводит новый', async () => {
+    // getConfig() отдаёт каждый раз новый объект, и результат reloadConfigs()
+    // выбрасывался: в mqtt-процессе store.custom оставался прежним навсегда.
+    const fresh = { store: { custom: { apps: ['C:/new.exe'] } } };
+    const config = { base: 'home/room/pc/windows', store: { custom: { apps: ['C:/old.exe'] } }, ушло: 1 };
+    const d = deps({ config, winMan: { reloadConfigs: vi.fn().mockReturnValue(fresh) } });
+    const commands = windowCommands(d);
+    await commands.reload();
+    expect(config.store.custom.apps).toEqual(['C:/new.exe']);
+    // Ключи, которых в свежем конфиге нет, должны пропасть, а base — остаться:
+    // его дописал транспорт, на диске его нет.
+    expect(config.ушло).toBeUndefined();
+    expect(config.base).toBe('home/room/pc/windows');
+    await commands.restore();
+    expect(d.winMan.openStore).toHaveBeenCalledWith(
+      expect.objectContaining({ windows: [{ path: 'C:/new.exe' }] }));
+  });
+
+  it('reload честно сообщает, что часть настроек ждёт перезапуска', async () => {
+    const d = deps({ winMan: { reloadConfigs: vi.fn().mockReturnValue({}) } });
+    expect(await windowCommands(d).reload()).toEqual({ reloaded: true });
+    expect(d.log).toHaveBeenCalledWith(
+      expect.stringContaining('перезапуска процесса'), 'warn');
+  });
 });
