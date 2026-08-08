@@ -48,8 +48,11 @@ function statsMessages(stats, topicBase) {
     messages.push({ topic: `${topicBase}/apps/${name}`, payload: `${stats.byApp[name].count}` });
   }
   if (stats.active) {
-    messages.push({ topic: `${topicBase}/active/app`, payload: stats.active.app });
-    messages.push({ topic: `${topicBase}/active/title`, payload: stats.active.title });
+    // `?? ''`, а не как есть: у окна без пути или без заголовка поле приезжает
+    // undefined, и шаблонная строка публиковала бы в Home Assistant слово
+    // "undefined" — оно оседает в истории сенсора и выглядит как имя приложения.
+    messages.push({ topic: `${topicBase}/active/app`, payload: `${stats.active.app ?? ''}` });
+    messages.push({ topic: `${topicBase}/active/title`, payload: `${stats.active.title ?? ''}` });
   }
   return messages;
 }

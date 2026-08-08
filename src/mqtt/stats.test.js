@@ -67,6 +67,14 @@ describe('statsMessages', () => {
     ]);
   });
 
+  it('активное окно без имени и заголовка не публикует слово "undefined"', () => {
+    // Оно осело бы в истории сенсора Home Assistant и выглядело бы как имя
+    // приложения.
+    const messages = statsMessages(statsOf({}, { total: 1, active: {} }), 'x');
+    expect(messages).toContainEqual({ topic: 'x/active/app', payload: '' });
+    expect(messages).toContainEqual({ topic: 'x/active/title', payload: '' });
+  });
+
   it('без активного окна лишних топиков нет', () => {
     expect(statsMessages(statsOf({}, { total: 0 }), 'x').map((m) => m.topic)).toEqual(['x/total']);
   });
