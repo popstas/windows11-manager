@@ -14,8 +14,8 @@ description: Use when working on claude-wt session tracking anywhere in the chai
 | Часть | Где | Роль |
 |---|---|---|
 | Хуки агента | pc-virt, `~/.claude/hooks/`, с Windows это `V:` | Пишут `<id>.state.json` на каждое событие агента |
-| Демон, MQTT и HA-экспорт | `D:/projects/js/windows11-manager`, `src/claude-wt/`, `src/mqtt/`, `src/claude-wt/ha/` | Следит за окнами, читает состояния, снимки, CLI; `claudeWt.projects` (cwd → profile/hotkey) в `windows11-manager.config.js`. MQTT-клиент и экспорт в Home Assistant — свой процесс, `node src/index.js mqtt`, его поднимает и следит за ним трей Tauri (`MQTT: running/stopped` — по наличию дочернего процесса, не по состоянию соединения) |
-| Пикер | `D:/projects/js/ccfzf-picker` (отдельный проект) | Список сессий, project hotkeys. Не зависит от windows11-manager через `file:`; открытие сессии на машине трекера идёт HTTP-запросом на `http://127.0.0.1:9722`, отметка «непросмотрено» — публикацией в MQTT |
+| Демон, MQTT и HA-экспорт | `D:/projects/js/windows11-manager`, `src/claude-wt/`, `src/mqtt/`, `src/claude-wt/ha/` | Следит за окнами, читает состояния, снимки, CLI; `claudeWt.projects` (cwd → profile/hotkey) в `windows11-manager.config.js`. MQTT-клиент и экспорт в Home Assistant — свой процесс, `node src/index.js mqtt`. Оба ребёнка (демон и MQTT) поднимает и держит трей Tauri: демон — автостартом и с автоподъёмом при падении (откат, backoff), MQTT — тоже автостартом (если включён в настройках), но без автоподъёма — упавший процесс просто гаснет в трее до ручного тычка; вывод обоих идёт в лог приложения. `MQTT: running/stopped` — по наличию дочернего процесса, не по состоянию соединения, и теперь гасится сразу по факту смерти процесса, а не только по ручному тумблеру |
+| Пикер | `D:/projects/js/ccfzf-picker` (отдельный проект) | Список сессий, project hotkeys. Не зависит от windows11-manager через `file:`; открытие сессии на машине трекера и отметка «непросмотрено» идут одним транспортом — публикацией в MQTT (команда `open_session_mqtt` шлёт `<base>/windows/claude-session-open`, тот же путь, что у пункта меню «Open on \<host\>»); без настроенного брокера пикер тихо откатывается на локальное открытие |
 | Панель | shome, `~/projects/smarthome/home-assistant/config/`, с Windows это `R:` | Генератор конфига openHASP, Node-RED, плата `openhasp5` |
 
 **Project hotkeys.** Регистрирует их теперь `ccfzf-picker`, не Rust в windows-mqtt: при старте он читает свой собственный `projects:` (путь + хоткей) из `config.yml` и вешает на каждый глобальный шорткат через `tauri_plugin_global_shortcut` (`src-tauri/src/main.rs`). Это отдельный список от `claudeWt.projects` в `windows11-manager.config.js` — тот знает про маппинг на профиль Windows Terminal, но про сами хоткеи ничего не знает и не спрашивается: два конфига приходится держать в согласии руками. Если Ctrl+F11/F12 пропали — смотреть stderr `ccfzf-picker`, а не windows-mqtt, там их больше нет.
@@ -41,6 +41,15 @@ description: Use when working on claude-wt session tracking anywhere in the chai
 **Обратно:** нажатие на плате → `home/room/pc/windows/claude-focus-slot` (номер строки, не id сессии) → `claudeFocusSlot()` → фокус окна. Демон видит переход фокуса на своём тике и ставит `focusedAt` — отсюда «просмотрено».
 
 Геометрию страницы плата получает не от Home Assistant: `openhasp_lines.yaml` читает Node-RED и шлёт как jsonl в `hasp/openhasp5/command`. Тексты и подсветку — от Home Assistant по `conf/openhasp.yaml`. Это два разных пути, и ломаются они по-разному.
+
+## Служба MQTT: расстановка, статистика, сторож демона
+
+Четыре поведения переехали сюда из `windows-mqtt/src/modules/windows.js` вместе с самим модулем `windows` и живут внутри `startMqttService()` (`src/mqtt/service.js`) — то есть заводятся, только если процесс `node src/index.js mqtt` вообще поднялся (нужны `W11M_MQTT_HOST` / `W11M_MQTT_BASE`), но брокеру для двух из них дожидаться подключения не нужно.
+
+- **Статистика окон** (`src/mqtt/stats.js`, гейт `config.publishStats`). Раз в 60 с плюс один замер сразу по подключению к брокеру публикует в `config.publishStatsTopic` (по умолчанию `${base}/stats`) число окон по приложениям и активное приложение/заголовок; закрытое приложение обнуляется один раз, иначе график в Home Assistant держит последнее ненулевое значение вечно.
+- **Расстановка окна при появлении** (`src/mqtt/autoplacer.js`, гейт `config.placeWindowOnOpen`). Второй поллер на машине — подробности и почему это не нарушает бюджет опроса в AGENTS.md.
+- **Уведомление после autoplace** (`notifyPlaced` в команде `autoplace`, `src/commands/window-commands.js`). Публикует «Placed windows: N» в топик уведомлений (`notifyTopic` из `src/mqtt/client.js`) при `config.notifyPlaced && placed.length > 0` — на нуле молчит.
+- **Сторож демона claude-wt** (`src/claude-wt/watchdog.js` + `src/mqtt/daemon-watchdog.js`). Заводится, только если `claudeWt.enabled` и задан `claudeWt.windowsFile`; проверка каждые 30 с, лечение (снять замолчавший процесс) не чаще раза в 5 минут, уведомление человеку — один раз за поломку, а не на каждый кулдаун. **Источник статуса — не `claudeWtStatus()`.** Тот отвечает про демона в *своём* процессе (`running` = «интервал заведён здесь», `pid` = `process.pid` спросившего) — из MQTT-службы, отдельного процесса от демона, он всегда сказал бы «не работает» и подсунул бы свой собственный pid, и сторож убивал бы себя каждые 30 с. Вместо этого статус собирается из файла, который демон публикует для ccfzf-picker (`claudeWt.windowsFile`, поле `pid` — то же самое, что даёт `AllowSetForegroundWindow` на подъёме окна) и переписывает не реже раза в 30 с даже без смены раскладки — это и есть сердцебиение. Лечение — снять процесс по этому pid; поднимает его заново Tauri (см. AGENTS.md, автоподъём claude-wt), не сторож: два демона на одном файле состояния хуже, чем ни одного.
 
 ## Правила, за которые уже заплачено
 
@@ -96,6 +105,8 @@ node src/index.js snapshots-restore last
 false` — состояние, в которое эту машину и переводит переезд MQTT сюда.
 Путь мёртв, не просто переименован.
 
+**Откат — это два шага, а не один.** Вернуть в windows-mqtt только `windows.enabled: true` — получить машину хуже, чем при любой из двух настроек по отдельности: `windows.js` там переподписывается на те же топики, пока MQTT-процесс windows11-manager их тоже разбирает, и один `restore` запускает каждое сохранённое приложение дважды, а оба процесса публикуют `home/room/pc/windows/claude/slot/N` каждый со своим порядком — строка на панели дёргается между двумя сессиями. Откатывать нужно оба конца разом: шаг 1 — `windows.enabled: true` в windows-mqtt и его перезапуск; шаг 2 — остановить MQTT-процесс windows11-manager (тумблер в трее Tauri, либо снять `W11M_MQTT_HOST`). windows11-manager подписан на `home/room/pc/windows/#` безусловно и о флаге `windows.enabled` ничего не знает — сам он не подвинется. `windows-mqtt/config.example.yml` (комментарий в `modules.windows`) уже описывает эти два шага; здесь то же самое, только с другой стороны провода.
+
 Вместо него теперь: `ccfzf-picker` опрашивает `ssh … ccfzf --state` раз в
 секунду, пока показано окно пикера (`state_source.rs`, опрос глушится на
 событии `picker-hidden`). `--state` каждый раз строит ответ заново и заодно
@@ -117,13 +128,19 @@ false` — состояние, в которое эту машину и пере
 
 | Что менялось | Что сделать |
 |---|---|
-| `src/mqtt/`, `src/claude-wt/ha/`, остальной node в windows11-manager | В трее: тумблер «Stop MQTT» → «Start MQTT» (пункт `mqtt_toggle` в `lib.rs`) — новый код подхватится, как только процесс `node src/index.js mqtt` стартует заново |
+| `src/mqtt/`, `src/claude-wt/ha/`, остальной node в windows11-manager | В трее: тумблер «Stop MQTT» → «Start MQTT» (пункт `mqtt_toggle` в `lib.rs`) — новый код подхватится, как только процесс `node src/index.js mqtt` стартует заново. Если процесс просто упал — трей сам покажет «stopped» (см. таблицу выше), но заново его поднимет только этот тумблер: у MQTT автоподъёма нет |
+| `src/claude-wt/` (демон) | То же самое тумблером «Stop/Start claude-wt», либо просто убить процесс — Tauri поднимет его сам (автоподъём, с откатом) |
 | Rust `tauri-app/src-tauri/` в windows11-manager | `cd tauri-app/src-tauri && . "$HOME/.cargo/env" && cargo build`, затем перезапустить трей |
+| Новый ключ верхнего уровня в `config.example.cjs` (`placeWindowOnOpen`, `notifyPlaced`, `publishStats`, `publishStatsTopic`, `homeassistant`) | Файл-образец сам не читается: перенести ключ руками в `C:\Users\popstas\.config\windows11-manager.config.js`, затем «Stop MQTT» → «Start MQTT» |
 | Что угодно в `ccfzf-picker` | `cd src-tauri && . "$HOME/.cargo/env" && cargo tauri build` из каталога `ccfzf-picker`, затем перезапустить приложение |
 
-Поднимать первым windows11-manager, вторым — `ccfzf-picker`: пикер шлёт открытие сессии HTTP-запросом на `http://127.0.0.1:9722` и отметку «непросмотрено» — в MQTT, который слушает менеджер. Без него оба действия молча ничего не делают (см. «Частые ошибки»).
+Поднимать первым windows11-manager, вторым — `ccfzf-picker`: открытие сессии и отметка «непросмотрено» из пикера обе уходят публикацией в MQTT, который слушает менеджер (`open_session_mqtt` → `<base>/windows/claude-session-open`; см. «HTTP-сервер не участвует» ниже). Без брокера или без поднятого менеджера пикер для открытия сессии тихо откатывается на локальный запуск терминала (`chooseOpenTransport` в `frontend-src/open-transport.js`) — не ошибка, а другое поведение, которое легко принять за «доехало».
+
+Правку на живой машине нужно вносить так, чтобы не перепутать кодировку: `windows11-manager.config.js` там на Windows и содержит русский текст, а PowerShell `Set-Content` / `>` по умолчанию пишут UTF-16 или добавляют BOM — либо то, либо другое ломает файл. Редактировать инструментом, который сохраняет исходную кодировку (UTF-8 без BOM), не перенаправлением из PowerShell.
 
 Правки только в хуках на `V:` или в конфиге панели на `R:` — пересборка ни того, ни другого не нужна.
+
+**HTTP-сервер не участвует.** `node src/index.js http-server` (порт 9722 по умолчанию) в коде существует и отвечает на те же команды, что и MQTT (`src/http-server.js` через общий `createRouter`), но это ручная точка входа: ничто в трее Tauri его не поднимает (там спавнятся только `claude-wt watch`, `mqtt` и, по тумблеру, autoplacer — `examples/autoplace-server.js`), и ничто в ccfzf-picker на него больше не ходит. Держать его поднятым вручную ради этой связки незачем.
 
 ## Частые ошибки
 
@@ -149,3 +166,7 @@ false` — состояние, в которое эту машину и пере
 | У сессии из проектного хоткея нет переменных из `.zshrc` (в OTEL пустой `project=`), а у сессии из пикера есть | `claudeWt.launchNew` запускает команду неинтерактивным шеллом; нужен `$SHELL -ic` с `cd` внутри, как в ccfzf |
 | `deploy-local` висит часами | Приложение наследует stdout; должно быть `stdio: 'ignore'` |
 | Отметка «непросмотрено» из пикера не действует | Проверить, что менеджер подписан на `claude-session-unread`: до переезда MQTT в windows11-manager подписки не было вовсе, и отметка молча ничего не делала — тот же симптом, что у настоящего бага в пикере |
+| «Open on \<host\>» / Enter в пикере не открывает сессию на трекере, хотя хост совпал | `chooseOpenTransport` требует ещё и настроенный брокер MQTT (`CONFIG.mqtt.configured`) — без него ветка тихо остаётся `local`, а не ошибкой |
+| Строка на панели дёргается между двумя сессиями, `restore` открывает приложения по два раза | Кто-то сделал только половину отката — вернул `windows.enabled: true` в windows-mqtt, не остановив MQTT-процесс windows11-manager (или наоборот). Нужны оба шага сразу |
+| Расстановка/статистика/сторож демона не завелись после правки конфига | Ключ добавлен только в `config.example.cjs` — в живой `C:\Users\popstas\.config\windows11-manager.config.js` его не перенесли руками |
+| Русские строки в `windows11-manager.config.js` превратились в кракозябры после правки на Windows | Файл переписан не в UTF-8 — PowerShell `Set-Content` / `>` по умолчанию пишут UTF-16 или добавляют BOM. Редактировать инструментом, который сохраняет кодировку файла |

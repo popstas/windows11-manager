@@ -98,7 +98,10 @@ module.exports = {
 
   // Переехало из windows-mqtt (config.yml, секция `windows:`): там эти ключи
   // читал модуль `windows`, а его выключает `windows.enabled: false`. Читает их
-  // теперь долгоживущая служба `node src/index.js mqtt`.
+  // теперь долгоживущая служба `node src/index.js mqtt`. Этот файл сама служба
+  // не читает — только образец; ключи ниже, вплоть до `homeassistant`, нужно
+  // руками перенести в живой `C:\Users\popstas\.config\windows11-manager.config.js`
+  // (см. поиск конфига в шапке файла), иначе все они молчат.
 
   // Расставлять окно сразу при его появлении (`placeWindowOnOpen()`): опрос
   // видимых hwnd раз в 1500 мс, дорогой getWindows() — только на новый hwnd.
@@ -110,6 +113,25 @@ module.exports = {
   // Топик статистики. По умолчанию `${base}/stats`, где base — W11M_MQTT_BASE;
   // на этой машине он задан отдельно и под базой окон не лежит.
   publishStatsTopic: 'state/pc/windows',
+
+  // Панель openHASP: сколько строк-слотов claude-wt отдавать в Home Assistant
+  // и как часто (session slots, экспорт из createHaExport() в
+  // src/claude-wt/ha/export.js). Тоже жило в windows-mqtt (config.yml,
+  // `modules.windows.homeassistant`) и тоже не переехало само: без этого
+  // блока createHaExport() берёт умолчание в 10 слотов, а кнопок на плате
+  // девять — лишняя сущность появится и никогда не найдёт себе кнопки.
+  homeassistant: {
+    slots: 9,
+    // Опрос окон (claudeWtSessions() → getWindows()) недёшев, а панель не
+    // требует секундной точности — интервал сделан редким нарочно. В секундах.
+    interval: 15,
+    // Только живые сессии: строк на панели единицы, и каждая, занятая давно
+    // закрытой сессией, вытесняет работающую. Закрытые остаются в пикере —
+    // там места хватает, и восстановить их можно только оттуда.
+    openOnly: true,
+    // Порядок слотов на панели. По умолчанию = sessionsSort пикера ('cost').
+    // sessionsSort: 'cost',
+  },
 
   store: {
     path: './data/windows-store.json',

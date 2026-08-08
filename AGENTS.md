@@ -34,8 +34,10 @@ This repository contains a Node.js tool for managing window placement on Windows
 ## Tauri app architecture
 
 - **lib.rs** -- main entry point: tray menu, event handlers, settings, MQTT child-process lifecycle.
+- **children.rs** -- child-process supervision shared by all three Node children (`ChildKind::{Mqtt,ClaudeWt,Autoplacer}`): reads each child's stdout/stderr into the `log` facade (so it lands in `data/windows11-manager.log` next to the rest of the app log -- check there first when a child looks like it's doing nothing), and computes the exponential restart backoff (`next_restart_attempt`, `restart_delay_secs`: 2s doubling to a 60s ceiling, reset to 1 after 60s of healthy uptime).
 - **logging.rs** -- file logging with `fern`.
-- MQTT itself is not a Rust module here: `node src/index.js mqtt` (the client in `src/mqtt/` plus the Home Assistant export in `src/claude-wt/ha/`) runs as a child process spawned from `lib.rs`, and the tray shows `MQTT: running/stopped` from that process's presence, not from a connection state. The old `mqtt.rs` (rumqttc client) and `ws_server.rs` (WebSocket bridge to node) are gone -- so is `src/ws-client.js` on the node side.
+- MQTT itself is not a Rust module here: `node src/index.js mqtt` (the client in `src/mqtt/` plus the Home Assistant export in `src/claude-wt/ha/`) runs as a child process spawned from `lib.rs`, and the tray shows `MQTT: running/stopped` from that process's presence, not from a connection state -- `on_child_exit()` now flips it the moment the process actually dies, not just on manual toggle. The old `mqtt.rs` (rumqttc client) and `ws_server.rs` (WebSocket bridge to node) are gone -- so is `src/ws-client.js` on the node side.
+- `setup()` auto-starts the claude-wt daemon (`claude_wt_enabled` setting, defaults `true`) and MQTT (`mqtt_enabled`, if the user has it checked) at launch, the same way the tray toggles do. **Only the claude-wt daemon is resurrected automatically** if it exits (crashed or killed, backoff above) -- MQTT and the autoplacer are not: if either dies, the tray flips to "stopped" and stdout/stderr are in the log, but starting it again is a manual tray click. Stopping claude-wt from the tray clears the "should be running" flag first, so the supervisor does not fight a deliberate stop.
 - Use `run_node_command(app, &[args], "Label")` helper to spawn node CLI commands from Rust with logging.
 - Settings stored via `tauri-plugin-store` in `settings.json` (project_path, MQTT config, etc.).
 - Build: `cd tauri-app/src-tauri && . "$HOME/.cargo/env" && cargo build`.
@@ -90,6 +92,8 @@ Two rules keep the once-a-second daemon off the CPU graph; both were paid for on
 - **Never read the virtual desktop number in the loop.** `virtualDesktop.GetWindowDesktopNumber()` spawns `VirtualDesktop11.exe`; periodic exe spawns were the source of the parasitic load fixed in 2026-07-14. It is called only when a window is bound to a session, driven by the `bindings` list `step()` returns.
 
 Window titles are compared in decoration-stripped form (`title-helpers.js`): Claude Code prefixes the terminal title with a status glyph (`✳ ccfzf`) while the ccfzf dump stores the bare summary, so both sides are normalised by the same function.
+
+**There is a second poller now, and it is fine.** `placeWindowOnOpen` (`src/mqtt/autoplacer.js`, gated by `config.placeWindowOnOpen`) runs inside the `mqtt` process, not the daemon, and it polls too -- `getVisibleWindowIds()` every 1500ms, same call the daemon uses, same rule respected: `getWindows()` (~21-31ms) only fires once a new hwnd shows up among the visible ones, never in the loop, and the desktop number is never read in the loop either. So two processes now each poll `getVisibleWindowIds()` on their own timer (daemon at 1000ms, MQTT service at 1500ms) -- a few ms/s per process, not the pattern this rule exists to forbid.
 
 ## Getting started
 
