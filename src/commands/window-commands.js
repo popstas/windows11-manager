@@ -7,15 +7,25 @@
  * node-window-manager, нативный модуль, которого нет на машине разработчика.
  */
 
-/** Тело команды приходит и объектом, и строкой JSON: брокер несёт байты. */
-function asObject(payload) {
+/**
+ * Тело команды приходит и объектом, и строкой JSON: брокер несёт байты.
+ *
+ * `onError` обязателен по смыслу, хоть и не по сигнатуре: битый JSON давал
+ * пустой объект, неотличимый от пустой посылки, и `place` молча ничего не
+ * ставил. Логгер сюда передаётся аргументом, а не берётся из модуля: функция
+ * чистая и живёт выше замыкания с log.
+ */
+function asObject(payload, onError = () => {}) {
   if (payload && typeof payload === 'object') return payload;
   const raw = String(payload ?? '').trim();
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
+    if (parsed && typeof parsed === 'object') return parsed;
+    onError(`не объект: ${raw}`);
+    return {};
+  } catch (e) {
+    onError(`${e.message}: ${raw}`);
     return {};
   }
 }
@@ -28,6 +38,10 @@ function storeEntry(entry) {
 }
 
 function windowCommands({ winMan, config, log }) {
+  /** Разбор тела с жалобой в лог: имя команды нужно, чтобы понять, чьё тело. */
+  const body = (command) => (payload) =>
+    asObject(payload, (reason) => log(`${command}: тело не разобрано — ${reason}`, 'warn'));
+
   async function restore() {
     await winMan.restoreWindows();
     const stored = storeEntry(config?.store?.custom);
@@ -42,7 +56,7 @@ function windowCommands({ winMan, config, log }) {
     },
 
     async place(payload) {
-      await winMan.placeWindowByConfig(asObject(payload));
+      await winMan.placeWindowByConfig(body('place')(payload));
     },
 
     async placeAll() {
@@ -61,17 +75,17 @@ function windowCommands({ winMan, config, log }) {
     },
 
     open(payload) {
-      winMan.openStore(asObject(payload));
+      winMan.openStore(body('open')(payload));
     },
 
     async focus(payload) {
-      const rule = asObject(payload);
+      const rule = body('focus')(payload);
       const focused = await winMan.focusWindow(rule);
       if (!focused) log(`focus: no window matched ${JSON.stringify(rule)}`, 'warn');
     },
 
     async desktop(payload) {
-      const { number } = asObject(payload);
+      const { number } = body('desktop')(payload);
       await winMan.virtualDesktop.GoToDesktopNumber(Number(number) - 1);
     },
 

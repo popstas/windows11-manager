@@ -66,4 +66,26 @@ describe('windowCommands', () => {
     const d = deps({ winMan: { placeWindows: vi.fn().mockResolvedValue(placed) } });
     expect(await windowCommands(d).autoplace()).toEqual({ placed: 1 });
   });
+
+  it('битое тело place видно в журнале, а не молча становится пустым', async () => {
+    // Пустой объект неотличим от пустой посылки: place просто ничего не ставил.
+    const d = deps();
+    await windowCommands(d).place('{"window":');
+    expect(d.log).toHaveBeenCalledWith(
+      expect.stringContaining('place: тело не разобрано'), 'warn');
+    expect(d.winMan.placeWindowByConfig).toHaveBeenCalledWith({});
+  });
+
+  it('тело, разобранное не в объект, тоже видно', async () => {
+    const d = deps();
+    await windowCommands(d).open('42');
+    expect(d.log).toHaveBeenCalledWith(
+      expect.stringContaining('open: тело не разобрано'), 'warn');
+  });
+
+  it('пустое тело жалобы не вызывает', async () => {
+    const d = deps();
+    await windowCommands(d).place('');
+    expect(d.log).not.toHaveBeenCalled();
+  });
 });
