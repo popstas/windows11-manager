@@ -139,13 +139,15 @@ describe('startMqttService', () => {
   it('сторож демона заведён службой и жалуется, когда смотреть не на что', () => {
     // claudeWt.windowsFile — единственный сигнал о живости демона из чужого
     // процесса; без него сторожу не по чему судить, и молчать об этом нельзя.
+    // Но конфигурация эта законная и стоит по умолчанию, поэтому warn, а не
+    // error: error-строка на каждом старте отучает читать error-строки.
     const { logged, service } = setup({
       winMan: {
         getClaudeWtConfig: () => ({ enabled: true, windowsFile: '' }),
         claudeWtHealth: () => ({ healthy: true }),
       },
     });
-    expect(logged.some((l) => l.startsWith('error:') && l.includes('windowsFile'))).toBe(true);
+    expect(logged.some((l) => l.startsWith('warn:') && l.includes('windowsFile'))).toBe(true);
     service.stop();
   });
 

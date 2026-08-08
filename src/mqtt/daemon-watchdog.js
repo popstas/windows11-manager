@@ -22,6 +22,15 @@
  * достался, процесс не ищется по имени: сторож, который делает вид, что чинит,
  * хуже сторожа, который докладывает, — тогда громкая строка в лог и уведомление
  * человеку.
+ *
+ * Почему у pid есть срок годности. Демона останавливают из трея, а файл окон
+ * остаётся лежать на диске навсегда — с pid процесса, которого больше нет. MQTT
+ * при этом живёт дальше, через полторы минуты видит молчание и без срока годности
+ * звал бы `process.kill()` на этот номер каждый кулдаун до конца времён. Первые
+ * разы это ESRCH, а потом Windows выдаёт освободившийся pid кому-нибудь ещё — и
+ * сторож принимается методично убивать чужой процесс раз в пять минут. Поэтому
+ * pid берётся только из файла, который писали только что (PID_TRUST_MS), а один
+ * и тот же pid не снимается дважды, пока файл не переписали заново.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -38,6 +47,16 @@ const SILENCE_MS = 3 * WINDOWS_FILE_HEARTBEAT_MS;
 // демона мог только что поднять Rust (backoff до 32 с), а первый его тик идёт
 // после maybeRestoreOnStart() и разбора дампа с сетевого диска.
 const GRACE_MS = 120000;
+// Срок годности pid из файла. Шесть сердцебиений (три минуты) — компромисс из
+// двух сторон. Снизу: лечение зовут не раньше, чем через SILENCE_MS (90 с), а
+// проверки идут раз в CHECK_INTERVAL_MS (30 с), то есть в момент первого
+// снятия файлу уже 90-120 секунд — меньший срок годности запретил бы снимать
+// зависшего демона вообще, ради чего сторож и заведён. Сверху: файл, которому
+// три минуты, не рассказывает ни о чём живом — демон переписывает его не реже
+// раза в тридцать секунд, — а его pid Windows к тому времени может уже выдать
+// другому процессу. Второе лечение (кулдаун 5 минут) в этот срок не попадает
+// намеренно: если первое не помогло, снимать по тому же номеру нечего.
+const PID_TRUST_MS = 6 * WINDOWS_FILE_HEARTBEAT_MS;
 
 /**
  * Статус демона по опубликованному файлу окон.
@@ -50,18 +69,30 @@ const GRACE_MS = 120000;
  * Файл чужой машины считается отсутствующим: `windowsFile` может лежать на общем
  * диске, а снимать процесс по чужому pid — это снимать что попало у себя.
  *
+ * Пролежавший файл — тоже отсутствующий, но только по части pid: возраст отметки
+ * из него берут как есть (в этом и вопрос к демону), а вот `pid` обнуляется.
+ * Число в поле `pid` — не процесс, а имя, которое операционная система вправе
+ * передать кому угодно, как только прежний владелец вышел; час спустя оно не
+ * значит ничего. Обнулённый pid уводит лечение в ветку «доложить человеку», а
+ * `pidStale` даёт ей сказать, почему именно.
+ *
  * Счётчики падений тиков сюда не едут: в файле их нет, и сторож про них молчит.
  */
-function daemonStatusFromFile(payload, { hostname, startedAt }) {
+function daemonStatusFromFile(payload, { hostname, startedAt, nowMs }) {
   const foreign = Boolean(payload) && payload.host !== hostname;
   const generated = !foreign && Number.isFinite(payload?.generated) ? payload.generated : 0;
-  const pid = !foreign && Number.isFinite(payload?.pid) ? payload.pid : 0;
+  const filePid = !foreign && Number.isFinite(payload?.pid) && payload.pid > 0 ? payload.pid : 0;
+  // Секунды в файле — читателем там питон; здесь миллисекунды, как у health().
+  const lastTickAt = generated > 0 ? generated * 1000 : 0;
+  // Отметки нет вовсе — доверять нечему: свежесть неизвестна, значит её нет.
+  const fresh = lastTickAt > 0 && nowMs - lastTickAt <= PID_TRUST_MS;
+  const pidStale = filePid > 0 && !fresh;
   return {
     running: true,
-    // Секунды в файле — читателем там питон; здесь миллисекунды, как у health().
-    lastTickAt: generated > 0 ? generated * 1000 : 0,
+    lastTickAt,
     startedAt,
-    pid: pid > 0 ? pid : 0,
+    pid: pidStale ? 0 : filePid,
+    pidStale,
     foreign,
     tickFailures: 0,
     lastTickError: '',
@@ -86,19 +117,41 @@ function defaultReadFile(filePath) {
   }
 }
 
-/** Лечение: снять замолчавший процесс. Поднимет его Rust — он же его и запускал. */
+/**
+ * Лечение: снять замолчавший процесс. Поднимет его Rust — он же его и запускал.
+ *
+ * Помнит последнее снятие: один и тот же pid не снимается второй раз, пока файл
+ * не переписали заново. Неудача снятия — это не повод повторить попытку через
+ * кулдаун, а сообщение о том, что такого процесса уже нет; повтор по тому же
+ * номеру бьёт по чужому процессу, которому этот номер достался позже.
+ */
 function createRemedy({ kill, log, notify }) {
+  let killedPid = 0;
+  let killedTickAt = 0;
   return (status) => {
     const { pid } = status;
     // Свой собственный pid — признак того, что статус приехал не оттуда,
     // откуда думали. Служба, снявшая сама себя, выглядела бы как «сторож
     // помог»: MQTT молчит, демон молчит, в логе ни строки.
     if (!pid || pid === process.pid) {
-      log('claude-wt: демон молчит, но его pid неизвестен — процесс по имени не ищу, '
+      const why = status.pidStale
+        ? 'файл окон давно не переписывали, и pid из него уже ничего не значит'
+        : 'его pid неизвестен';
+      log(`claude-wt: демон молчит, ${why} — процесс по имени не ищу, `
         + 'нужен ручной перезапуск демона', 'error');
-      notify('claude-wt: демон молчит, pid неизвестен — нужен ручной перезапуск');
+      notify(`claude-wt: демон молчит, ${why} — нужен ручной перезапуск`);
       return false;
     }
+    // Тот же pid при той же отметке — это тот же самый файл, что и в прошлый
+    // раз, то есть новых сведений о демоне не появилось.
+    if (pid === killedPid && status.lastTickAt <= killedTickAt) {
+      log(`claude-wt: демон молчит, но процесс ${pid} уже снимали и файл окон с тех пор `
+        + 'не переписан — повторно не трогаю, нужен ручной перезапуск демона', 'error');
+      notify(`claude-wt: демон молчит, снятие процесса ${pid} не помогло — нужен ручной перезапуск`);
+      return false;
+    }
+    killedPid = pid;
+    killedTickAt = status.lastTickAt;
     try {
       kill(pid);
     } catch (e) {
@@ -147,10 +200,13 @@ function startDaemonWatchdog({
     return noop;
   }
   // Единственный сигнал о живости демона из другого процесса. Без него сторожу
-  // не на что смотреть, и молчать об этом нельзя.
+  // не на что смотреть. Но это законная конфигурация по умолчанию — `enabled`
+  // включён, `windowsFile` пуст, — и `error` на каждом старте службы у нормальной
+  // настройки приучает не читать error-строки вообще. Отсюда `warn` и разговор о
+  // последствии: сторожа нет, значит замолчавшего демона никто не заметит.
   if (!cfg.windowsFile) {
-    log('claude-wt: claudeWt.windowsFile не задан — сторожу не по чему судить о демоне, '
-      + 'он не заведён, молчание демона замечено не будет', 'error');
+    log('claude-wt: claudeWt.windowsFile не задан — сторож не заведён, '
+      + 'молчание демона останется незамеченным', 'warn');
     return noop;
   }
 
@@ -170,7 +226,7 @@ function startDaemonWatchdog({
   const check = createClaudeWtWatchdog({
     status: () => {
       const payload = readWindowsFile(cfg.windowsFile, readFile);
-      const status = daemonStatusFromFile(payload, { hostname, startedAt });
+      const status = daemonStatusFromFile(payload, { hostname, startedAt, nowMs: now() });
       if (status.foreign && !foreignReported) {
         foreignReported = true;
         log(`claude-wt: ${cfg.windowsFile} пишет чужая машина (${payload.host}), `
@@ -204,4 +260,5 @@ export {
   readWindowsFile,
   SILENCE_MS,
   GRACE_MS,
+  PID_TRUST_MS,
 };
