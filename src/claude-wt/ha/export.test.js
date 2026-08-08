@@ -41,6 +41,29 @@ describe('createHaExport', () => {
     expect(configTopics()).toBe(afterFirst);
   });
 
+  it('повторный start переиздаёт конфиги: это переподключение к брокеру', () => {
+    // Брокер, переживший перезапуск без сохранения retained, теряет конфиги
+    // Discovery вместе с устройством claude_wt. Слепок имён переживал разрыв, а
+    // start() выходил по уже заведённому таймеру, и устройство не возвращалось
+    // в Home Assistant до ближайшей смены состава сессий.
+    const { exporter, publish } = make();
+    exporter.start();
+    publish.mockClear();
+    exporter.start();
+    expect(publish.mock.calls.filter(([t]) => t.startsWith('homeassistant/')).length)
+      .toBeGreaterThan(0);
+  });
+
+  it('повторный start не заводит второго таймера', () => {
+    const { exporter, publish } = make();
+    exporter.start();
+    exporter.start();
+    publish.mockClear();
+    vi.advanceTimersByTime(15000);
+    const states = publish.mock.calls.filter(([t]) => t.endsWith('/claude/slot/1')).length;
+    expect(states).toBe(1);
+  });
+
   it('состояния публикуются на каждом тике', () => {
     const { exporter, publish } = make();
     exporter.start();

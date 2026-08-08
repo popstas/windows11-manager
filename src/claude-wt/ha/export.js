@@ -71,12 +71,26 @@ function createHaExport({ winMan, publish, log, config }) {
   }
 
   return {
+    /**
+     * Зовётся на каждое подключение к брокеру, а не только на первое.
+     *
+     * Повторный вызов — это переподключение, и слепок имён надо сбросить:
+     * конфиги Discovery публикуются retained, но брокер, переживший
+     * перезапуск без сохранения retained, теряет их вместе с устройством
+     * claude_wt. Раньше `announced` переживал разрыв, start() выходил по уже
+     * заведённому таймеру, и устройство не возвращалось в Home Assistant до
+     * ближайшей смены состава сессий. Тик тоже внеочередной: ждать до
+     * пятнадцати секунд с пустым устройством незачем.
+     */
     start() {
-      if (!cfg.enabled || timerId !== null) return;
-      log(`home assistant: publishing ${cfg.slots} session slots every ${cfg.interval / 1000}s`);
+      if (!cfg.enabled) return;
+      announced = null;
+      if (timerId === null) {
+        log(`home assistant: publishing ${cfg.slots} session slots every ${cfg.interval / 1000}s`);
+        timerId = setInterval(tick, cfg.interval);
+        timerId.unref?.();
+      }
       tick();
-      timerId = setInterval(tick, cfg.interval);
-      timerId.unref?.();
     },
 
     stop() {
