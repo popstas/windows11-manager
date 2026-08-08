@@ -17,6 +17,7 @@ function deps(overrides = {}) {
     },
     config: overrides.config ?? { store: { custom: { windows: [] } } },
     log: overrides.log ?? vi.fn(),
+    notify: overrides.notify ?? vi.fn(),
   };
 }
 
@@ -65,6 +66,34 @@ describe('windowCommands', () => {
     const placed = [{ w: { path: 'C:\\x\\code.exe' } }];
     const d = deps({ winMan: { placeWindows: vi.fn().mockResolvedValue(placed) } });
     expect(await windowCommands(d).autoplace()).toEqual({ placed: 1 });
+  });
+
+  it('autoplace рассказывает человеку о расстановке при notifyPlaced', async () => {
+    const placed = [{ w: { path: 'C:\\x\\code.exe' } }, { w: { path: 'C:\\x\\chrome.exe' } }];
+    const d = deps({
+      config: { notifyPlaced: true },
+      winMan: { placeWindows: vi.fn().mockResolvedValue(placed) },
+    });
+    await windowCommands(d).autoplace();
+    expect(d.notify).toHaveBeenCalledWith('Placed windows: 2');
+  });
+
+  it('autoplace без переехавших окон молчит', async () => {
+    // autoplace прилетает и по расписанию: «Placed windows: 0» в телефоне —
+    // шум, из-за которого перестают читать и остальные уведомления.
+    const d = deps({ config: { notifyPlaced: true } });
+    await windowCommands(d).autoplace();
+    expect(d.notify).not.toHaveBeenCalled();
+  });
+
+  it('без notifyPlaced уведомление не уходит', async () => {
+    const placed = [{ w: { path: 'C:\\x\\code.exe' } }];
+    const d = deps({
+      config: {},
+      winMan: { placeWindows: vi.fn().mockResolvedValue(placed) },
+    });
+    await windowCommands(d).autoplace();
+    expect(d.notify).not.toHaveBeenCalled();
   });
 
   it('битое тело place видно в журнале, а не молча становится пустым', async () => {

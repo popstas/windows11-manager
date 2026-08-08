@@ -37,7 +37,7 @@ function storeEntry(entry) {
   return entry;
 }
 
-function windowCommands({ winMan, config, log }) {
+function windowCommands({ winMan, config, log, notify = () => {} }) {
   /** Разбор тела с жалобой в лог: имя команды нужно, чтобы понять, чьё тело. */
   const body = (command) => (payload) =>
     asObject(payload, (reason) => log(`${command}: тело не разобрано — ${reason}`, 'warn'));
@@ -49,9 +49,20 @@ function windowCommands({ winMan, config, log }) {
   }
 
   return {
+    /**
+     * Уведомление о расстановке идёт только при `notifyPlaced` и только когда
+     * что-то и правда переехало: autoplace прилетает и по расписанию, и с
+     * панели, а «Placed windows: 0» в телефоне — это шум, из-за которого
+     * перестают читать и остальные уведомления.
+     *
+     * Текст оставлен ровно тем же, что публиковал windows-mqtt: его читает
+     * человек, привыкший к этой строке.
+     */
     async autoplace() {
       const placed = await winMan.placeWindows();
-      log(`Placed windows: ${placed.length}`);
+      const message = `Placed windows: ${placed.length}`;
+      log(message);
+      if (config?.notifyPlaced && placed.length > 0) notify(message);
       return { placed: placed.length };
     },
 

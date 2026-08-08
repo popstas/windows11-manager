@@ -67,6 +67,16 @@ describe('buildCommandMap', () => {
     await expect(makeMap().store()).resolves.not.toThrow();
   });
 
+  it('autoplace получает канал уведомлений, а не молчит в него', async () => {
+    // Без проброса notify в windowCommands сообщение «Placed windows: N» с
+    // notifyPlaced не уходило никуда: карта команд собирается здесь.
+    const notify = vi.fn();
+    const winMan = winManStub();
+    winMan.placeWindows = vi.fn().mockResolvedValue([{ w: { path: 'C:\\x\\code.exe' } }]);
+    await makeMap({ notify, winMan, config: { base: 'home/room/pc/windows', notifyPlaced: true } }).autoplace();
+    expect(notify).toHaveBeenCalledWith('Placed windows: 1');
+  });
+
   it('плитка гасится по разобранному номеру слота, а не по сырому телу', async () => {
     // `Number('{"slot":3}')` — NaN, slotOff не находил слота, и плитка на
     // панели оставалась гореть.

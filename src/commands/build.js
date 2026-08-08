@@ -21,7 +21,7 @@ const SLOT_COUNT_DEFAULT = 10;
  * списке пикера, дребезжать нечему.
  */
 function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = () => {} }) {
-  const windows = windowCommands({ winMan, config, log });
+  const windows = windowCommands({ winMan, config, log, notify });
   const claude = claudeCommands({ winMan, log, notify, slots: () => haExport.slots() });
 
   // Панель с toggle:true рисует локальное включение раньше, чем доедет MQTT.
