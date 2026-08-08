@@ -11,6 +11,7 @@ import {
   windowsFingerprint,
   shouldWriteWindowsFile,
   writeWindowsFile,
+  removeWindowsFile,
 } from './windows-file.js';
 import { step } from './tracker-helpers.js';
 import {
@@ -353,6 +354,18 @@ function stopClaudeWt() {
     // Тик, оставшийся в полёте на момент остановки, тоже отгораживаем: пусть
     // его результат никуда не едет, даже если демона больше не поднимут.
     generation += 1;
+    // Опубликованный файл переживал остановку и продолжал предъявлять читателям
+    // и сторожу pid процесса, которого больше нет. Убираем его тем же движением,
+    // что и интервал: остановленный демон не тикает, и файла у него быть не
+    // должно. Ошибку сюда не пускаем — остановка обязана дойти до конца.
+    try {
+      const { windowsFile } = getClaudeWtConfig();
+      removeWindowsFile(windowsFile);
+    } catch (e) {
+      console.error(`[claude-wt] windows file remove failed: ${e.message}`);
+    }
+    lastWindowsFingerprint = '';
+    lastWindowsWrite = 0;
   }
 }
 
@@ -438,3 +451,4 @@ export {
   claudeWtTick,
   markSessionUnread,
 };
+export { removeWindowsFile } from './windows-file.js';

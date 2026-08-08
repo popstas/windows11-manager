@@ -3,7 +3,7 @@
 This repository contains a Node.js tool for managing window placement on Windows 11 using PowerToys FancyZones and the VirtualDesktop11 utility. The codebase is small, but the main logic is in the **src** folder.
 
 ## Build commands
-- Node CLI: `node src <command>` (place, store, restore, clear, reload, open-default, stats, dashboard, `claude-wt watch|status|restore|clear`)
+- Node CLI: `node src <command>` (place, store, restore, clear, reload, open-default, stats, dashboard, `claude-wt watch|status|restore|clear|windows-clear`)
 - Tauri build: `cd tauri-app/src-tauri && . "$HOME/.cargo/env" && cargo build`
 - Tests: `npm test` (vitest). Unit tests for placement, windows, store, fancyzones, monitors, geometry, window-match, scale
 

@@ -176,6 +176,21 @@ async function start() {
   claudeWt.command('watch').action(async () => {
     const mod = await import('./claude-wt/index.js');
     mod.startClaudeWt();
+    // Уход по сигналу — единственный способ остановиться по-хорошему:
+    // stopClaudeWt() убирает опубликованный файл окон, и сторож в MQTT-службе не
+    // найдёт в нём pid процесса, которого больше нет. Демон, снятый жёстко
+    // (из трея это TerminateProcess, и обработчик не позовут), файл, конечно,
+    // оставит — на этот случай у сторожа срок годности pid.
+    let stopping = false;
+    const shutdown = (signal) => {
+      if (stopping) return;
+      stopping = true;
+      console.log(`[claude-wt] ${signal}: останавливаюсь и убираю файл окон`);
+      mod.stopClaudeWt();
+      process.exit(0);
+    };
+    process.on('SIGINT', () => shutdown('SIGINT'));
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
   });
 
   claudeWt.command('status').action(async () => {
@@ -232,6 +247,17 @@ async function start() {
       const mod = await import('./claude-wt/restore.js');
       const { skipped } = await mod.restoreSnapshot({ id: id ?? 'last', sessionIds: options.session });
       process.exit(skipped.length ? 1 : 0);
+    });
+
+  claudeWt
+    .command('windows-clear')
+    .description('remove the published windows file of a daemon that is no longer running')
+    .action(async () => {
+      const mod = await import('./claude-wt/index.js');
+      const { windowsFile } = mod.getClaudeWtConfig();
+      mod.removeWindowsFile(windowsFile);
+      console.log(`[claude-wt] cleared ${windowsFile || '(windowsFile not set)'}`);
+      process.exit(0);
     });
 
   claudeWt.command('clear').action(async () => {
