@@ -10,7 +10,7 @@
  * Интервал редкий — claudeWtSessions() сканирует окна через getWindows(), и
  * раз в секунду в фоне ему тут делать нечего.
  */
-import { labelSessions } from './session-groups.js';
+import { labelSessions, normalizeSort } from './session-groups.js';
 import { buildSlots } from './session-slots.js';
 import { discoveryMessages, namesFingerprint, stateMessages, topics } from './discovery.js';
 import { sessionEntity, buildSessionEntities, buildSummaryEntity } from './entities.js';
@@ -30,7 +30,7 @@ function createHaExport({ winMan, publish, log, config }) {
     // Закрытые сессии на панели только мешают: строк там единицы, и каждая,
     // занятая давно закрытой сессией, вытесняет живую.
     openOnly: ha.openOnly !== false,
-    sort: ha.sort ?? 'activity',
+    sort: normalizeSort(ha.sessionsSort),
   };
   const base = config.base;
 

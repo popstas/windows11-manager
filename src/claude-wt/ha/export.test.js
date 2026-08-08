@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createHaExport } from './export.js';
+import { createHaExport, REFRESH_DELAY_MS } from './export.js';
 
 const SESSIONS = [
   { id: 'a', title: 'alpha', open: true, agentState: 'review' },
@@ -72,5 +72,80 @@ describe('createHaExport', () => {
     });
     exporter.start();
     expect(() => vi.advanceTimersByTime(15000)).not.toThrow();
+  });
+
+  it('homeassistant.sessionsSort доезжает до buildSlots и реально меняет порядок слотов', () => {
+    // p дороже (agentCostUsd 5), q дешевле (agentCostUsd 1), но по имени q раньше
+    // p — 'alpha' < 'bravo'. Сортировки cost и name дают противоположный порядок,
+    // так что тест падает, если sessionsSort по дороге теряется.
+    const sessions = [
+      { id: 'p', title: 'bravo', open: true, agentState: 'idle', agentCostUsd: 5 },
+      { id: 'q', title: 'alpha', open: true, agentState: 'idle', agentCostUsd: 1 },
+    ];
+    const claudeWtSessions = vi.fn().mockReturnValue({ ok: true, sessions });
+
+    const { exporter: byCost } = make({ winMan: { claudeWtSessions } });
+    byCost.start();
+    expect(byCost.slots().filter((s) => s.id).map((s) => s.id)).toEqual(['p', 'q']);
+
+    const { exporter: byName } = make({
+      winMan: { claudeWtSessions },
+      config: { homeassistant: { slots: 2, interval: 15, sessionsSort: 'name' } },
+    });
+    byName.start();
+    expect(byName.slots().filter((s) => s.id).map((s) => s.id)).toEqual(['q', 'p']);
+  });
+
+  it('refresh() публикует ровно один внеочередной экспорт, а второй refresh() до него не добавляет ещё один', () => {
+    const claudeWtSessions = vi.fn().mockReturnValue({ ok: true, sessions: SESSIONS });
+    const { exporter } = make({ winMan: { claudeWtSessions } });
+    exporter.start();
+    expect(claudeWtSessions).toHaveBeenCalledTimes(1);
+
+    exporter.refresh();
+    exporter.refresh(); // пока первый не отработал — второй таймер не заводится
+    vi.advanceTimersByTime(REFRESH_DELAY_MS);
+    expect(claudeWtSessions).toHaveBeenCalledTimes(2);
+  });
+
+  it('stop() гасит отложенный refresh() — после остановки тик не срабатывает', () => {
+    const claudeWtSessions = vi.fn().mockReturnValue({ ok: true, sessions: SESSIONS });
+    const { exporter } = make({ winMan: { claudeWtSessions } });
+    exporter.start();
+    expect(claudeWtSessions).toHaveBeenCalledTimes(1);
+
+    exporter.refresh();
+    exporter.stop();
+    vi.advanceTimersByTime(REFRESH_DELAY_MS);
+    expect(claudeWtSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it('slotOff публикует слот целиком с state: off, а не голый state', () => {
+    const { exporter, publish } = make();
+    exporter.start();
+    publish.mockClear();
+
+    exporter.slotOff(1);
+
+    expect(publish).toHaveBeenCalledTimes(1);
+    const [topic, payload, opts] = publish.mock.calls[0];
+    expect(topic).toBe('home/room/pc/windows/claude/slot/1');
+    expect(opts).toEqual({ retain: true, qos: 0 });
+    const body = JSON.parse(payload);
+    expect(body.state).toBe('off');
+    // Голая нагрузка state стёрла бы текст, сводку и цифры, которые сидят в том
+    // же топике — проверяем, что они приехали вместе с флагом.
+    expect(body.text).toBeTruthy();
+    expect(Object.keys(body).length).toBeGreaterThan(1);
+  });
+
+  it('slotOff по неизвестному номеру слота ничего не публикует', () => {
+    const { exporter, publish } = make();
+    exporter.start();
+    publish.mockClear();
+
+    exporter.slotOff(99);
+
+    expect(publish).not.toHaveBeenCalled();
   });
 });
