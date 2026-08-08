@@ -106,4 +106,19 @@ function listSnapshots(cfg) {
   return readSnapshots(filePath).snapshots;
 }
 
-export { snapshotTick, resetSnapshotter, listSnapshots, snapshotId };
+/**
+ * Снимки, которые процесс уже знает, — без ввода-вывода.
+ *
+ * Для файла оконного трекера: он пишется из тика, а `listSnapshots` читает
+ * файл снимков с диска. Кэш здесь тот же, что заполняет и переписывает
+ * snapshotTick, так что свежее него в этом процессе всё равно ничего нет.
+ *
+ * Холодный кэш (демон только поднялся) — пустой список, а не чтение файла:
+ * первый же тик его заполнит, а до тех пор поле в файле трекера просто
+ * пустое. Читатель на той стороне пустой список переживает.
+ */
+function currentSnapshots() {
+  return cache?.snapshots ?? [];
+}
+
+export { snapshotTick, resetSnapshotter, listSnapshots, snapshotId, currentSnapshots };

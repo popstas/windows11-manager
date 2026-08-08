@@ -32,7 +32,7 @@ import {
 import { loadProgress } from './progress.js';
 import { activeAgent } from './view-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
-import { snapshotTick, resetSnapshotter } from './snapshotter.js';
+import { snapshotTick, resetSnapshotter, currentSnapshots } from './snapshotter.js';
 
 function getClaudeWtConfig() {
   return mergeClaudeWtConfig(getConfig().claudeWt);
@@ -256,10 +256,13 @@ async function claudeWtTick(tickGen = null) {
 function publishWindows(cfg, windows, slots) {
   if (!cfg.windowsFile) return;
   const nowMs = Date.now();
+  // Снимки берутся из кэша снапшотера, а не из файла: publishWindows зовётся
+  // каждый тик, а файл снимков лежит там же, где состояние, — на диске.
+  const snapshots = currentSnapshots();
   const payload = buildWindowsFile({
-    windows, slots, host: os.hostname(), pid: process.pid, nowMs,
+    windows, slots, host: os.hostname(), pid: process.pid, nowMs, snapshots,
   });
-  const fingerprint = windowsFingerprint(payload.windows);
+  const fingerprint = windowsFingerprint(payload.windows, payload.snapshots);
   const due = shouldWriteWindowsFile({
     fingerprint, lastFingerprint: lastWindowsFingerprint, lastWriteMs: lastWindowsWrite, nowMs,
   });

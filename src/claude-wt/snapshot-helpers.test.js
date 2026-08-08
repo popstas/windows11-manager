@@ -273,3 +273,15 @@ describe('findSnapshot', () => {
     expect(findSnapshot([], 'last')).toBeNull();
   });
 });
+
+import { currentSnapshots, resetSnapshotter } from './snapshotter.js';
+
+describe('currentSnapshots', () => {
+  it('отдаёт пустой список на холодном кэше, а не читает файл', () => {
+    // Демон только поднялся, snapshotTick ещё не отработал. Читать файл
+    // отсюда нельзя: publishWindows зовётся каждый тик, а файл снимков лежит
+    // на сетевом диске. Первый же тик кэш заполнит.
+    resetSnapshotter();
+    expect(currentSnapshots()).toEqual([]);
+  });
+});

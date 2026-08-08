@@ -29,7 +29,7 @@ const WINDOWS_FILE_HEARTBEAT_MS = 30_000;
  * видит, и без этой его список продолжал бы звать к сессии, на которую уже
  * сходили руками.
  */
-function buildWindowsFile({ windows, slots, host, pid, nowMs }) {
+function buildWindowsFile({ windows, slots, host, pid, nowMs, snapshots }) {
   const out = {};
   for (const w of windows ?? []) {
     const id = w?.sessionId;
@@ -44,7 +44,31 @@ function buildWindowsFile({ windows, slots, host, pid, nowMs }) {
   }
   // Секунды, а не миллисекунды: рядом лежит `lastSeen` в секундах, и читатель —
   // python на другой машине, которому проще сравнивать с time.time().
-  return { host, pid, generated: Math.floor(nowMs / 1000), windows: out };
+  return {
+    host, pid, generated: Math.floor(nowMs / 1000), windows: out,
+    // Ключ на месте всегда, даже пустой: читателю дешевле пустой массив, чем
+    // проверка на отсутствие ключа при каждом использовании.
+    snapshots: (snapshots ?? []).map(trimSnapshot),
+  };
+}
+
+/**
+ * Обрезанный вид снимка для читателя на той стороне.
+ *
+ * `bounds`, `desktop` и `monitor` остаются в файле снимков: их читает
+ * восстановление, а оно работает на этой же машине. Читателю они не нужны, а
+ * ехали бы в каждом ответе агрегатора, раз в секунду.
+ */
+function trimSnapshot(snap) {
+  return {
+    id: typeof snap?.id === 'string' ? snap.id : '',
+    created: Number.isFinite(snap?.created) ? snap.created : 0,
+    sessions: (snap?.sessions ?? []).map(s => ({
+      id: typeof s?.id === 'string' ? s.id : '',
+      title: typeof s?.title === 'string' ? s.title : '',
+      cwd: typeof s?.cwd === 'string' ? s.cwd : '',
+    })),
+  };
 }
 
 /**
@@ -60,12 +84,26 @@ function buildWindowsFile({ windows, slots, host, pid, nowMs }) {
  * полминуты после того, как на сессию сходили, а возврат в непрочитанное
  * ровно столько же держался бы погашенным. Переходов фокуса немного, и они
  * и так двигают состояние на диске.
+ *
+ * Второй аргумент, снимки, входит по составу (`id` + `created`), а не по
+ * содержимому сессий: снимок неизменяем, кроме последнего, которому
+ * snapshotTick правит координаты, — а координаты в файл трекера всё равно не
+ * едут. Без этого запись снимка доезжала бы до читателя только
+ * сердцебиением, до тридцати секунд.
  */
-function windowsFingerprint(windows) {
-  return Object.entries(windows ?? {})
+function windowsFingerprint(windows, snapshots) {
+  const win = Object.entries(windows ?? {})
     .map(([id, w]) => `${id}\u0000${w.desktop}\u0000${w.title}\u0000${w.focusedAt}`)
     .sort()
     .join('\u0001');
+  // Состав, не содержимое: снимок неизменяем, кроме последнего, которому тик
+  // правит координаты, — а координаты в файл трекера не едут вовсе. Без
+  // этого запись снимка доезжала бы до читателя только сердцебиением, до
+  // тридцати секунд.
+  const snaps = (snapshots ?? [])
+    .map(s => `${s?.id} ${s?.created}`)
+    .join('');
+  return snaps ? `${win}${snaps}` : win;
 }
 
 function shouldWriteWindowsFile({ fingerprint, lastFingerprint, lastWriteMs, nowMs }) {

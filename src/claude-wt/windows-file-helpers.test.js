@@ -51,7 +51,7 @@ describe('buildWindowsFile', () => {
     const out = buildWindowsFile({
       windows: [], slots: {}, host: 'pc', pid: 42, nowMs: 1_800_500,
     });
-    expect(out).toEqual({ host: 'pc', pid: 42, generated: 1800, windows: {} });
+    expect(out).toEqual({ host: 'pc', pid: 42, generated: 1800, windows: {}, snapshots: [] });
   });
 
   it('survives a window whose session has no slot yet', () => {
@@ -118,5 +118,67 @@ describe('shouldWriteWindowsFile', () => {
     const nowMs = 1000 + WINDOWS_FILE_HEARTBEAT_MS;
     expect(shouldWriteWindowsFile({ ...args, nowMs })).toBe(true);
     expect(shouldWriteWindowsFile({ ...args, nowMs: nowMs - 1 })).toBe(false);
+  });
+});
+
+const SNAPSHOTS = [{
+  id: 'snap-1',
+  created: 1_700_000,
+  sessions: [
+    { id: 'aaa', title: 'ccfzf-picker', cwd: '/home/user/projects/js/ccfzf-picker',
+      bounds: { x: 0, y: 0, width: 800, height: 600 }, desktop: 2, monitor: 0 },
+    { id: 'ccc', title: 'gone', cwd: '/home/user/projects/js/notes',
+      bounds: { x: 10, y: 10, width: 400, height: 300 }, desktop: 1, monitor: 1 },
+  ],
+}];
+
+describe('buildWindowsFile — снимки', () => {
+  it('кладёт снимки обрезанными: без bounds, desktop и monitor', () => {
+    // Геометрия нужна только восстановлению, а оно живёт на этой же машине и
+    // читает свой файл. Читателю она ехала бы в каждом тике --state, раз в
+    // секунду.
+    const out = buildWindowsFile({
+      windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42,
+      nowMs: 1_800_000, snapshots: SNAPSHOTS,
+    });
+    expect(out.snapshots).toEqual([{
+      id: 'snap-1',
+      created: 1_700_000,
+      sessions: [
+        { id: 'aaa', title: 'ccfzf-picker', cwd: '/home/user/projects/js/ccfzf-picker' },
+        { id: 'ccc', title: 'gone', cwd: '/home/user/projects/js/notes' },
+      ],
+    }]);
+  });
+
+  it('без снимков поле есть и пустое', () => {
+    // Ключ на месте всегда: читателю дешевле пустой массив, чем проверка на
+    // отсутствие ключа при каждом использовании.
+    const out = buildWindowsFile({
+      windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000,
+    });
+    expect(out.snapshots).toEqual([]);
+  });
+});
+
+describe('windowsFingerprint — снимки', () => {
+  it('новый снимок меняет отпечаток', () => {
+    // Иначе снимок доезжал бы до читателя только сердцебиением — до тридцати
+    // секунд. Снимки редкие (debounce 60 с), лишних записей это не даёт.
+    const windows = buildWindowsFile({
+      windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000,
+    }).windows;
+    const before = windowsFingerprint(windows, []);
+    const after = windowsFingerprint(windows, [{ id: 'snap-1', created: 1_700_000 }]);
+    expect(after).not.toBe(before);
+  });
+
+  it('отпечаток без снимков совпадает с прежним', () => {
+    // Второй аргумент необязателен: вызовов windowsFingerprint(windows) в
+    // тестах и коде хватает, и все они должны остаться верными.
+    const windows = buildWindowsFile({
+      windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000,
+    }).windows;
+    expect(windowsFingerprint(windows, [])).toBe(windowsFingerprint(windows));
   });
 });
