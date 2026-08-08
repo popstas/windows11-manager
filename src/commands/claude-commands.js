@@ -22,6 +22,18 @@ function parseIdPayload(payload) {
   return { id: raw };
 }
 
+/**
+ * Номер строки панели: `{"slot":3}`, `{"id":3}` или голое `3`.
+ *
+ * Отдельно от обработчика, потому что тот же номер нужен build.js, чтобы
+ * погасить плитку: там он брался из сырого тела, и `Number('{"slot":3}')` давал
+ * NaN — слот не находился, плитка оставалась гореть.
+ */
+function slotFromPayload(payload) {
+  const parsed = parseIdPayload(payload);
+  return parsed.slot !== undefined ? parsed.slot : parsed.id;
+}
+
 function claudeCommands({ winMan, log, notify, slots }) {
   function findSession(id) {
     let res;
@@ -85,8 +97,7 @@ function claudeCommands({ winMan, log, notify, slots }) {
      * что человек видел в момент нажатия.
      */
     async 'claude-focus-slot'(payload) {
-      const parsed = parseIdPayload(payload);
-      const slot = parsed.slot !== undefined ? parsed.slot : parsed.id;
+      const slot = slotFromPayload(payload);
       const id = sessionIdForSlot(slots(), slot);
       if (!id) {
         log(`claude-wt: slot ${slot} is empty`, 'warn');
@@ -152,4 +163,4 @@ function claudeCommands({ winMan, log, notify, slots }) {
   };
 }
 
-export { claudeCommands, parseIdPayload };
+export { claudeCommands, parseIdPayload, slotFromPayload };

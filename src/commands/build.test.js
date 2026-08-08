@@ -66,4 +66,32 @@ describe('buildCommandMap', () => {
   it('без publishDone store всё равно работает', async () => {
     await expect(makeMap().store()).resolves.not.toThrow();
   });
+
+  it('плитка гасится по разобранному номеру слота, а не по сырому телу', async () => {
+    // `Number('{"slot":3}')` — NaN, slotOff не находил слота, и плитка на
+    // панели оставалась гореть.
+    vi.useFakeTimers();
+    try {
+      const slotOff = vi.fn();
+      const haExport = { slots: () => [], slotOff, refresh: vi.fn() };
+      await makeMap({ haExport })['claude-focus-slot']('{"slot":3}');
+      vi.advanceTimersByTime(1000);
+      expect(slotOff).toHaveBeenCalledWith(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('голый номер слота строкой гасит ту же плитку', async () => {
+    vi.useFakeTimers();
+    try {
+      const slotOff = vi.fn();
+      const haExport = { slots: () => [], slotOff, refresh: vi.fn() };
+      await makeMap({ haExport })['claude-focus-slot']('3');
+      vi.advanceTimersByTime(1000);
+      expect(slotOff).toHaveBeenCalledWith('3');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -5,7 +5,7 @@
  * mqtt/ он тянул бы за собой клиент брокера, который ему не нужен.
  */
 import { windowCommands } from './window-commands.js';
-import { claudeCommands } from './claude-commands.js';
+import { claudeCommands, slotFromPayload } from './claude-commands.js';
 import { throttlePress } from './press-throttle.js';
 import { createDelayedSlotOff } from './delayed-slot-off.js';
 
@@ -52,7 +52,10 @@ function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = 
     'claude-focus-slot': throttlePress(
       withRefresh(async (payload) => {
         await claude['claude-focus-slot'](payload);
-        schedulePanelSlotOff(typeof payload === 'object' ? payload?.slot : payload);
+        // Тело разбираем тем же разбором, что и сам обработчик: сырое
+        // `{"slot":3}` давало Number(...) === NaN, слот не находился, и
+        // плитка на панели оставалась гореть.
+        schedulePanelSlotOff(slotFromPayload(payload));
       }),
       { onDrop: (payload) => log(`claude-focus-slot ${payload} — отброшено, не чаще раза в секунду`, 'warn') },
     ),
