@@ -51,6 +51,29 @@ describe('claude-focus', () => {
     expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('zzz'));
     expect(d.winMan.focusWindowById).not.toHaveBeenCalled();
   });
+
+  it('переключает виртуальный стол раньше, чем фокусирует окно', async () => {
+    const d = deps();
+    await claudeCommands(d)['claude-focus']({ id: 'abc' });
+    expect(d.winMan.virtualDesktop.GoToDesktopNumber).toHaveBeenCalledWith(1);
+    const switchOrder = d.winMan.virtualDesktop.GoToDesktopNumber.mock.invocationCallOrder[0];
+    const focusOrder = d.winMan.focusWindowById.mock.invocationCallOrder[0];
+    expect(switchOrder).toBeLessThan(focusOrder);
+  });
+
+  it('не переключает стол, если он неизвестен', async () => {
+    const d = deps({
+      winMan: {
+        virtualDesktop: {
+          GetWindowDesktopNumber: vi.fn().mockResolvedValue(null),
+          GoToDesktopNumber: vi.fn().mockResolvedValue(undefined),
+        },
+      },
+    });
+    await claudeCommands(d)['claude-focus']({ id: 'abc' });
+    expect(d.winMan.virtualDesktop.GoToDesktopNumber).not.toHaveBeenCalled();
+    expect(d.winMan.focusWindowById).toHaveBeenCalledWith(42);
+  });
 });
 
 describe('claude-focus-slot', () => {
