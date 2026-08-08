@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { loadSessionIndex } from './sessions.js';
+import { loadSessionIndex, invalidateSessionIndex } from './sessions.js';
 
 // loadSessionIndex keeps its cache at module scope, keyed by path. Every test
 // therefore writes to its own file inside the temp dir, so nothing leaks from
@@ -65,6 +65,32 @@ describe('loadSessionIndex', () => {
     const index = loadSessionIndex(p);
     expect(index.home).toEqual({ id: 's0', cwd: '/p0', title: 'home', ambiguous: false });
     expect(index.ccfzf).toBeUndefined();
+  });
+
+  it('re-reads the file once the cached index is older than its max age', () => {
+    const p = freshPath();
+    writeDump(p, dumpWith('ccfzf'), T0);
+    const base = 1_000_000;
+    loadSessionIndex(p, '', base);
+    // Тот же mtime, другое содержимое — ровно то, что видит долгоживущий
+    // процесс на сетевом диске: клиент SMB отдаёт ему закэшированные атрибуты,
+    // и кэш, который верит одному mtime, привязывает окна к сессиям, которых в
+    // дампе давно нет.
+    writeDump(p, dumpWith('home'), T0);
+    expect(loadSessionIndex(p, '', base + 1000).home).toBeUndefined();
+    expect(loadSessionIndex(p, '', base + 20000).home)
+      .toEqual({ id: 's0', cwd: '/p0', title: 'home', ambiguous: false });
+  });
+
+  it('invalidateSessionIndex forces a re-read even within the age window', () => {
+    const p = freshPath();
+    writeDump(p, dumpWith('ccfzf'), T0);
+    const base = 1_000_000;
+    loadSessionIndex(p, '', base);
+    writeDump(p, dumpWith('home'), T0);
+    invalidateSessionIndex();
+    expect(loadSessionIndex(p, '', base + 1000).home)
+      .toEqual({ id: 's0', cwd: '/p0', title: 'home', ambiguous: false });
   });
 
   it('yields an empty index for a path that does not exist', () => {
@@ -133,5 +159,39 @@ describe('warning throttle', () => {
     vi.spyOn(Date, 'now').mockReturnValue(base + 6 * 60 * 1000);
     load(missing);
     expect(errors).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('loadSessionIndex against a lying read cache', () => {
+  // Кэш SMB отдаёт содержимое поколением назад, и отличить это чтение от
+  // честного нельзя — поэтому дамп читается только после сброса кэша. Локально
+  // сбрасывать нечего; здесь проверяется, что сам сброс ничего не ломает.
+  it('reads the dump after asking the OS to drop what it cached', () => {
+    const p = freshPath();
+    writeDump(p, dumpWith('ccfzf'), T0);
+    expect(loadSessionIndex(p).ccfzf.id).toBe('s0');
+  });
+
+  it('leaves the file it opened untouched', () => {
+    // Открытие на запись — единственный способ сломать read lease, но писать в
+    // дамп мы не имеем права: его владелец на той стороне.
+    const p = freshPath();
+    writeDump(p, dumpWith('ccfzf'), T0);
+    const before = fs.readFileSync(p, 'utf8');
+    loadSessionIndex(p);
+    expect(fs.readFileSync(p, 'utf8')).toBe(before);
+  });
+
+  it('still reads a dump it cannot open for writing', () => {
+    const p = freshPath();
+    writeDump(p, dumpWith('ccfzf'), T0);
+    fs.chmodSync(p, 0o444);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(loadSessionIndex(p).ccfzf.id).toBe('s0');
+    } finally {
+      errors.mockRestore();
+      fs.chmodSync(p, 0o644);
+    }
   });
 });

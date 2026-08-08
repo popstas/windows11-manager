@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { indexSessions, compareSessions } from './sessions-helpers.js';
+import { indexSessions, indexBackgroundAgents, compareSessions } from './sessions-helpers.js';
 
 const session = (over = {}) => ({
   id: 'a1', cwd: '/home/popstas/p', title: 'ccfzf', mtime: 100, live: false, ...over,
@@ -72,5 +72,88 @@ describe('indexSessions', () => {
 describe('compareSessions', () => {
   it('returns 0 for sessions with equal liveness and mtime', () => {
     expect(compareSessions(session(), session({ id: 'b1' }))).toBe(0);
+  });
+});
+
+describe('indexSessions with agent activity', () => {
+  const dump = {
+    sessions: [
+      { id: 'stale', title: 'shared', cwd: '/a', live: true, mtime: 1000 },
+      { id: 'working', title: 'shared', cwd: '/a', live: false, mtime: 2000 },
+    ],
+  };
+
+  it('believes the hook over the dump when they disagree about who is alive', () => {
+    // Measured 2026-08-01: two sessions shared the title `shared`, the one
+    // actually running was marked live=false and a dead one carried
+    // live=true. The hook fires on every tool call of a real agent, so a
+    // fresh write from it outweighs any flag in the dump.
+    const activity = id => (id === 'working' ? 5000 : 0);
+    expect(indexSessions(dump, activity).shared.id).toBe('working');
+  });
+
+  it('falls back to the dump when the hook knows nothing', () => {
+    expect(indexSessions(dump, () => 0).shared.id).toBe('stale');
+    expect(indexSessions(dump).shared.id).toBe('stale');
+  });
+
+  it('prefers the more recent of two sessions the hook has seen', () => {
+    const activity = id => (id === 'working' ? 9000 : 8000);
+    expect(indexSessions(dump, activity).shared.id).toBe('working');
+  });
+
+  it('never asks about a title only one session claims', () => {
+    // Every question is a stat over a network share; with no rival there is
+    // nothing to decide.
+    const asked = [];
+    const one = { sessions: [{ id: 'solo', title: 'alone', cwd: '/a', live: true, mtime: 1 }] };
+    indexSessions(one, id => { asked.push(id); return 0; });
+    expect(asked).toEqual([]);
+  });
+
+  it('still reports a tie as ambiguous', () => {
+    const tied = {
+      sessions: [
+        { id: 'a', title: 'same', cwd: '/x', live: true, mtime: 100 },
+        { id: 'b', title: 'same', cwd: '/x', live: true, mtime: 100 },
+      ],
+    };
+    expect(indexSessions(tied, () => 0).same.ambiguous).toBe(true);
+  });
+});
+
+describe('background agents', () => {
+  const bg = (over = {}) => session({
+    id: 'child', kind: 'background', parent: 'a1', live: true, mtime: 200, ...over,
+  });
+
+  it('keeps a background agent out of the title index', () => {
+    // Форк наследует заголовок родителя и работает вместо него, то есть по
+    // любому признаку выигрывает окно, в котором его нет.
+    const index = indexSessions({ sessions: [session(), bg()] });
+    expect(index.ccfzf.id).toBe('a1');
+  });
+
+  it('leaves a title with nothing but background agents unindexed', () => {
+    expect(indexSessions({ sessions: [bg()] })).toEqual({});
+  });
+
+  it('groups background agents under their parent, newest first', () => {
+    const agents = indexBackgroundAgents({ sessions: [
+      session(),
+      bg({ id: 'old', mtime: 100 }),
+      bg({ id: 'new', mtime: 900 }),
+    ] });
+    expect(agents.a1.map(a => a.id)).toEqual(['new', 'old']);
+    expect(agents.a1[0]).toEqual({ id: 'new', title: 'ccfzf', live: true });
+  });
+
+  it('ignores a background agent whose parent is unknown', () => {
+    expect(indexBackgroundAgents({ sessions: [bg({ parent: '' })] })).toEqual({});
+  });
+
+  it('yields nothing for a dump without agents', () => {
+    expect(indexBackgroundAgents({ sessions: [session()] })).toEqual({});
+    expect(indexBackgroundAgents(null)).toEqual({});
   });
 });

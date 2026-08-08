@@ -76,6 +76,39 @@ describe('planRestore', () => {
       '--session a1 --title a1',
     ]);
   });
+
+  it('resolves profile per slot cwd', () => {
+    const st = state({
+      lastLayout: ['a1', 'b2'],
+      slots: {
+        a1: slot({ titles: ['home'], cwd: '/p/home' }),
+        b2: slot({ titles: ['ez'], cwd: '/p/ez' }),
+      },
+    });
+    const launch = { command: 'wt.exe', args: ['-w', '-1', 'ssh', '-t', 'ccfzf --session {id}'] };
+    const resolveProfile = cwd => cwd === '/p/home' ? 'home' : 'popstas';
+    const plan = planRestore({ state: st, launch, resolveProfile });
+    expect(plan[0].args).toEqual([
+      '-w', '-1', '-p', 'home', 'ssh', '-t', 'ccfzf --session a1',
+    ]);
+    expect(plan[1].args).toEqual([
+      '-w', '-1', '-p', 'popstas', 'ssh', '-t', 'ccfzf --session b2',
+    ]);
+  });
+
+  it('applies WT profile after {id} substitution', () => {
+    const launch = { command: 'wt.exe', args: ['-w', '-1', 'ssh', '-t', 'ccfzf --session {id}'] };
+    expect(planRestore({ state: state(), launch, resolveProfile: () => 'popstas' })[0].args).toEqual([
+      '-w', '-1', '-p', 'popstas', 'ssh', '-t', 'ccfzf --session a1',
+    ]);
+  });
+
+  it('strips baked-in -p when profile is empty', () => {
+    const launch = { command: 'wt.exe', args: ['-w', '-1', '-p', 'old', 'ssh'] };
+    expect(planRestore({ state: state(), launch, resolveProfile: () => '' })[0].args).toEqual([
+      '-w', '-1', 'ssh',
+    ]);
+  });
 });
 
 describe('partitionPlan', () => {

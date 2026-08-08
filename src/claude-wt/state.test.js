@@ -22,7 +22,7 @@ describe('writeState / readState round-trip', () => {
     const state = {
       version: 1,
       slots: {
-        s1: { titles: ['a'], cwd: '/p', bounds: { x: 0, y: 0, width: 10, height: 10 }, desktop: 1, lastSeen: 5 },
+        s1: { titles: ['a'], cwd: '/p', bounds: { x: 0, y: 0, width: 10, height: 10 }, desktop: 1, focusedAt: 0, lastSeen: 5 },
       },
       lastLayout: ['s1'],
       updated: 5,
@@ -41,7 +41,7 @@ describe('writeState / readState round-trip', () => {
 describe('writeState atomicity', () => {
   const original = {
     version: 1,
-    slots: { s1: { titles: ['a'], cwd: '/p', bounds: { x: 1, y: 2, width: 30, height: 40 }, desktop: 1, lastSeen: 5 } },
+    slots: { s1: { titles: ['a'], cwd: '/p', bounds: { x: 1, y: 2, width: 30, height: 40 }, desktop: 1, focusedAt: 0, lastSeen: 5 } },
     lastLayout: ['s1'],
     updated: 5,
   };

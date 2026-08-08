@@ -121,12 +121,35 @@ module.exports = {
     stableTicks: 2,
     sessionsFile: 'V:\\.ccfzf.sessions.json',
     statePath: 'C:\\Users\\popstas\\AppData\\Local\\windows11-manager\\claude-wt.json',
+    // Published for readers on the agent's side: which session has a window
+    // open right now, on which desktop, on which host. ccfzf picks it up to
+    // mark its session list; ccfzf-picker then knows whether that window is on
+    // the machine in front of the human, and which pid to hand the foreground
+    // to. Goes on the share, because the reader lives on the other machine.
+    // Empty (the default) — do not write it at all.
+    windowsFile: 'V:\\.ccfzf.sessions.claude-wt.json',
     desktop: true, // return the window to its virtual desktop too
     debug: false,  // log terminal titles that could not be matched to a session
+    // profile: 'your_wt_profile', // optional; omit → no -p
+    // projects: [
+    //   { name: 'home', cwd: '/path/to/home', hotkey: 'Ctrl+F11', profile: 'home' },
+    // ],
     launch: {
       command: 'wt.exe',
-      args: ['-w', '-1', '-p', 'popstas', 'ssh', '-A', 'popstas@pc-virt.popstas.pro',
+      args: ['-w', '-1', 'ssh', '-A', 'popstas@pc-virt.popstas.pro',
              '-t', 'ccfzf --session {id} --kiosk'],
+    },
+    // Fresh Claude in a project folder (project hotkeys). {cwd} and {name}
+    // are substituted; wrap them in single quotes in the remote command.
+    // Run through an *interactive* shell with the cd inside it: `ssh host cmd`
+    // is non-interactive (zsh reads only .zshenv), so rc-file exports and
+    // chpwd hooks — OTEL_RESOURCE_ATTRIBUTES project= among them — never ran.
+    // cwd/name are positional args: quotes nested inside the inner script do
+    // not survive Windows Terminal's command line on the way to ssh.
+    launchNew: {
+      command: 'wt.exe',
+      args: ['-w', '-1', 'ssh', '-A', 'popstas@pc-virt.popstas.pro',
+             '-t', `exec $SHELL -ic 'cd -- "$1" && exec claude -n "$2"' claude-wt '{cwd}' '{name}'`],
     },
     restore: { auto: false, windowTimeoutMs: 30000, launchDelayMs: 2000, settleMs: 500 },
   },

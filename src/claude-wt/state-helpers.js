@@ -19,13 +19,17 @@ function isBounds(b) {
 }
 
 /** Update only the fields that were passed; everything else is carried over. */
-function upsertSlot(slot, { title, cwd, bounds, desktop, now } = {}) {
-  const base = slot ?? { titles: [], cwd: '', bounds: null, desktop: null, lastSeen: 0 };
+function upsertSlot(slot, { title, cwd, bounds, desktop, focusedAt, now } = {}) {
+  const base = slot ?? { titles: [], cwd: '', bounds: null, desktop: null, focusedAt: 0, lastSeen: 0 };
   return {
     titles: title ? rememberTitle(base.titles, title) : base.titles,
     cwd: cwd ?? base.cwd,
     bounds: bounds ?? base.bounds,
     desktop: desktop ?? base.desktop,
+    // Когда окно сессии последний раз выходило на передний план. Единственный
+    // сигнал «человек это увидел», который вообще есть: Windows по нему же
+    // гасит подсветку кнопки на таскбаре.
+    focusedAt: focusedAt ?? base.focusedAt ?? 0,
     lastSeen: now ?? base.lastSeen,
   };
 }
@@ -41,6 +45,9 @@ function normalizeState(raw) {
       cwd: typeof slot.cwd === 'string' ? slot.cwd : '',
       bounds: slot.bounds,
       desktop: Number.isFinite(slot.desktop) ? slot.desktop : null,
+      // Файлы, записанные до появления поля, просто не знают о фокусе — это
+      // «не смотрели», ровно то, что означает ноль.
+      focusedAt: Number.isFinite(slot.focusedAt) ? slot.focusedAt : 0,
       lastSeen: Number.isFinite(slot.lastSeen) ? slot.lastSeen : 0,
     };
   }

@@ -57,12 +57,6 @@ function startHttpServer(port = 9722) {
           res.end(JSON.stringify({ ok: true, ...result }));
           return;
         }
-        case '/claude-wt/status': {
-          const { claudeWtStatus } = await import('./claude-wt/index.js');
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(claudeWtStatus()));
-          return;
-        }
         default:
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Not found' }));

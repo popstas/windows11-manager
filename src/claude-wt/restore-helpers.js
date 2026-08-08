@@ -1,5 +1,7 @@
 /** Pure helper functions for claude-wt crash restore. No external I/O. */
 
+import { planWtLaunch } from './project-helpers.js';
+
 function bootTimeSec(uptimeSec, nowMs) {
   return Math.floor(nowMs / 1000) - Math.floor(uptimeSec);
 }
@@ -35,18 +37,26 @@ function resolveRestoreIds({ state, sessionIds }) {
   };
 }
 
-function planRestore({ state, launch, sessionIds }) {
+function planRestore({ state, launch, sessionIds, resolveProfile }) {
+  const resolve = typeof resolveProfile === 'function' ? resolveProfile : () => '';
   return (resolveRestoreIds({ state, sessionIds }).ids)
     .map(sessionId => ({ sessionId, slot: state.slots?.[sessionId] }))
     .filter(({ slot }) => Boolean(slot))
-    .map(({ sessionId, slot }) => ({
-      sessionId,
-      title: slot.titles[0],
-      command: launch.command,
-      args: launch.args.map(arg => arg.replaceAll('{id}', sessionId)),
-      bounds: slot.bounds,
-      desktop: slot.desktop,
-    }));
+    .map(({ sessionId, slot }) => {
+      const planned = planWtLaunch({
+        launch,
+        vars: { id: sessionId },
+        profile: resolve(slot.cwd ?? ''),
+      });
+      return {
+        sessionId,
+        title: slot.titles[0],
+        command: planned.command,
+        args: planned.args,
+        bounds: slot.bounds,
+        desktop: slot.desktop,
+      };
+    });
 }
 
 /**
