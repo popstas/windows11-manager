@@ -82,6 +82,21 @@ async function start() {
         if (level === 'error') console.error(`[mqtt] ${message}`);
         else console.log(`[mqtt] ${message}`);
       };
+      // Общая сетка под всеми долгоживущими обработчиками этого процесса.
+      // Здесь живут разом клиент MQTT, экспорт в Home Assistant, статистика
+      // окон, автоматическая расстановка и сторож демона claude-wt, а node 22
+      // на необработанном отклонении выходит целиком и молча. Tauri при этом
+      // поднимает заново только демона claude-wt, но не эту службу, так что
+      // одно упавшее обещание в расстановщике уносило бы вообще всё — и
+      // человек узнавал бы об этом по остывшей панели.
+      process.on('unhandledRejection', (reason) => {
+        const detail = reason instanceof Error ? (reason.stack || reason.message) : String(reason);
+        log(`необработанное отклонение обещания, служба продолжает работу: ${detail}`, 'error');
+      });
+      // uncaughtException сюда намеренно не добавлен: синхронные исключения
+      // ловятся на месте (обработчики таймеров), а глушить их скопом — значит
+      // оставлять процесс жить в состоянии, про которое ничего не известно.
+
       const service = startMqttService({ winMan, config: winMan.getConfig(), log });
       // stop() — единственный, кто публикует availability: offline. Без этих
       // подписок он не звался никогда, и Home Assistant показывал все
