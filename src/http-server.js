@@ -82,6 +82,9 @@ function startHttpServer(port = 9722) {
     try {
       body = await readBody(req);
     } catch (err) {
+      // Ответ 400 видит только тот, кто послал запрос; на машине, где сервер
+      // работает, о битом теле не оставалось никакого следа.
+      log(`POST ${req.url}: тело не разобрано — ${err.message}`, 'error');
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
       return;
@@ -89,6 +92,7 @@ function startHttpServer(port = 9722) {
     log(`POST ${req.url}: ${JSON.stringify(body)}`);
     const result = await router.dispatch(command, body);
     if (!result.ok) {
+      log(`POST ${req.url}: ${result.error}`, 'error');
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: result.error }));
       return;
