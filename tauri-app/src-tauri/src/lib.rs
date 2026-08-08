@@ -738,9 +738,38 @@ fn toggle_claude_wt(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) 
     let _ = app.emit("claude-wt-toggled", running);
 }
 
+/// Всё, что нужно для запуска службы, собранное до взятия мьютекса.
+///
+/// Ходит в хранилище настроек и — если пути проекта нет — открывает окно
+/// настроек. Второе и есть причина, по которой сбор вынесен наружу: webview
+/// строится только на главном потоке, и вызов из фоновой задачи ждёт, пока тот
+/// освободится. Главный поток в этот момент вполне может стоять в обработчике
+/// трея на мьютексе `AppState` — тогда фоновая задача держит мьютекс и ждёт
+/// главный поток, а главный поток ждёт мьютекс. Под замком не должно
+/// происходить ничего, что трогает UI.
+fn mqtt_launch_config(app: &tauri::AppHandle) -> Option<(Settings, String)> {
+    let settings = load_settings_from_store(app);
+    if settings.mqtt_host.is_empty() || settings.mqtt_topic.is_empty() {
+        warn!("MQTT host or topic not configured");
+        return None;
+    }
+
+    let project_path = get_project_path(app);
+    if project_path.is_empty() {
+        warn!("Project path not configured, opening settings");
+        open_settings_window(app);
+        return None;
+    }
+
+    Some((settings, project_path))
+}
+
 fn start_mqtt_service(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
+    let Some((settings, project_path)) = mqtt_launch_config(app) else {
+        return;
+    };
     let mut app_state = state.lock().unwrap();
-    start_mqtt_locked(app, &mut app_state);
+    start_mqtt_locked(app, &mut app_state, settings, project_path);
 }
 
 /// Подъём службы MQTT через `delay_secs`. Как и у демона, перед подъёмом ещё раз
@@ -750,35 +779,55 @@ fn schedule_mqtt_restart(app: &tauri::AppHandle, delay_secs: u64) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
-        let running = {
+        {
             let state = app.state::<Mutex<AppState>>();
-            let mut s = state.lock().unwrap();
+            let s = state.lock().unwrap();
             if !s.mqtt_desired || s.mqtt_running {
                 return;
             }
-            start_mqtt_locked(&app, &mut s);
+        }
+        // Настройки спрашиваем с отпущенным мьютексом (см. mqtt_launch_config) и
+        // уже после проверки «служба ещё нужна»: иначе выключенная из трея
+        // служба открывала бы человеку окно настроек через минуту после
+        // выключения.
+        let Some((settings, project_path)) = mqtt_launch_config(&app) else {
+            return;
+        };
+        let running = {
+            let state = app.state::<Mutex<AppState>>();
+            let mut s = state.lock().unwrap();
+            if !s.mqtt_desired {
+                return;
+            }
+            // Между проверкой и этим местом службу могли поднять руками — от
+            // второго ребёнка спасает запрет внутри start_mqtt_locked.
+            start_mqtt_locked(&app, &mut s, settings, project_path);
             s.mqtt_running
         };
         update_tray_label(&app, ChildKind::Mqtt, running);
     });
 }
 
-/// Запуск службы MQTT при уже взятом мьютексе.
+/// Запуск службы MQTT при уже взятом мьютексе. Настройки и путь проекта берутся
+/// готовыми (`mqtt_launch_config`): здесь, под замком, ходить за ними нельзя.
 ///
 /// Как и у демона claude-wt, неудача самого `spawn` (нет node в PATH, кривой
 /// путь проекта) считается попыткой: следующая уезжает по откату, иначе цикл
 /// «не смог запустить → пробуем снова» крутился бы без паузы.
-fn start_mqtt_locked(app: &tauri::AppHandle, s: &mut AppState) {
-    let settings = load_settings_from_store(app);
-    if settings.mqtt_host.is_empty() || settings.mqtt_topic.is_empty() {
-        warn!("MQTT host or topic not configured");
-        return;
-    }
-
-    let project_path = get_project_path(app);
-    if project_path.is_empty() {
-        warn!("Project path not configured, opening settings");
-        open_settings_window(app);
+fn start_mqtt_locked(
+    app: &tauri::AppHandle,
+    s: &mut AppState,
+    settings: Settings,
+    project_path: String,
+) {
+    // Второй такой же ребёнок хуже, чем ни одного: два процесса пишут одни и те
+    // же retained-топики Home Assistant, каждый со своим порядком слотов, и
+    // каждый заводит своего сторожа демона. Ручка при этом теряется —
+    // `mqtt_child` переписывается вторым, и на выходе из приложения убьют
+    // только его, а первый останется висеть. Запрет стоит здесь, а не у
+    // вызывающих: их трое, и мьютекс каждый берёт по-своему.
+    if s.mqtt_running {
+        warn!("MQTT service already running, not starting a second one");
         return;
     }
 
@@ -826,11 +875,6 @@ fn start_mqtt_locked(app: &tauri::AppHandle, s: &mut AppState) {
     }
 }
 
-fn stop_mqtt_service(state: &State<'_, Mutex<AppState>>) {
-    let mut app_state = state.lock().unwrap();
-    stop_mqtt_state(&mut app_state);
-}
-
 /// Остановка службы по воле оператора (или на выходе из приложения): подъём
 /// после неё не нужен, и «Stop MQTT» в трее обязан значить именно stop.
 fn stop_mqtt_state(app_state: &mut AppState) {
@@ -847,13 +891,22 @@ fn stop_mqtt_state(app_state: &mut AppState) {
 }
 
 fn toggle_mqtt(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
-    let running = state.lock().unwrap().mqtt_running;
-    if running {
-        stop_mqtt_service(state);
-    } else {
-        start_mqtt_service(app, state);
+    // Настройки собираются до мьютекса — и потому, что под замком нельзя
+    // трогать UI, и потому, что решение «стоп или старт» обязано приниматься
+    // под тем же замком, под которым потом действуют. Прежний код читал
+    // `mqtt_running` под одним замком, а запускал под другим: в промежутке
+    // помещался подъём из фоновой задачи, и служба поднималась дважды.
+    let launch = mqtt_launch_config(app);
+
+    let mut app_state = state.lock().unwrap();
+    if app_state.mqtt_running {
+        stop_mqtt_state(&mut app_state);
+    } else if let Some((settings, project_path)) = launch {
+        start_mqtt_locked(app, &mut app_state, settings, project_path);
     }
-    let running = state.lock().unwrap().mqtt_running;
+    let running = app_state.mqtt_running;
+    drop(app_state);
+
     update_tray_label(app, ChildKind::Mqtt, running);
 }
 
