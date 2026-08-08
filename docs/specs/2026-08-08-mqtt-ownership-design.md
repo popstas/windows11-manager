@@ -43,33 +43,64 @@ obs, tts, keys, mouse, clipboard, filewatch, gpt).
 
 ## Карта топиков
 
-Переезжают в `windows11-manager`:
+**Сначала о том, чего в `windows.js` нет.** Объект `stdinActions`
+(`windows.js:1038-1068`) выглядит списком топиков, но топиками не является:
+`mqtt-bridge.js` получает эти ключи от Rust через stdin (`picker_send`,
+`src-tauri/src/main.rs:273`) — это нажатия в старом webview-пикере, в трее и на
+хоткеях. Настоящие MQTT-подписки — отдельный массив, `windows.js:1076-1153`.
+
+Живые MQTT-подписки, которые переезжают в `windows11-manager`:
 
 | Группа | Топики |
 |---|---|
-| Окна | `autoplace`, `store`, `restore`, `clear`, `open_default`, `reload` |
-| claude-wt | `claude-restore`, `claude-restore-one`, `claude-focus`, `claude-focus-project`, `claude-focus-slot`, `claude-session-unread`, `claude-session-open`, `claude-snapshots`, `claude-snapshot-restore` |
+| Окна | `autoplace`, `place`, `store`, `restore`, `clear`, `open`, `focus` |
+| claude-wt | `claude-focus`, `claude-focus-slot` (с ограничителем), `claude-snapshot-restore` (с ограничителем) |
 | Home Assistant | discovery, состояния слотов, командные топики переключателей 1..N |
 
 `place`, `placeAll`, `desktop`, `claude-wt-restore` у менеджера уже есть в
-`ws-client.js` — они просто переезжают в роутер.
+`ws-client.js` — они просто переезжают в роутер. `open` и `focus` у него не
+реализованы вовсе и пишутся заново поверх `openStore()` и `focusWindow()`.
 
-Удаляются совсем (подача старого пикера `windows-mqtt`, отправителя нет):
-`claude-sessions-start`, `claude-sessions-stop`, `claude-sessions-sort-cycle`,
-`claude-sessions-toggle`, `claude-session-actions`.
+Заводятся заново, MQTT-подписки у них не было ни у кого:
+
+- **`claude-session-unread`.** `ccfzf-picker` его публикует
+  (`src-tauri/src/mqtt.rs:26`), а подписчика нет — в `windows.js` есть только
+  одноимённый `stdinAction` старого пикера. То есть отметка «непросмотрено» с
+  чужой машины сегодня пропадает молча. Это ровно тот случай, который уже
+  описан в комментарии `windows.js:1088-1093` про `claude-focus`: «пока этой
+  подписки не было, публикация пропадала молча». Второй раз тот же баг.
+- **`claude-session-open`** — под новое действие пикера «открыть на машине
+  трекера».
+
+Умирают вместе с webview старого пикера (топиков у них не было, только
+`stdinActions`): `claude-sessions-start`, `claude-sessions-stop`,
+`claude-sessions-sort-cycle`, `claude-sessions-toggle`,
+`claude-session-actions`, `claude-snapshots`, `claude-restore`,
+`claude-restore-one`, `claude-focus-project`, `open_default`, `reload`.
+
+Из них `claude-focus-project` и `claude-restore-one` остаются **функциями** —
+первая нужна проектным хоткеям `ccfzf-picker`, вторая зовётся изнутри
+`focusOrRestoreClaudeSession`. У менеджера для них уже есть команды CLI
+(`claude-wt open-project`, `claude-wt restore`), и отдельные MQTT-топики им не
+нужны.
 
 Остаются в `windows-mqtt`: `sleep`, `restart`, `shutdown`, `restart_restore`.
 Добавляется ответный `windows/store/done` — его публикует менеджер, слушает
 `windows-mqtt` (см. «Развязка»).
 
-**`claude-session-unread` живой.** Его публикует сам `ccfzf-picker`
-(`src-tauri/src/mqtt.rs:26`) наряду с `claude-focus` и
-`claude-snapshot-restore`. В группу мёртвых он попал по ошибке при разборе;
-удалять нельзя.
+**Ограничитель нажатий переезжает вместе с топиками.** `claude-focus-slot` и
+`claude-snapshot-restore` обёрнуты в `throttlePress` (`modules/press-throttle.js`)
+— строка на плате openHASP это физическая кнопка, и палец, снятый неровно, даёт
+две-три посылки подряд. `claude-focus` намеренно без ограничителя: там источник
+— Enter в списке пикера, дребезжать нечему. Модуль `press-throttle.js`
+переезжает в `windows11-manager` вместе с ними; в `windows-mqtt` он остаётся
+тоже — его использует `keys/press-throttled`, который никуда не едет.
 
-**`claude-focus-slot` подписывается отдельно** (`windows.js:1083`), не через
-общую карту: это нажатия на плате openHASP. Командные топики HA-переключателей
-регистрируются ещё одним списком (`windows.js:1110`).
+**Командные топики HA-переключателей** регистрируются поимённо
+(`windows.js:1110`): диспетчер ищет обработчик точным совпадением и шаблон с
+`+` не разрешает. Новый клиент подписывается на `${base}/#`, поэтому
+ограничение снимается, но карта роутера всё равно должна разбирать номер слота
+из топика (`claudeSlotCommand`, `windows.js:643`).
 
 ## Роутер команд и транспорты
 
