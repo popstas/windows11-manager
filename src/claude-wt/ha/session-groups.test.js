@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   labelSessions, chooseAction, resolveDesktopSwitch,
-  normalizeSort, DEFAULT_SORT,
+  normalizeSort, DEFAULT_SORT, compareSessions,
 } from './session-groups.js';
 
 const s = (over) => ({
@@ -41,6 +41,67 @@ describe('session-groups', () => {
   it('normalizeSort falls back to cost', () => {
     expect(normalizeSort('nope')).toBe(DEFAULT_SORT);
     expect(normalizeSort('recent')).toBe('recent');
+  });
+
+  // Прямое покрытие compareSessions — раньше все пять режимов проверялись
+  // только через groupSessions, которую снесли вместе со старым пикером.
+  // compareSessions пережила чистку и до сих пор двигает порядок слотов на
+  // панели (session-slots.js), поэтому держит своё покрытие само по себе,
+  // независимо от того, что происходит с её вызывающими.
+  it('compareSessions sorts by cost desc', () => {
+    const arr = [
+      s({ id: 'cheap', agentCostUsd: 1 }),
+      s({ id: 'pricey', agentCostUsd: 40 }),
+      s({ id: 'mid', agentCostUsd: 12 }),
+    ];
+    arr.sort((a, b) => compareSessions(a, b, 'cost'));
+    expect(arr.map(x => x.id)).toEqual(['pricey', 'mid', 'cheap']);
+  });
+
+  it('compareSessions oldest puts earliest started first', () => {
+    const arr = [
+      s({ id: 'new', agentStarted: 300 }),
+      s({ id: 'old', agentStarted: 100 }),
+      s({ id: 'mid', agentStarted: 200 }),
+    ];
+    arr.sort((a, b) => compareSessions(a, b, 'oldest'));
+    expect(arr.map(x => x.id)).toEqual(['old', 'mid', 'new']);
+  });
+
+  it('compareSessions newest puts latest started first', () => {
+    const arr = [
+      s({ id: 'old', agentStarted: 100 }),
+      s({ id: 'new', agentStarted: 300 }),
+    ];
+    arr.sort((a, b) => compareSessions(a, b, 'newest'));
+    expect(arr.map(x => x.id)).toEqual(['new', 'old']);
+  });
+
+  it('compareSessions recent sorts by lastActivity desc', () => {
+    const arr = [
+      s({ id: 'stale', lastActivity: 10 }),
+      s({ id: 'fresh', lastActivity: 90 }),
+    ];
+    arr.sort((a, b) => compareSessions(a, b, 'recent'));
+    expect(arr.map(x => x.id)).toEqual(['fresh', 'stale']);
+  });
+
+  it('compareSessions name sorts by label ascending', () => {
+    const arr = [
+      s({ id: 'b', title: 'zeta' }),
+      s({ id: 'a', title: 'alpha' }),
+    ];
+    arr.sort((a, b) => compareSessions(a, b, 'name'));
+    expect(arr.map(x => x.id)).toEqual(['a', 'b']);
+  });
+
+  it('compareSessions sinks a session with no sort key to the end', () => {
+    const arr = [
+      s({ id: 'known', agentCostUsd: 5 }),
+      s({ id: 'blank', agentCostUsd: 0 }),
+    ];
+    arr.sort((a, b) => compareSessions(a, b, 'cost'));
+    expect(arr.map(x => x.id)).toEqual(['known', 'blank']);
   });
 
   it('chooseAction focuses a session that is open', () => {
