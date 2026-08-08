@@ -1,6 +1,8 @@
+mod children;
 mod logging;
 mod updater;
 
+use children::{next_restart_attempt, pump_output, restart_delay_secs, ChildKind};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
@@ -25,6 +27,7 @@ pub struct Settings {
     pub mqtt_username: String,
     pub mqtt_password: String,
     pub mqtt_topic: String,
+    pub claude_wt_enabled: bool,
     pub restore_on_start: bool,
     pub store_before_exit: bool,
     pub store_interval: u32,
@@ -46,6 +49,10 @@ impl Default for Settings {
             mqtt_username: String::new(),
             mqtt_password: String::new(),
             mqtt_topic: String::new(),
+            // По умолчанию включено: на демоне claude-wt держится вся цепочка
+            // (панель openHASP и пикер сессий), и выключенным он полезен только
+            // при отладке.
+            claude_wt_enabled: true,
             restore_on_start: true,
             store_before_exit: true,
             store_interval: 300,
@@ -65,6 +72,7 @@ mod tests {
         let s = Settings::default();
         assert_eq!(s.mqtt_port, 1883);
         assert!(!s.mqtt_enabled);
+        assert!(s.claude_wt_enabled);
         assert!(s.restore_on_start);
         assert!(s.store_before_exit);
         assert_eq!(s.autoplacer_interval, 0);
@@ -78,15 +86,90 @@ mod tests {
 struct AppState {
     autoplacer_running: bool,
     autoplacer_child: Option<tauri_plugin_shell::process::CommandChild>,
+    /// Номер поколения ребёнка. Событие о смерти приходит асинхронно и вполне
+    /// может застать уже следующий, только что поднятый процесс — тогда оно
+    /// погасило бы статус живого ребёнка. Обработчик сверяет поколение и
+    /// молча выбрасывает опоздавшее событие.
+    autoplacer_generation: u64,
     claude_wt_running: bool,
     claude_wt_child: Option<tauri_plugin_shell::process::CommandChild>,
+    claude_wt_generation: u64,
+    /// Демон должен работать. Отличает падение от «оператор выключил руками»:
+    /// первое поднимаем заново, второе — нет.
+    claude_wt_desired: bool,
+    /// Сколько раз подряд демон не смог прожить [`children::HEALTHY_UPTIME_SECS`].
+    claude_wt_restart_attempts: u32,
     mqtt_running: bool,
     mqtt_child: Option<tauri_plugin_shell::process::CommandChild>,
+    mqtt_generation: u64,
     update_download_url: Option<String>,
+}
+
+impl AppState {
+    fn new() -> Self {
+        Self {
+            autoplacer_running: false,
+            autoplacer_child: None,
+            autoplacer_generation: 0,
+            claude_wt_running: false,
+            claude_wt_child: None,
+            claude_wt_generation: 0,
+            claude_wt_desired: false,
+            claude_wt_restart_attempts: 0,
+            mqtt_running: false,
+            mqtt_child: None,
+            mqtt_generation: 0,
+            update_download_url: None,
+        }
+    }
 }
 
 struct TrayHolder {
     _tray: tauri::tray::TrayIcon<tauri::Wry>,
+}
+
+/// Пункты трея, которым нужно менять подпись не только из обработчика меню:
+/// ребёнок умирает в фоновой задаче, и подпись «running» обязана погаснуть
+/// именно оттуда.
+struct TrayMenuItems {
+    autoplacer: MenuItem<tauri::Wry>,
+    claude_wt: MenuItem<tauri::Wry>,
+    mqtt_status: MenuItem<tauri::Wry>,
+    mqtt_toggle: MenuItem<tauri::Wry>,
+}
+
+fn update_tray_label(app: &tauri::AppHandle, kind: ChildKind, running: bool) {
+    let Some(items) = app.try_state::<TrayMenuItems>() else {
+        return;
+    };
+    match kind {
+        ChildKind::Autoplacer => {
+            let _ = items.autoplacer.set_text(if running {
+                "Stop Autoplacer"
+            } else {
+                "Start Autoplacer"
+            });
+        }
+        ChildKind::ClaudeWt => {
+            let _ = items.claude_wt.set_text(if running {
+                "Stop claude-wt"
+            } else {
+                "Start claude-wt"
+            });
+        }
+        ChildKind::Mqtt => {
+            let _ = items.mqtt_toggle.set_text(if running {
+                "Stop MQTT"
+            } else {
+                "Start MQTT"
+            });
+            let _ = items.mqtt_status.set_text(if running {
+                "MQTT: running"
+            } else {
+                "MQTT: stopped"
+            });
+        }
+    }
 }
 
 #[tauri::command]
@@ -138,6 +221,10 @@ async fn get_settings(app: tauri::AppHandle) -> Result<Settings, String> {
             .get("mqtt_topic")
             .and_then(|v| v.as_str().map(String::from))
             .unwrap_or(defaults.mqtt_topic),
+        claude_wt_enabled: store
+            .get("claude_wt_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(defaults.claude_wt_enabled),
         restore_on_start: store
             .get("restore_on_start")
             .and_then(|v| v.as_bool())
@@ -200,6 +287,10 @@ async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), 
     store.set("mqtt_username", serde_json::json!(settings.mqtt_username));
     store.set("mqtt_password", serde_json::json!(settings.mqtt_password));
     store.set("mqtt_topic", serde_json::json!(settings.mqtt_topic));
+    store.set(
+        "claude_wt_enabled",
+        serde_json::json!(settings.claude_wt_enabled),
+    );
     store.set("restore_on_start", serde_json::json!(settings.restore_on_start));
     store.set("store_before_exit", serde_json::json!(settings.store_before_exit));
     store.set("store_interval", serde_json::json!(settings.store_interval));
@@ -304,6 +395,7 @@ fn load_settings_from_store(app: &tauri::AppHandle) -> Settings {
         mqtt_username: store.get("mqtt_username").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.mqtt_username),
         mqtt_password: store.get("mqtt_password").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.mqtt_password),
         mqtt_topic: store.get("mqtt_topic").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.mqtt_topic),
+        claude_wt_enabled: store.get("claude_wt_enabled").and_then(|v| v.as_bool()).unwrap_or(defaults.claude_wt_enabled),
         restore_on_start: store.get("restore_on_start").and_then(|v| v.as_bool()).unwrap_or(true),
         store_before_exit: store.get("store_before_exit").and_then(|v| v.as_bool()).unwrap_or(true),
         store_interval: store.get("store_interval").and_then(|v| v.as_u64()).unwrap_or(300) as u32,
@@ -375,6 +467,174 @@ fn place_windows(app: &tauri::AppHandle) {
     run_node_command(app, &["src", "place", "--verbose"], "Place Windows");
 }
 
+/// Ребёнок умер. Гасит статус, пишет код возврата и — для демона claude-wt —
+/// заводит подъём с откатом.
+///
+/// Зовётся из фоновой задачи, вычитывающей поток событий, поэтому берёт мьютекс
+/// сам и отпускает его до того, как трогать трей.
+fn on_child_exit(
+    app: &tauri::AppHandle,
+    kind: ChildKind,
+    generation: u64,
+    reason: String,
+    uptime_secs: u64,
+) {
+    let state = app.state::<Mutex<AppState>>();
+    let mut s = state.lock().unwrap();
+
+    let current = match kind {
+        ChildKind::Autoplacer => s.autoplacer_generation,
+        ChildKind::ClaudeWt => s.claude_wt_generation,
+        ChildKind::Mqtt => s.mqtt_generation,
+    };
+    if current != generation {
+        // Опоздавшее событие от процесса, который уже сменили или остановили
+        // руками. Гасить по нему статус нельзя — он относится к живому ребёнку.
+        info!(
+            "{}: previous instance exited with {} after {}s",
+            kind.label(),
+            reason,
+            uptime_secs
+        );
+        return;
+    }
+
+    match kind {
+        ChildKind::Autoplacer => {
+            s.autoplacer_child = None;
+            s.autoplacer_running = false;
+        }
+        ChildKind::ClaudeWt => {
+            s.claude_wt_child = None;
+            s.claude_wt_running = false;
+        }
+        ChildKind::Mqtt => {
+            s.mqtt_child = None;
+            s.mqtt_running = false;
+        }
+    }
+    warn!(
+        "{} exited with {} after {}s",
+        kind.label(),
+        reason,
+        uptime_secs
+    );
+
+    // Поднимаем только демона и только если его не выключил оператор. Убит он
+    // при этом снаружи (в том числе node-стороной, заметившей молчание) или
+    // упал сам — разницы нет, для нас это одинаковое «процесса больше нет».
+    let restart = kind == ChildKind::ClaudeWt && s.claude_wt_desired;
+    let delay = if restart {
+        let attempt = next_restart_attempt(s.claude_wt_restart_attempts, uptime_secs);
+        s.claude_wt_restart_attempts = attempt;
+        let delay = restart_delay_secs(attempt);
+        warn!(
+            "claude-wt: restarting in {}s after exit with {} (attempt {})",
+            delay, reason, attempt
+        );
+        Some(delay)
+    } else {
+        None
+    };
+    drop(s);
+
+    update_tray_label(app, kind, false);
+    match kind {
+        ChildKind::Autoplacer => {
+            let _ = app.emit("autoplacer-toggled", false);
+        }
+        ChildKind::ClaudeWt => {
+            let _ = app.emit("claude-wt-toggled", false);
+        }
+        ChildKind::Mqtt => {}
+    }
+    if let Some(delay) = delay {
+        schedule_claude_wt_restart(app, delay);
+    }
+}
+
+/// Подъём демона через `delay_secs`. Перед подъёмом ещё раз спрашивает
+/// состояние: за время паузы оператор мог и выключить демона, и поднять руками.
+fn schedule_claude_wt_restart(app: &tauri::AppHandle, delay_secs: u64) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
+        let running = {
+            let state = app.state::<Mutex<AppState>>();
+            let mut s = state.lock().unwrap();
+            if !s.claude_wt_desired || s.claude_wt_running {
+                return;
+            }
+            start_claude_wt_locked(&app, &mut s);
+            s.claude_wt_running
+        };
+        update_tray_label(&app, ChildKind::ClaudeWt, running);
+    });
+}
+
+/// Запуск демона при уже взятом мьютексе.
+///
+/// Неудача самого `spawn` (нет node в PATH, кривой путь проекта) — это тот же
+/// случай, что и мгновенное падение: попытка засчитывается, следующая уезжает
+/// по откату. Иначе цикл «не смог запустить → пробуем снова» крутился бы без
+/// паузы и залил бы лог.
+fn start_claude_wt_locked(app: &tauri::AppHandle, s: &mut AppState) {
+    let project_path = get_project_path(app);
+    if project_path.is_empty() {
+        warn!("Project path not configured");
+        return;
+    }
+    s.claude_wt_desired = true;
+
+    let shell = app.shell();
+    let result = shell
+        .command("node")
+        .args(["src/index.js", "claude-wt", "watch"])
+        .current_dir(&project_path)
+        .spawn();
+
+    match result {
+        Ok((rx, child)) => {
+            s.claude_wt_generation += 1;
+            let generation = s.claude_wt_generation;
+            s.claude_wt_child = Some(child);
+            s.claude_wt_running = true;
+            let app_handle = app.clone();
+            pump_output(ChildKind::ClaudeWt, rx, move |reason, uptime| {
+                on_child_exit(&app_handle, ChildKind::ClaudeWt, generation, reason, uptime);
+            });
+            info!("claude-wt started");
+        }
+        Err(e) => {
+            s.claude_wt_running = false;
+            let attempt = next_restart_attempt(s.claude_wt_restart_attempts, 0);
+            s.claude_wt_restart_attempts = attempt;
+            let delay = restart_delay_secs(attempt);
+            error!(
+                "Failed to start claude-wt: {} (retrying in {}s, attempt {})",
+                e, delay, attempt
+            );
+            schedule_claude_wt_restart(app, delay);
+        }
+    }
+}
+
+/// Остановка демона по воле оператора: подъём после неё не нужен.
+fn stop_claude_wt_locked(s: &mut AppState) {
+    s.claude_wt_desired = false;
+    s.claude_wt_restart_attempts = 0;
+    // Смена поколения: событие о смерти убитого процесса придёт позже и уже не
+    // будет относиться к текущему состоянию.
+    s.claude_wt_generation += 1;
+    if let Some(child) = s.claude_wt_child.take() {
+        let _ = child.kill();
+    }
+    if s.claude_wt_running {
+        info!("claude-wt stopped");
+    }
+    s.claude_wt_running = false;
+}
+
 fn toggle_autoplacer(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
     let project_path = get_project_path(app);
     if project_path.is_empty() {
@@ -387,6 +647,7 @@ fn toggle_autoplacer(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>)
 
     if app_state.autoplacer_running {
         // Stop autoplacer
+        app_state.autoplacer_generation += 1;
         if let Some(child) = app_state.autoplacer_child.take() {
             let _ = child.kill();
         }
@@ -402,17 +663,33 @@ fn toggle_autoplacer(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>)
             .spawn();
 
         match result {
-            Ok((_rx, child)) => {
+            Ok((rx, child)) => {
+                app_state.autoplacer_generation += 1;
+                let generation = app_state.autoplacer_generation;
                 app_state.autoplacer_child = Some(child);
                 app_state.autoplacer_running = true;
+                let app_handle = app.clone();
+                pump_output(ChildKind::Autoplacer, rx, move |reason, uptime| {
+                    on_child_exit(
+                        &app_handle,
+                        ChildKind::Autoplacer,
+                        generation,
+                        reason,
+                        uptime,
+                    );
+                });
                 info!("Autoplacer started");
             }
             Err(e) => error!("Failed to start autoplacer: {}", e),
         }
     }
 
+    let running = app_state.autoplacer_running;
+    drop(app_state);
+
+    update_tray_label(app, ChildKind::Autoplacer, running);
     // Notify frontend about state change
-    let _ = app.emit("autoplacer-toggled", app_state.autoplacer_running);
+    let _ = app.emit("autoplacer-toggled", running);
 }
 
 fn toggle_claude_wt(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
@@ -424,32 +701,16 @@ fn toggle_claude_wt(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) 
     }
 
     let mut app_state = state.lock().unwrap();
-
     if app_state.claude_wt_running {
-        if let Some(child) = app_state.claude_wt_child.take() {
-            let _ = child.kill();
-        }
-        app_state.claude_wt_running = false;
-        info!("claude-wt stopped");
+        stop_claude_wt_locked(&mut app_state);
     } else {
-        let shell = app.shell();
-        let result = shell
-            .command("node")
-            .args(["src/index.js", "claude-wt", "watch"])
-            .current_dir(&project_path)
-            .spawn();
-
-        match result {
-            Ok((_rx, child)) => {
-                app_state.claude_wt_child = Some(child);
-                app_state.claude_wt_running = true;
-                info!("claude-wt started");
-            }
-            Err(e) => error!("Failed to start claude-wt: {}", e),
-        }
+        start_claude_wt_locked(app, &mut app_state);
     }
+    let running = app_state.claude_wt_running;
+    drop(app_state);
 
-    let _ = app.emit("claude-wt-toggled", app_state.claude_wt_running);
+    update_tray_label(app, ChildKind::ClaudeWt, running);
+    let _ = app.emit("claude-wt-toggled", running);
 }
 
 fn start_mqtt_service(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
@@ -483,9 +744,15 @@ fn start_mqtt_service(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>
     let mut app_state = state.lock().unwrap();
 
     match mqtt_child {
-        Ok((_rx, child)) => {
+        Ok((rx, child)) => {
+            app_state.mqtt_generation += 1;
+            let generation = app_state.mqtt_generation;
             app_state.mqtt_child = Some(child);
             app_state.mqtt_running = true;
+            let app_handle = app.clone();
+            pump_output(ChildKind::Mqtt, rx, move |reason, uptime| {
+                on_child_exit(&app_handle, ChildKind::Mqtt, generation, reason, uptime);
+            });
             info!("MQTT service started");
         }
         Err(e) => error!("Failed to start MQTT service: {}", e),
@@ -498,6 +765,7 @@ fn stop_mqtt_service(state: &State<'_, Mutex<AppState>>) {
 }
 
 fn stop_mqtt_state(app_state: &mut AppState) {
+    app_state.mqtt_generation += 1;
     if let Some(child) = app_state.mqtt_child.take() {
         let _ = child.kill();
     }
@@ -512,6 +780,8 @@ fn toggle_mqtt(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
     } else {
         start_mqtt_service(app, state);
     }
+    let running = state.lock().unwrap().mqtt_running;
+    update_tray_label(app, ChildKind::Mqtt, running);
 }
 
 fn open_main_window(app: &tauri::AppHandle) {
@@ -565,15 +835,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .manage(Mutex::new(AppState {
-            autoplacer_running: false,
-            autoplacer_child: None,
-            claude_wt_running: false,
-            claude_wt_child: None,
-            mqtt_running: false,
-            mqtt_child: None,
-            update_download_url: None,
-        }))
+        .manage(Mutex::new(AppState::new()))
         .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version, save_store_match_list])
         .setup(|app| {
             let project_path = get_project_path(app.handle());
@@ -661,9 +923,15 @@ pub fn run() {
                 ],
             )?;
 
-            // Clone menu items for use outside the on_menu_event closure
-            let mqtt_status_i_auto = mqtt_status_i.clone();
-            let mqtt_toggle_i_auto = mqtt_toggle_i.clone();
+            // Пункты, чью подпись меняют и обработчик меню, и фоновый надзор за
+            // детьми, живут в состоянии приложения — иначе фоновая задача не
+            // смогла бы погасить «running» у умершего процесса.
+            app.manage(TrayMenuItems {
+                autoplacer: auto_i.clone(),
+                claude_wt: claude_wt_i.clone(),
+                mqtt_status: mqtt_status_i.clone(),
+                mqtt_toggle: mqtt_toggle_i.clone(),
+            });
             let download_update_i_check = download_update_i.clone();
 
             let tray = TrayIconBuilder::new()
@@ -709,29 +977,14 @@ pub fn run() {
                         run_node_command(app, &["src/index.js", "reload"], "Reload Configs");
                     }
                     "autoplacer" => {
+                        // Подписи пунктов меняет сам toggle: они же меняются,
+                        // когда ребёнок умирает без спроса.
                         let state = app.state::<Mutex<AppState>>();
                         toggle_autoplacer(app, &state);
-
-                        // Update menu item text
-                        let running = state.lock().unwrap().autoplacer_running;
-                        let text = if running {
-                            "Stop Autoplacer"
-                        } else {
-                            "Start Autoplacer"
-                        };
-                        let _ = auto_i.set_text(text);
                     }
                     "claude_wt" => {
                         let state = app.state::<Mutex<AppState>>();
                         toggle_claude_wt(app, &state);
-
-                        let running = state.lock().unwrap().claude_wt_running;
-                        let text = if running {
-                            "Stop claude-wt"
-                        } else {
-                            "Start claude-wt"
-                        };
-                        let _ = claude_wt_i.set_text(text);
                     }
                     "claude_wt_restore" => {
                         run_node_command(
@@ -743,18 +996,6 @@ pub fn run() {
                     "mqtt_toggle" => {
                         let state = app.state::<Mutex<AppState>>();
                         toggle_mqtt(app, &state);
-
-                        let running = state.lock().unwrap().mqtt_running;
-                        let _ = mqtt_toggle_i.set_text(if running {
-                            "Stop MQTT"
-                        } else {
-                            "Start MQTT"
-                        });
-                        let _ = mqtt_status_i.set_text(if running {
-                            "MQTT: running"
-                        } else {
-                            "MQTT: stopped"
-                        });
                     }
                     "restart_store" => {
                         let project_path = get_project_path(app);
@@ -917,12 +1158,14 @@ pub fn run() {
                         // Kill all child processes
                         let state = app.state::<Mutex<AppState>>();
                         let mut s = state.lock().unwrap();
+                        s.autoplacer_generation += 1;
                         if let Some(child) = s.autoplacer_child.take() {
                             let _ = child.kill();
                         }
-                        if let Some(child) = s.claude_wt_child.take() {
-                            let _ = child.kill();
-                        }
+                        // Именно stop_claude_wt_locked, а не kill: иначе надзор
+                        // счёл бы это падением и поднял бы демона заново прямо
+                        // посреди выхода из приложения.
+                        stop_claude_wt_locked(&mut s);
                         stop_mqtt_state(&mut s);
                         drop(s);
 
@@ -973,10 +1216,21 @@ pub fn run() {
             if settings.mqtt_enabled {
                 let state = app.state::<Mutex<AppState>>();
                 start_mqtt_service(app.handle(), &state);
-                // Update menu texts for auto-started MQTT
                 let running = state.lock().unwrap().mqtt_running;
-                let _ = mqtt_toggle_i_auto.set_text(if running { "Stop MQTT" } else { "Start MQTT" });
-                let _ = mqtt_status_i_auto.set_text(if running { "MQTT: running" } else { "MQTT: stopped" });
+                update_tray_label(app.handle(), ChildKind::Mqtt, running);
+            }
+
+            // Автостарт демона claude-wt. На нём держатся панель openHASP и
+            // пикер сессий, поэтому ждать ручного тычка в трей — значит
+            // молча ронять всю цепочку после каждой перезагрузки.
+            if settings.claude_wt_enabled {
+                let state = app.state::<Mutex<AppState>>();
+                let running = {
+                    let mut s = state.lock().unwrap();
+                    start_claude_wt_locked(app.handle(), &mut s);
+                    s.claude_wt_running
+                };
+                update_tray_label(app.handle(), ChildKind::ClaudeWt, running);
             }
 
             // Restore windows on start if enabled
