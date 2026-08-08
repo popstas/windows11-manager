@@ -7,7 +7,20 @@
 import { createRouter } from '../commands/router.js';
 import { buildCommandMap } from '../commands/build.js';
 import { createHaExport } from '../claude-wt/ha/export.js';
+import { topics } from '../claude-wt/ha/discovery.js';
 import { connectMqtt, readMqttSettings } from './client.js';
+
+/**
+ * Команды чужого модуля power из windows-mqtt.
+ *
+ * Подписка идёт на `<base>/#`, а база у power та же самая, что у окон (см.
+ * windows-mqtt/src/helpers.js: opts.base для power наследуется от windows).
+ * Обработчиков этим командам здесь взяться неоткуда и не должно: усыпляет и
+ * перезагружает машину windows-mqtt. Список явный, а не молчаливый фильтр по
+ * маске, — предупреждение «unknown command» на каждое засыпание забивало бы
+ * лог, ради читаемости которого и заведено логирование входящих.
+ */
+const FOREIGN_COMMANDS = new Set(['sleep', 'restart', 'restart_restore', 'shutdown']);
 
 function startMqttService({ winMan, config, log, env = process.env }) {
   const settings = readMqttSettings(env);
@@ -16,10 +29,12 @@ function startMqttService({ winMan, config, log, env = process.env }) {
     return { stop() {} };
   }
 
+  // Единственный объект конфига на всю службу: команда reload перезаписывает
+  // его содержимое на месте, поэтому подменять ссылку никому нельзя.
   const withBase = { ...config, base: settings.base };
   let client = null;
   const publish = (topic, payload, opts) => client?.publish(topic, String(payload), opts ?? {});
-  const notify = (message) => publish(`${settings.base}/notify/notify`, message);
+  const notify = (message) => publish(settings.notifyTopic, message);
   const publishDone = (command) => publish(`${settings.base}/${command}/done`, '1');
 
   const haExport = createHaExport({ winMan, publish, log, config: withBase });
@@ -30,7 +45,22 @@ function startMqttService({ winMan, config, log, env = process.env }) {
   client = connectMqtt({
     settings,
     log,
-    onCommand: async (command, payload) => {
+    // Завещание брокеру: единственный способ снять доступность при падении,
+    // kill и перезагрузке — stop() в этих случаях не зовут вовсе, а `online` и
+    // все состояния слотов публикуются retained.
+    will: {
+      topic: topics(settings.base).availability,
+      payload: 'offline',
+      retain: true,
+      qos: 0,
+    },
+    onCommand: async (command, payload, topic) => {
+      // Раньше входящее не логировал никто: Rust-клиент, писавший каждое
+      // сообщение в файл трея, удалён, а обработчики windows-mqtt со своим
+      // `< topic: message` остались в том проекте. Нажатие на панели, которое
+      // ничего не сделало, не оставляло следа нигде.
+      log(`< ${topic ?? command}: ${payload}`);
+      if (FOREIGN_COMMANDS.has(command)) return;
       const res = await router.dispatch(command, payload);
       if (!res.ok) log(`MQTT ${command}: ${res.error}`, 'warn');
     },
@@ -46,4 +76,4 @@ function startMqttService({ winMan, config, log, env = process.env }) {
   };
 }
 
-export { startMqttService };
+export { startMqttService, FOREIGN_COMMANDS };
