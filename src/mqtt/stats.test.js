@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createStatsPublisher, zeroMissingApps, statsMessages, STATS_INTERVAL_MS } from './stats.js';
+import { createStatsPublisher, zeroMissingApps, appCounts, statsMessages, STATS_INTERVAL_MS } from './stats.js';
 
 function statsOf(byApp, { total = 0, active = null } = {}) {
   return { total, byApp, ...(active ? { active } : {}) };
@@ -29,21 +29,28 @@ function setup({ config = {}, stats = [] } = {}) {
 describe('zeroMissingApps', () => {
   it('пропавшему приложению дописывается нуль', () => {
     // Иначе график в Home Assistant вечно держит последнее ненулевое значение.
-    const next = zeroMissingApps(statsOf({ code: { count: 1, wins: [] } }),
-      statsOf({ code: { count: 1, wins: [] }, chrome: { count: 3, wins: [] } }));
+    const next = zeroMissingApps(statsOf({ code: { count: 1, wins: [] } }), { code: 1, chrome: 3 });
     expect(next.byApp.chrome).toEqual({ count: 0, wins: [] });
   });
 
   it('нуль пишется один раз, а не до перезапуска службы', () => {
-    const once = zeroMissingApps(statsOf({}), statsOf({ chrome: { count: 3, wins: [] } }));
-    const twice = zeroMissingApps(statsOf({}), once);
+    const once = zeroMissingApps(statsOf({}), { chrome: 3 });
+    const twice = zeroMissingApps(statsOf({}), appCounts(once));
     expect(twice.byApp.chrome).toBeUndefined();
   });
 
   it('живое приложение не обнуляется', () => {
-    const next = zeroMissingApps(statsOf({ chrome: { count: 2, wins: [] } }),
-      statsOf({ chrome: { count: 3, wins: [] } }));
+    const next = zeroMissingApps(statsOf({ chrome: { count: 2, wins: [] } }), { chrome: 3 });
     expect(next.byApp.chrome.count).toBe(2);
+  });
+});
+
+describe('appCounts', () => {
+  it('окна в память не забираются: только имена и числа', () => {
+    // В byApp[*].wins лежат объекты нативного модуля, и держать их лишнюю
+    // минуту ради сравнения чисел незачем.
+    const counts = appCounts(statsOf({ code: { count: 2, wins: [{ id: 1 }] } }));
+    expect(counts).toEqual({ code: 2 });
   });
 });
 

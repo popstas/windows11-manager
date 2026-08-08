@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { startDaemonWatchdog, daemonStatusFromFile, createRemedy, SILENCE_MS, GRACE_MS } from './daemon-watchdog.js';
 import { claudeWtHealth } from '../claude-wt/daemon-helpers.js';
-import { CHECK_INTERVAL_MS } from '../claude-wt/watchdog.js';
+import { CHECK_INTERVAL_MS, REMEDY_COOLDOWN_MS } from '../claude-wt/watchdog.js';
 
 const HOST = 'pc-home';
 
@@ -186,6 +186,43 @@ describe('startDaemonWatchdog', () => {
       s.advance(SILENCE_MS * 10);
       expect(s.kill).not.toHaveBeenCalled();
       expect(s.logs).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('неустранимая поломка зовёт человека один раз, но пишется в лог каждый раз', () => {
+    // Демон, остановленный из трея намеренно, молчит вечно: уведомление раз в
+    // пять минут до конца времён отучает смотреть на уведомления вообще.
+    vi.useFakeTimers();
+    try {
+      const kill = vi.fn(() => { throw new Error('ESRCH'); });
+      const s = setup({ file: fileOf({ pid: 4242, generatedMs: 10_000_000 }), kill });
+      s.advance(SILENCE_MS + CHECK_INTERVAL_MS);
+      const afterFirst = s.logs.length;
+      s.advance(60 * 60 * 1000);
+      expect(s.notes).toHaveLength(1);
+      expect(s.logs.length).toBeGreaterThan(afterFirst);
+      s.watchdog.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('после выздоровления следующая поломка снова зовёт человека', () => {
+    vi.useFakeTimers();
+    try {
+      const kill = vi.fn(() => { throw new Error('ESRCH'); });
+      const s = setup({ file: fileOf({ pid: 4242, generatedMs: 10_000_000 }), kill });
+      s.advance(SILENCE_MS + CHECK_INTERVAL_MS);
+      expect(s.notes).toHaveLength(1);
+      // Демон поднялся и снова пишет файл.
+      s.setFile(fileOf({ pid: 4243, generatedMs: s.nowMs() }));
+      s.advance(CHECK_INTERVAL_MS);
+      // И снова замолчал — теперь надолго: второе лечение ждёт ещё и кулдауна.
+      s.advance(SILENCE_MS + REMEDY_COOLDOWN_MS);
+      expect(s.notes).toHaveLength(2);
+      s.watchdog.stop();
     } finally {
       vi.useRealTimers();
     }

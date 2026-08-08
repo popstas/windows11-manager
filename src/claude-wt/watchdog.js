@@ -34,6 +34,11 @@ function createClaudeWtWatchdog({
   health,
   remedy,
   log,
+  // Выздоровление — это событие, и знать о нём надо снаружи: неустранимая
+  // поломка иначе звала бы человека каждый кулдаун до скончания века, а гасить
+  // «уже звали» по своему собственному сроку значило бы завести второй порог
+  // рядом с чужим.
+  onHealthy = () => {},
   now = Date.now,
   silenceMs = DEFAULT_SILENCE_MS,
   graceMs = DEFAULT_GRACE_MS,
@@ -67,7 +72,10 @@ function createClaudeWtWatchdog({
       silenceMs,
       graceMs,
     });
-    if (h.healthy) return false;
+    if (h.healthy) {
+      onHealthy();
+      return false;
+    }
 
     const parts = [`claude-wt: демон нездоров (${h.reason})`];
     // Возраст пишется, только когда он что-то значит: у незапущенного демона

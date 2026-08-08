@@ -156,6 +156,16 @@ function startDaemonWatchdog({
 
   const startedAt = now();
   let foreignReported = false;
+  // Человека зовём один раз за поломку, а не раз в кулдаун. Демон, остановленный
+  // из трея намеренно, молчит вечно и уведомлял бы каждые пять минут до конца
+  // времён — а на такие уведомления перестают смотреть вместе со всеми
+  // остальными. В логе при этом строка на каждую проверку, как и было.
+  let silenceReported = false;
+  const notifyOnce = (message) => {
+    if (silenceReported) return;
+    silenceReported = true;
+    notify(message);
+  };
 
   const check = createClaudeWtWatchdog({
     status: () => {
@@ -169,7 +179,10 @@ function startDaemonWatchdog({
       return status;
     },
     health: (args) => winMan.claudeWtHealth(args),
-    remedy: createRemedy({ kill, log, notify }),
+    remedy: createRemedy({ kill, log, notify: notifyOnce }),
+    // Демон снова тикает — значит следующая поломка снова заслуживает
+    // уведомления.
+    onHealthy: () => { silenceReported = false; },
     log,
     now,
     silenceMs: SILENCE_MS,
