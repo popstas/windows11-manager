@@ -82,7 +82,22 @@ async function start() {
         if (level === 'error') console.error(`[mqtt] ${message}`);
         else console.log(`[mqtt] ${message}`);
       };
-      startMqttService({ winMan, config: winMan.getConfig(), log });
+      const service = startMqttService({ winMan, config: winMan.getConfig(), log });
+      // stop() — единственный, кто публикует availability: offline. Без этих
+      // подписок он не звался никогда, и Home Assistant показывал все
+      // переключатели живыми даже после остановки службы из трея: и `online`,
+      // и состояния слотов уходят retained. Падение и reboot перекрыты
+      // завещанием брокеру (см. mqtt/service.js).
+      let stopping = false;
+      const shutdown = (signal) => {
+        if (stopping) return;
+        stopping = true;
+        log(`${signal}: снимаю доступность в Home Assistant и отключаюсь`);
+        service.stop();
+        process.exit(0);
+      };
+      process.on('SIGINT', () => shutdown('SIGINT'));
+      process.on('SIGTERM', () => shutdown('SIGTERM'));
     });
 
   program.command('stats').action(() => {
