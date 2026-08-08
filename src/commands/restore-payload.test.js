@@ -32,6 +32,28 @@ describe('restore-payload', () => {
       {id: 'last', sessionIds: ['aaa']});
   });
 
+  it('готовый объект по HTTP разбирается, а не становится [object Object]', () => {
+    // readBody у http-сервера отдаёт уже разобранное тело. String() превращал
+    // его в `[object Object]`, POST /claude-wt/snapshot-restore писал в лог
+    // «no snapshot [object Object]», не восстанавливал ничего и отвечал 200 ok.
+    expect(parseRestorePayload({id: 'snap-1'})).toEqual({id: 'snap-1', sessionIds: []});
+  });
+
+  it('sessionIds доезжает и из объекта', () => {
+    expect(parseRestorePayload({id: 'snap-1', sessionIds: ['a', 'b']})).toEqual(
+      {id: 'snap-1', sessionIds: ['a', 'b']});
+  });
+
+  it('объект без id — самый свежий снимок', () => {
+    expect(parseRestorePayload({sessionIds: ['a']})).toEqual({id: 'last', sessionIds: ['a']});
+    expect(parseRestorePayload({})).toEqual({id: 'last', sessionIds: []});
+  });
+
+  it('мусор в sessionIds объекта отбрасывается так же, как в строке', () => {
+    expect(parseRestorePayload({id: 'snap-1', sessionIds: 'aaa'})).toEqual(
+      {id: 'snap-1', sessionIds: []});
+  });
+
   it('мусор в sessionIds отбрасывается, а снимок поднимается целиком', () => {
     // Полбеды лучше беды: раскладка поднимется вся, а не ни одна.
     expect(parseRestorePayload('{"id":"snap-1","sessionIds":"aaa"}')).toEqual(
