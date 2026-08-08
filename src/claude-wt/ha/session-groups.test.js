@@ -95,12 +95,18 @@ describe('session-groups', () => {
     expect(arr.map(x => x.id)).toEqual(['a', 'b']);
   });
 
-  it('compareSessions sinks a session with no sort key to the end', () => {
+  // 'cost' — режим по умолчанию descending — здесь не годится: 0 и так
+  // числовой минимум, и наивное вычитание само отправило бы недостающий ключ
+  // в конец без всякого missingLast. Тест ничего не доказал бы про сам
+  // спецкейс. 'oldest' — ascending: под наивным вычитанием недостающий
+  // agentStarted (0, тот же числовой минимум) встал бы ПЕРВЫМ, и только
+  // спецкейс aMissing/bMissing в missingLast отправляет его в конец.
+  it('compareSessions sinks a session with no sort key to the end under an ascending mode', () => {
     const arr = [
-      s({ id: 'known', agentCostUsd: 5 }),
-      s({ id: 'blank', agentCostUsd: 0 }),
+      s({ id: 'blank', agentStarted: 0 }),
+      s({ id: 'known', agentStarted: 100 }),
     ];
-    arr.sort((a, b) => compareSessions(a, b, 'cost'));
+    arr.sort((a, b) => compareSessions(a, b, 'oldest'));
     expect(arr.map(x => x.id)).toEqual(['known', 'blank']);
   });
 
