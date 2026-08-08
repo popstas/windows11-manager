@@ -21,15 +21,19 @@ function vd11Command(args) {
 
 const virtualDesktop = {
   PinWindow(id) { return vd11Command(`PinWindowHandle:${id}`); },
+  // vd11Command отдаёт null, когда VirtualDesktop11.exe написал в stderr.
+  // Без `?.` это был TypeError, и на пути нажатия на панели (claude-commands
+  // спрашивает номер стола перед каждым переводом фокуса) его молча глотал
+  // роутер — окно просто не получало фокус, и в логе не было ничего.
   async IsPinnedWindow(id) {
     const res = await vd11Command(`IsWindowHandlePinned:${id}`);
-    if (res.match(/is not pinned/)) return false;
-    if (res.match(/is pinned/)) return true;
+    if (res?.match(/is not pinned/)) return false;
+    if (res?.match(/is pinned/)) return true;
     return null;
   },
   async GetWindowDesktopNumber(id) {
     const res = await vd11Command(`GetDesktopFromWindowHandle:${id}`);
-    const m = res.match(/desktop number (\d+)/);
+    const m = res?.match(/desktop number (\d+)/);
     if (m) return m[1];
   },
   MoveWindowToDesktopNumber(id, num) { return vd11Command(`gd:${num} MoveWindowHandle:${id}`); },
