@@ -135,15 +135,95 @@ describe('claude-snapshot-restore', () => {
 });
 
 describe('claude-session-open', () => {
+  const PROJECT = { id: 'zzz', action: 'terminal', cwd: '/p/site' };
+
   it('действие terminal поднимает окно, а не открывает второе', async () => {
     const d = deps();
     await claudeCommands(d)['claude-session-open']({ id: 'abc', action: 'terminal' });
     expect(d.winMan.focusWindowById).toHaveBeenCalledWith(42);
+    expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
+  });
+
+  it('переключает виртуальный стол раньше, чем фокусирует окно', async () => {
+    // Фокус с чужого стола Windows отдаёт молча и без результата — тот же
+    // порядок, что у claude-focus, и здесь он тоже обязателен.
+    const d = deps();
+    await claudeCommands(d)['claude-session-open']({ id: 'abc', action: 'terminal' });
+    const switchOrder = d.winMan.virtualDesktop.GoToDesktopNumber.mock.invocationCallOrder[0];
+    const focusOrder = d.winMan.focusWindowById.mock.invocationCallOrder[0];
+    expect(switchOrder).toBeLessThan(focusOrder);
+  });
+
+  it('знакомую сессию с закрытым окном возвращает восстановлением, а не новым терминалом', async () => {
+    // Восстановление поднимает ту же сессию (`claude --resume {id}`) на её
+    // прежнее место и с тем же профилем; терминал по каталогу дал бы вместо
+    // неё пустую новую.
+    const d = deps({ winMan: { getWindowById: vi.fn().mockReturnValue(null) } });
+    await claudeCommands(d)['claude-session-open']({ ...PROJECT, id: 'abc' });
+    expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledWith({ sessionIds: ['abc'] });
+    expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
+  });
+
+  it('незнакомую трекеру сессию открывает по каталогу проекта', async () => {
+    // Ради этого случая просьба и заведена: список пикера приезжает от ccfzf
+    // с ssh-хоста и знает сессии, которых на Windows не открывали ни разу.
+    const d = deps();
+    await claudeCommands(d)['claude-session-open'](PROJECT);
+    expect(d.winMan.openClaudeProject).toHaveBeenCalledWith({
+      cwd: '/p/site', name: 'site',
+    });
+    expect(d.notify).not.toHaveBeenCalled();
+  });
+
+  it('открывает проект и без id — по одному каталогу', async () => {
+    const d = deps();
+    await claudeCommands(d)['claude-session-open']({ action: 'terminal', cwd: '/p/home' });
+    expect(d.winMan.openClaudeProject).toHaveBeenCalledWith({ cwd: '/p/home', name: 'home' });
+  });
+
+  it('имя из тела просьбы побеждает имя каталога', async () => {
+    const d = deps();
+    await claudeCommands(d)['claude-session-open']({ ...PROJECT, name: 'мой сайт' });
+    expect(d.winMan.openClaudeProject).toHaveBeenCalledWith({
+      cwd: '/p/site', name: 'мой сайт',
+    });
+  });
+
+  it('ни знакомого id, ни каталога — сообщает человеку, а не молчит', async () => {
+    const d = deps();
+    await claudeCommands(d)['claude-session-open']({ id: 'zzz', action: 'terminal' });
+    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('zzz'));
+    expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
+    expect(d.winMan.focusWindowById).not.toHaveBeenCalled();
+  });
+
+  it('пустое тело — тоже сообщает', async () => {
+    const d = deps();
+    await claudeCommands(d)['claude-session-open']({ action: 'terminal', cwd: '   ' });
+    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('cwd'));
+  });
+
+  it('отказ открытия доходит до человека', async () => {
+    const d = deps({
+      winMan: {
+        openClaudeProject: vi.fn().mockResolvedValue({ ok: false, reason: 'claudeWt.launchNew.command is not set in config' }),
+      },
+    });
+    await claudeCommands(d)['claude-session-open'](PROJECT);
+    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('launchNew'));
+  });
+
+  it('чужое действие не открывает ничего', async () => {
+    const d = deps();
+    await claudeCommands(d)['claude-session-open']({ ...PROJECT, action: 'cursor' });
+    expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
+    expect(d.log).toHaveBeenCalledWith(expect.stringContaining('cursor'), 'warn');
   });
 
   it('без action ничего не делает', async () => {
     const d = deps();
     await claudeCommands(d)['claude-session-open']({ id: 'abc' });
     expect(d.winMan.focusWindowById).not.toHaveBeenCalled();
+    expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
   });
 });

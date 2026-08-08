@@ -9,6 +9,7 @@
  */
 import { chooseAction, resolveDesktopSwitch } from '../claude-wt/ha/session-groups.js';
 import { sessionIdForSlot } from '../claude-wt/ha/session-slots.js';
+import { basenameOfCwd } from '../claude-wt/project-helpers.js';
 import { parseRestorePayload } from './restore-payload.js';
 
 /** Тело просьбы: `{"id": …}` либо голый id строкой — ради вызова руками. */
@@ -75,6 +76,38 @@ function claudeCommands({ winMan, log, notify, slots }) {
     if (!winMan.focusWindowById(session.windowId)) log(`claude-wt: ${id} is not on screen`, 'warn');
   }
 
+  /**
+   * Открыть проект терминалом — тем же путём, что и `claude-wt open-project`.
+   *
+   * Ради этого вся просьба и заведена: каталог проекта переводит в профиль
+   * Windows Terminal только эта машина (`claudeWt.projects` → `profileForCwd`),
+   * и собранная в пикере команда `wt.exe` профиль теряет. `openClaudeProject`
+   * сначала ищет уже открытую сессию этого каталога и поднимает её окно, и
+   * только если такой нет — заводит новую: второй терминал на тот же проект
+   * человеку не нужен.
+   *
+   * Имя нужно `claude -n` при запуске новой сессии. По умолчанию берётся
+   * из каталога — ровно так же его считает сам `openClaudeProject`, и так же
+   * называет новую сессию ccfzf.
+   */
+  async function openProject(cwd, name) {
+    let res;
+    try {
+      res = await winMan.openClaudeProject({ cwd, name: name || basenameOfCwd(cwd) });
+    } catch (e) {
+      log(`claude-wt session-open ${cwd}: ${e.message}`, 'error');
+      notify(`claude-wt: ${e.message}`);
+      return;
+    }
+    if (!res?.ok) {
+      const reason = res?.reason ?? 'не удалось открыть';
+      log(`claude-wt session-open ${cwd}: ${reason}`, 'warn');
+      notify(`claude-wt: ${reason}`);
+      return;
+    }
+    log(`claude-wt session-open ${cwd}: ${res.action}`);
+  }
+
   async function focus(payload) {
     const { id } = parseIdPayload(payload);
     if (!id) return;
@@ -138,27 +171,50 @@ function claudeCommands({ winMan, log, notify, slots }) {
     },
 
     /**
-     * Просьба пикера с чужой машины открыть сессию здесь.
+     * Просьба пикера открыть сессию здесь: `{id, action: 'terminal', cwd}`.
      *
      * Пока поддержано одно действие — `terminal`: остальные (cursor, explorer,
      * pr) осмысленны только там, где стоит человек, и пикер выполняет их у
-     * себя. Уже открытую сессию поднимаем, а не открываем второй копией.
+     * себя.
+     *
+     * «Открыть» и «поднять» — разные просьбы, и это единственное, чем этот
+     * обработчик отличается от `claude-focus`. Фокусу нужна живая сессия, а
+     * открытию — нет: список пикера приезжает от ccfzf с ssh-хоста и знает
+     * сессии, которых на Windows не открывали ни разу. Раньше такая просьба
+     * упиралась в `unknown session` и не делала ничего, а пикер об этом не
+     * узнавал — у публикации нет ответа. Поэтому в теле едет ещё и каталог
+     * проекта: по нему сессию можно открыть, не зная её вовсе.
+     *
+     * Порядок:
+     *  1. сессию трекер знает — прежняя дорога: живое окно поднимаем (со
+     *     сменой виртуального стола), закрытое поднимаем восстановлением. Оно
+     *     возвращает **ту же** сессию (`claude --resume {id}`) на её прежнее
+     *     место и с тем же профилем — терминал по каталогу дал бы вместо неё
+     *     пустую новую;
+     *  2. сессии в слотах нет, но известен каталог — открываем проект;
+     *  3. нет ни того, ни другого — говорим об этом в журнал и человеку.
+     *     Молчание здесь было бы неотличимо от успеха.
      */
     async 'claude-session-open'(payload) {
-      const parsed = parseIdPayload(payload);
-      const { id, action } = parsed;
-      if (!id || !action) return;
+      const { id, action, cwd, name } = parseIdPayload(payload);
+      if (!action) return;
       if (action !== 'terminal') {
         log(`claude-wt session-open: unsupported action ${action}`, 'warn');
         return;
       }
-      const found = findSession(id);
-      if (found.error) {
-        log(`claude-wt session-open: ${found.error}`, 'warn');
-        notify(`claude-wt: ${found.error}`);
+      const found = id ? findSession(id) : null;
+      if (found?.session) {
+        await focusOrRestore(id, found.session);
         return;
       }
-      await focusOrRestore(id, found.session);
+      const dir = typeof cwd === 'string' ? cwd.trim() : '';
+      if (dir) {
+        await openProject(dir, typeof name === 'string' ? name.trim() : '');
+        return;
+      }
+      const reason = found?.error ?? 'session-open: нужен id известной сессии или cwd проекта';
+      log(`claude-wt session-open: ${reason}`, 'warn');
+      notify(`claude-wt: ${reason}`);
     },
   };
 }
