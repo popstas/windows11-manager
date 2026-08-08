@@ -29,14 +29,13 @@ This repository contains a Node.js tool for managing window placement on Windows
 ## Conventions
 - Tray menu items call node CLI commands via shell plugin, not direct FFI
 - Use `get_project_path(app)` to resolve the node project path from settings
-- MQTT/WS lifecycle managed in AppState behind Mutex
+- MQTT lifecycle managed in AppState behind Mutex (`mqtt_running`/`mqtt_child`)
 
 ## Tauri app architecture
 
-- **lib.rs** -- main entry point: tray menu, event handlers, settings, MQTT/WS lifecycle.
+- **lib.rs** -- main entry point: tray menu, event handlers, settings, MQTT child-process lifecycle.
 - **logging.rs** -- file logging with `fern`.
-- **mqtt.rs** -- MQTT client (rumqttc).
-- **ws_server.rs** -- WebSocket server bridging MQTT commands to node.
+- MQTT itself is not a Rust module here: `node src/index.js mqtt` (the client in `src/mqtt/` plus the Home Assistant export in `src/claude-wt/ha/`) runs as a child process spawned from `lib.rs`, and the tray shows `MQTT: running/stopped` from that process's presence, not from a connection state. The old `mqtt.rs` (rumqttc client) and `ws_server.rs` (WebSocket bridge to node) are gone -- so is `src/ws-client.js` on the node side.
 - Use `run_node_command(app, &[args], "Label")` helper to spawn node CLI commands from Rust with logging.
 - Settings stored via `tauri-plugin-store` in `settings.json` (project_path, MQTT config, etc.).
 - Build: `cd tauri-app/src-tauri && . "$HOME/.cargo/env" && cargo build`.
@@ -71,12 +70,14 @@ The code in `calcFancyZonePos` divides ALL values (monitor coords + zone coords)
 ## claude-wt: связка четырёх мест
 
 Список сессий собирается не только здесь. Хуки агента живут на pc-virt (`V:`),
-пикер и экспорт в Home Assistant — в `windows-mqtt`, конфиг панели openHASP — на
-shome (`R:`). Состояние течёт в одну сторону, нажатия — в обратную, и каждая
-граница между частями уже приносила по багу.
+пикер — в отдельном проекте `ccfzf-picker`, MQTT-клиент и экспорт в Home
+Assistant переехали сюда же (`src/mqtt/`, `src/claude-wt/ha/`) и работают своим
+процессом, `node src/index.js mqtt`, который поднимает трей; конфиг панели
+openHASP — на shome (`R:`). Состояние течёт в одну сторону, нажатия — в
+обратную, и каждая граница между частями уже приносила по багу.
 
 Карта, потоки и измеренные ограничения: `.claude/skills/claude-wt/SKILL.md`.
-Читать перед правками в `src/claude-wt/`, в `windows-mqtt` или в конфиге панели —
+Читать перед правками в `src/claude-wt/`, в `ccfzf-picker` или в конфиге панели —
 там же собраны грабли, которые невозможно вывести из кода одного репозитория
 (вранье `mtime` по SMB, обрезка шаблонов в Home Assistant, отсутствие отступов у
 кнопок openHASP).

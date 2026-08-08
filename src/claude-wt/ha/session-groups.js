@@ -1,19 +1,10 @@
 /** Pure shaping of the claude-wt session list for the picker. No I/O. */
 
-// Сессия с неизвестным столом сортируется перед всеми настоящими.
-const DESKTOP_UNKNOWN = -1;
-
 const SORT_MODES = ['cost', 'oldest', 'newest', 'recent', 'name'];
 const DEFAULT_SORT = 'cost';
 
 function normalizeSort(mode) {
   return SORT_MODES.includes(mode) ? mode : DEFAULT_SORT;
-}
-
-function cycleSort(mode) {
-  const current = normalizeSort(mode);
-  const i = SORT_MODES.indexOf(current);
-  return SORT_MODES[(i + 1) % SORT_MODES.length];
 }
 
 /**
@@ -31,10 +22,6 @@ function cycleSort(mode) {
  */
 function labelSessions(sessions) {
   return sessions.map(s => ({ ...s, label: s.title }));
-}
-
-function desktopLabel(desktop) {
-  return desktop === null ? 'Desktop —' : `Desktop ${desktop}`;
 }
 
 function nameOf(s) {
@@ -70,59 +57,6 @@ function compareSessions(a, b, mode) {
     primary = nameOf(a).localeCompare(nameOf(b));
   }
   return primary || tieBreak(a, b);
-}
-
-function sortGroupSessions(sessions, mode) {
-  return sessions.sort((a, b) => compareSessions(a, b, mode));
-}
-
-/**
- * Живые сессии — одной группой сверху, закрытые — по виртуальным столам.
- *
- * Раньше и те и другие лежали вперемешку в группах «стол · монитор», и три
- * работающие сессии терялись среди двух десятков вчерашних слотов.
- *
- * Живые не делятся по столам намеренно: их несколько, ищут их глазами, и
- * «где оно открыто» тут менее важно, чем «что из этого работает прямо сейчас».
- * Закрытые же режутся только по столу — монитор для закрытой сессии не значит
- * почти ничего, потому что мониторы переключаются чаще, чем живут слоты.
- *
- * Внутри группы — выбранный режим сортировки (по умолчанию cost desc).
- */
-function groupSessions(sessions, sort = DEFAULT_SORT) {
-  const mode = normalizeSort(sort);
-  const open = [];
-  const groups = new Map();
-  for (const s of sessions) {
-    if (s.open) { open.push(s); continue; }
-    const desktop = s.desktop ?? null;
-    const key = `${desktop}`;
-    if (!groups.has(key)) {
-      groups.set(key, { desktop, monitor: null, label: desktopLabel(desktop), sessions: [] });
-    }
-    groups.get(key).sessions.push(s);
-  }
-
-  const past = [...groups.values()];
-  for (const g of past) sortGroupSessions(g.sessions, mode);
-  past.sort((a, b) => (a.desktop ?? DESKTOP_UNKNOWN) - (b.desktop ?? DESKTOP_UNKNOWN));
-
-  if (!open.length) return past;
-  sortGroupSessions(open, mode);
-  return [{ desktop: null, monitor: null, label: `Active sessions - ${open.length}`, sessions: open }, ...past];
-}
-
-/**
- * Shape the result of the native claudeWtSessions() call into the
- * claude-wt-sessions event payload the picker UI consumes.
- *
- * Pure: takes the already-fetched `res`, does no I/O of its own.
- */
-function buildSessionsPayload(res, sort = DEFAULT_SORT) {
-  const mode = normalizeSort(sort);
-  return res.ok
-    ? { ok: true, groups: groupSessions(labelSessions(res.sessions), mode), sort: mode }
-    : { ok: false, reason: res.reason };
 }
 
 /**
@@ -169,11 +103,8 @@ export {
   SORT_MODES,
   DEFAULT_SORT,
   normalizeSort,
-  cycleSort,
   compareSessions,
   labelSessions,
-  groupSessions,
-  buildSessionsPayload,
   chooseAction,
   resolveDesktopSwitch,
 };

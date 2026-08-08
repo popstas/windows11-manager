@@ -1,6 +1,6 @@
 ---
 name: claude-wt
-description: Use when working on claude-wt session tracking anywhere in the chain — the daemon in windows11-manager, the picker or Home Assistant export in windows-mqtt, the agent hooks on the V: drive, or the openHASP panel config on R:. Also use when a session shows the wrong status, a panel row does not update, or a change appears not to have taken effect.
+description: Use when working on claude-wt session tracking anywhere in the chain — the window daemon, MQTT client and Home Assistant export in windows11-manager, the picker in ccfzf-picker, the agent hooks on the V: drive, or the openHASP panel config on R:. Also use when a session shows the wrong status, a panel row does not update, or a change appears not to have taken effect.
 ---
 
 # claude-wt: связка четырёх мест
@@ -14,11 +14,11 @@ description: Use when working on claude-wt session tracking anywhere in the chai
 | Часть | Где | Роль |
 |---|---|---|
 | Хуки агента | pc-virt, `~/.claude/hooks/`, с Windows это `V:` | Пишут `<id>.state.json` на каждое событие агента |
-| Демон и библиотека | `D:/projects/js/windows11-manager`, `src/claude-wt/` | Следит за окнами, читает состояния, снимки, CLI; `claudeWt.projects` (cwd → profile/hotkey) в `windows11-manager.config.js` |
-| Приложение | `D:/projects/js/windows-mqtt` | Пикер, MQTT, экспорт в Home Assistant. Зависит от первого через `file:../windows11-manager`; проекты берёт через `claudeWtProjects()`, не из yaml |
+| Демон, MQTT и HA-экспорт | `D:/projects/js/windows11-manager`, `src/claude-wt/`, `src/mqtt/`, `src/claude-wt/ha/` | Следит за окнами, читает состояния, снимки, CLI; `claudeWt.projects` (cwd → profile/hotkey) в `windows11-manager.config.js`. MQTT-клиент и экспорт в Home Assistant — свой процесс, `node src/index.js mqtt`, его поднимает и следит за ним трей Tauri (`MQTT: running/stopped` — по наличию дочернего процесса, не по состоянию соединения) |
+| Пикер | `D:/projects/js/ccfzf-picker` (отдельный проект) | Список сессий, project hotkeys. Не зависит от windows11-manager через `file:`; открытие сессии на машине трекера идёт HTTP-запросом на `http://127.0.0.1:9722`, отметка «непросмотрено» — публикацией в MQTT |
 | Панель | shome, `~/projects/smarthome/home-assistant/config/`, с Windows это `R:` | Генератор конфига openHASP, Node-RED, плата `openhasp5` |
 
-**Project hotkeys.** Список `claudeWt.projects` живёт только в конфиге manager’а. При старте Rust в windows-mqtt один раз зовёт `node --input-type=module -e "import * as m from 'windows11-manager'; … claudeWtProjects()"` и регистрирует хоткеи. Если Ctrl+F11/F12 пропали — смотреть лог дампа (stderr / `server-log`), а не yaml.
+**Project hotkeys.** Регистрирует их теперь `ccfzf-picker`, не Rust в windows-mqtt: при старте он читает свой собственный `projects:` (путь + хоткей) из `config.yml` и вешает на каждый глобальный шорткат через `tauri_plugin_global_shortcut` (`src-tauri/src/main.rs`). Это отдельный список от `claudeWt.projects` в `windows11-manager.config.js` — тот знает про маппинг на профиль Windows Terminal, но про сами хоткеи ничего не знает и не спрашивается: два конфига приходится держать в согласии руками. Если Ctrl+F11/F12 пропали — смотреть stderr `ccfzf-picker`, а не windows-mqtt, там их больше нет.
 
 ## Поток
 
@@ -93,16 +93,17 @@ node src/index.js snapshots-restore last
 
 ## Деплой после правок (обязательно)
 
-После любой правки, которая должна доехать до живого windows-mqtt, агент **сам** гоняет локальный деплой в конце работы — не ждёт просьбы. Каталог: `D:/projects/js/windows-mqtt`.
+`deploy-fast` / `deploy-local` были только у windows-mqtt, и его в этой цепочке больше нет: пикер и MQTT — два разных Tauri-приложения без общего скрипта, каждое пересобирается и перезапускается само.
 
-| Что менялось | Команда |
+| Что менялось | Что сделать |
 |---|---|
-| Только node (`src/`, `file:../windows11-manager`, тесты) | `npm run deploy-fast` |
-| Пикер UI (`sessions.html`, `frontend-src/`, `index.html`) или Rust (`src-tauri/`) | `npm run deploy-local` |
+| `src/mqtt/`, `src/claude-wt/ha/`, остальной node в windows11-manager | В трее: тумблер «Stop MQTT» → «Start MQTT» (пункт `mqtt_toggle` в `lib.rs`) — новый код подхватится, как только процесс `node src/index.js mqtt` стартует заново |
+| Rust `tauri-app/src-tauri/` в windows11-manager | `cd tauri-app/src-tauri && . "$HOME/.cargo/env" && cargo build`, затем перезапустить трей |
+| Что угодно в `ccfzf-picker` | `cd src-tauri && . "$HOME/.cargo/env" && cargo tauri build` из каталога `ccfzf-picker`, затем перезапустить приложение |
 
-`deploy-fast` копирует node-часть в установленное приложение за секунды. Интерфейс пикера вшит в бинарник — скрипт сам откажется, если в diff есть UI/Rust. `deploy-local` висит часами, если приложение наследует stdout: должно быть `stdio: 'ignore'`.
+Поднимать первым windows11-manager, вторым — `ccfzf-picker`: пикер шлёт открытие сессии HTTP-запросом на `http://127.0.0.1:9722` и отметку «непросмотрено» — в MQTT, который слушает менеджер. Без него оба действия молча ничего не делают (см. «Частые ошибки»).
 
-Правки только в хуках на `V:`, в ccfzf или в конфиге панели на `R:` — деплой windows-mqtt не нужен.
+Правки только в хуках на `V:` или в конфиге панели на `R:` — пересборка ни того, ни другого не нужна.
 
 ## Частые ошибки
 
@@ -127,3 +128,4 @@ node src/index.js snapshots-restore last
 | Работающая сессия помечена `live: false` в дампе | `claude` на PATH запускает бинарник, названный версией (`2.1.220`); фильтр по `comm == "claude"` его не видел — теперь `is_claude()` смотрит и на путь `exe` |
 | У сессии из проектного хоткея нет переменных из `.zshrc` (в OTEL пустой `project=`), а у сессии из пикера есть | `claudeWt.launchNew` запускает команду неинтерактивным шеллом; нужен `$SHELL -ic` с `cd` внутри, как в ccfzf |
 | `deploy-local` висит часами | Приложение наследует stdout; должно быть `stdio: 'ignore'` |
+| Отметка «непросмотрено» из пикера не действует | Проверить, что менеджер подписан на `claude-session-unread`: до переезда MQTT в windows11-manager подписки не было вовсе, и отметка молча ничего не делала — тот же симптом, что у настоящего бага в пикере |
