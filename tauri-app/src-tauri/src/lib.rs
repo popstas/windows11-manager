@@ -726,13 +726,29 @@ fn toggle_claude_wt(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) 
     }
 
     let mut app_state = state.lock().unwrap();
-    if app_state.claude_wt_running {
+    let stopped = app_state.claude_wt_running;
+    if stopped {
         stop_claude_wt_locked(&mut app_state);
     } else {
         start_claude_wt_locked(app, &mut app_state);
     }
     let running = app_state.claude_wt_running;
     drop(app_state);
+
+    if stopped {
+        // Демона снимают жёстко (TerminateProcess), поэтому убрать за собой
+        // опубликованный файл окон он не успевает — а в файле лежит его pid, по
+        // которому сторож в MQTT-службе снимает замолчавшего демона. Служба
+        // остановку из трея переживает, и полторы минуты спустя файл ещё
+        // считался бы свежим: ровно одно снятие могло уйти в чужой процесс,
+        // которому Windows уже отдала освободившийся номер. Убираем файл
+        // отдельным запуском node — путь к нему знает только конфиг проекта.
+        run_node_command(
+            app,
+            &["src/index.js", "claude-wt", "windows-clear"],
+            "Clear claude-wt windows file",
+        );
+    }
 
     update_tray_label(app, ChildKind::ClaudeWt, running);
     let _ = app.emit("claude-wt-toggled", running);
