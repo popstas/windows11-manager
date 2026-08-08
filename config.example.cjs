@@ -96,6 +96,21 @@ module.exports = {
     topic: 'home/room/pc/windows',
   },
 
+  // Переехало из windows-mqtt (config.yml, секция `windows:`): там эти ключи
+  // читал модуль `windows`, а его выключает `windows.enabled: false`. Читает их
+  // теперь долгоживущая служба `node src/index.js mqtt`.
+
+  // Расставлять окно сразу при его появлении (`placeWindowOnOpen()`): опрос
+  // видимых hwnd раз в 1500 мс, дорогой getWindows() — только на новый hwnd.
+  placeWindowOnOpen: true,
+  // Публиковать «Placed windows: N» в топик уведомлений после autoplace.
+  notifyPlaced: true,
+  // Статистика окон в Home Assistant раз в минуту.
+  publishStats: true,
+  // Топик статистики. По умолчанию `${base}/stats`, где base — W11M_MQTT_BASE;
+  // на этой машине он задан отдельно и под базой окон не лежит.
+  publishStatsTopic: 'state/pc/windows',
+
   store: {
     path: './data/windows-store.json',
 

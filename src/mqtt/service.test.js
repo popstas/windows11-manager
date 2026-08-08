@@ -12,7 +12,7 @@ const { startMqttService } = await import('./service.js');
 
 const ENV = { W11M_MQTT_HOST: 'mqtt.lan', W11M_MQTT_BASE: 'home/room/pc/windows' };
 
-function setup({ env = ENV, config = {} } = {}) {
+function setup({ env = ENV, config = {}, ...overrides } = {}) {
   const published = [];
   const logged = [];
   const handlers = {};
@@ -29,6 +29,12 @@ function setup({ env = ENV, config = {} } = {}) {
     claudeWtSessions: () => ({ ok: true, sessions: [] }),
     storeWindows: vi.fn(),
     reloadConfigs: vi.fn(() => ({})),
+    // Сторожа демона по умолчанию не заводим: у него свой файл с тестами.
+    getClaudeWtConfig: () => ({ enabled: false }),
+    getStats: vi.fn(() => ({ total: 0, byApp: {} })),
+    placeWindowOnOpen: vi.fn().mockResolvedValue(undefined),
+    stopPlaceNewWindows: vi.fn(),
+    ...overrides.winMan,
   };
   const service = startMqttService({
     winMan,
@@ -36,7 +42,7 @@ function setup({ env = ENV, config = {} } = {}) {
     log: (message, level = 'info') => logged.push(`${level}: ${message}`),
     env,
   });
-  return { service, published, logged, handlers, client, args: () => args };
+  return { service, published, logged, handlers, client, winMan, args: () => args };
 }
 
 beforeEach(() => connectMqtt.mockReset());
@@ -102,6 +108,45 @@ describe('startMqttService', () => {
     }
     expect(logged.filter((l) => l.startsWith('warn:'))).toEqual([]);
     expect(logged).toContain('info: < home/room/pc/windows/sleep: ');
+  });
+
+  it('статистика окон уходит по подключению и в свой топик', () => {
+    // publishStatsTopic на этой машине — state/pc/windows, и под базой окон он
+    // не лежит: выводить его из базы нельзя.
+    const { published, handlers, service } = setup({
+      config: { publishStats: true, publishStatsTopic: 'state/pc/windows' },
+    });
+    handlers.connect();
+    expect(published).toContainEqual(
+      expect.objectContaining({ topic: 'state/pc/windows/total', payload: '0' }));
+    service.stop();
+  });
+
+  it('без publishStats статистика не публикуется', () => {
+    const { published, handlers, service } = setup();
+    handlers.connect();
+    expect(published.filter((p) => p.topic.includes('/total'))).toEqual([]);
+    service.stop();
+  });
+
+  it('placeWindowOnOpen включает расстановку новых окон', async () => {
+    const { winMan, service } = setup({ config: { placeWindowOnOpen: true } });
+    await vi.waitFor(() => expect(winMan.placeWindowOnOpen).toHaveBeenCalled());
+    service.stop();
+    expect(winMan.stopPlaceNewWindows).toHaveBeenCalled();
+  });
+
+  it('сторож демона заведён службой и жалуется, когда смотреть не на что', () => {
+    // claudeWt.windowsFile — единственный сигнал о живости демона из чужого
+    // процесса; без него сторожу не по чему судить, и молчать об этом нельзя.
+    const { logged, service } = setup({
+      winMan: {
+        getClaudeWtConfig: () => ({ enabled: true, windowsFile: '' }),
+        claudeWtHealth: () => ({ healthy: true }),
+      },
+    });
+    expect(logged.some((l) => l.startsWith('error:') && l.includes('windowsFile'))).toBe(true);
+    service.stop();
   });
 
   it('stop() снимает доступность и закрывает соединение', () => {

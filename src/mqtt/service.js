@@ -9,6 +9,9 @@ import { buildCommandMap } from '../commands/build.js';
 import { createHaExport } from '../claude-wt/ha/export.js';
 import { topics } from '../claude-wt/ha/discovery.js';
 import { connectMqtt, readMqttSettings } from './client.js';
+import { createStatsPublisher } from './stats.js';
+import { startAutoplacer } from './autoplacer.js';
+import { startDaemonWatchdog } from './daemon-watchdog.js';
 
 /**
  * Команды чужого модуля power из windows-mqtt.
@@ -38,9 +41,16 @@ function startMqttService({ winMan, config, log, env = process.env }) {
   const publishDone = (command) => publish(`${settings.base}/${command}/done`, '1');
 
   const haExport = createHaExport({ winMan, publish, log, config: withBase });
+  const stats = createStatsPublisher({ winMan, publish, log, config: withBase });
   const router = createRouter(buildCommandMap({
     winMan, config: withBase, log, notify, haExport, publishDone,
   }));
+
+  // Брокер этим двоим не нужен, и ждать подключения они не должны: расстановка
+  // окон при открытии работает и с лежащим брокером, а сторож демона тем более —
+  // он про поломку, которая случается сама по себе.
+  const autoplacer = startAutoplacer({ winMan, config: withBase, log });
+  const daemonWatchdog = startDaemonWatchdog({ winMan, log, notify });
 
   client = connectMqtt({
     settings,
@@ -66,11 +76,20 @@ function startMqttService({ winMan, config, log, env = process.env }) {
     },
   });
 
-  client.on('connect', () => haExport.start());
+  // Статистика заводится по подключению, а не при старте процесса: первый её
+  // замер уходил бы в клиент без соединения. start() у обоих идемпотентен —
+  // подключений за жизнь службы много, а таймер должен остаться один.
+  client.on('connect', () => {
+    haExport.start();
+    stats.start();
+  });
 
   return {
     stop() {
       haExport.stop();
+      stats.stop();
+      autoplacer.stop();
+      daemonWatchdog.stop();
       client?.end(true);
     },
   };
