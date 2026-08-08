@@ -73,6 +73,18 @@ async function start() {
       startHttpServer(Number(options.port));
     });
 
+  program
+    .command('mqtt')
+    .description('MQTT: подписка на команды окон и экспорт сессий в Home Assistant')
+    .action(async () => {
+      const { startMqttService } = await import('./mqtt/service.js');
+      const log = (message, level = 'info') => {
+        if (level === 'error') console.error(`[mqtt] ${message}`);
+        else console.log(`[mqtt] ${message}`);
+      };
+      startMqttService({ winMan, config: winMan.getConfig(), log });
+    });
+
   program.command('stats').action(() => {
     const stats = winMan.getStats();
     console.log(stats);
