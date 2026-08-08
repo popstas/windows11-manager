@@ -1,7 +1,5 @@
 mod logging;
-mod mqtt;
 mod updater;
-mod ws_server;
 
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
@@ -86,9 +84,7 @@ struct AppState {
     claude_wt_running: bool,
     claude_wt_child: Option<tauri_plugin_shell::process::CommandChild>,
     mqtt_running: bool,
-    mqtt_handle: Option<mqtt::MqttHandle>,
-    ws_handle: Option<ws_server::WsServerHandle>,
-    ws_client_child: Option<tauri_plugin_shell::process::CommandChild>,
+    mqtt_child: Option<tauri_plugin_shell::process::CommandChild>,
     update_download_url: Option<String>,
 }
 
@@ -479,40 +475,30 @@ fn start_mqtt_service(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>
         return;
     }
 
-    let (mqtt_handle, mqtt_future) = mqtt::start_mqtt(
-        settings.mqtt_host,
-        settings.mqtt_port,
-        settings.mqtt_username,
-        settings.mqtt_password,
-        settings.mqtt_topic,
-    );
-    tauri::async_runtime::spawn(mqtt_future);
-
-    let (ws_handle, ws_future) =
-        ws_server::start_ws_server(settings.ws_port, mqtt_handle.command_tx.clone());
-    tauri::async_runtime::spawn(ws_future);
-
-    // Spawn Node.js WS client
+    // Spawn the Node.js MQTT service. Credentials go through the environment,
+    // never argv, since argv is world-readable in the process list.
     let shell = app.shell();
-    let ws_client = shell
+    let mqtt_child = shell
         .command("node")
-        .args(["src/ws-client.js", &settings.ws_port.to_string()])
+        .args(["src/index.js", "mqtt"])
         .current_dir(&project_path)
+        .env("W11M_MQTT_HOST", settings.mqtt_host)
+        .env("W11M_MQTT_PORT", settings.mqtt_port.to_string())
+        .env("W11M_MQTT_USER", settings.mqtt_username)
+        .env("W11M_MQTT_PASS", settings.mqtt_password)
+        .env("W11M_MQTT_BASE", settings.mqtt_topic)
         .spawn();
 
     let mut app_state = state.lock().unwrap();
 
-    match ws_client {
+    match mqtt_child {
         Ok((_rx, child)) => {
-            app_state.ws_client_child = Some(child);
+            app_state.mqtt_child = Some(child);
+            app_state.mqtt_running = true;
+            info!("MQTT service started");
         }
-        Err(e) => error!("Failed to start WS client: {}", e),
+        Err(e) => error!("Failed to start MQTT service: {}", e),
     }
-
-    app_state.mqtt_handle = Some(mqtt_handle);
-    app_state.ws_handle = Some(ws_handle);
-    app_state.mqtt_running = true;
-    info!("MQTT service started");
 }
 
 fn stop_mqtt_service(state: &State<'_, Mutex<AppState>>) {
@@ -521,14 +507,8 @@ fn stop_mqtt_service(state: &State<'_, Mutex<AppState>>) {
 }
 
 fn stop_mqtt_state(app_state: &mut AppState) {
-    if let Some(child) = app_state.ws_client_child.take() {
+    if let Some(child) = app_state.mqtt_child.take() {
         let _ = child.kill();
-    }
-    if let Some(mut ws) = app_state.ws_handle.take() {
-        ws.stop();
-    }
-    if let Some(mut mq) = app_state.mqtt_handle.take() {
-        mq.stop();
     }
     app_state.mqtt_running = false;
     info!("MQTT service stopped");
@@ -600,9 +580,7 @@ pub fn run() {
             claude_wt_running: false,
             claude_wt_child: None,
             mqtt_running: false,
-            mqtt_handle: None,
-            ws_handle: None,
-            ws_client_child: None,
+            mqtt_child: None,
             update_download_url: None,
         }))
         .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version, save_store_match_list])
@@ -638,7 +616,7 @@ pub fn run() {
             )?;
             let sep1 = PredefinedMenuItem::separator(app)?;
             let mqtt_status_i =
-                MenuItem::with_id(app, "mqtt_status", "MQTT: Off", false, None::<&str>)?;
+                MenuItem::with_id(app, "mqtt_status", "MQTT: stopped", false, None::<&str>)?;
             let mqtt_toggle_i =
                 MenuItem::with_id(app, "mqtt_toggle", "Start MQTT", true, None::<&str>)?;
             let sep2 = PredefinedMenuItem::separator(app)?;
@@ -693,7 +671,6 @@ pub fn run() {
             )?;
 
             // Clone menu items for use outside the on_menu_event closure
-            let mqtt_status_i_poll = mqtt_status_i.clone();
             let mqtt_status_i_auto = mqtt_status_i.clone();
             let mqtt_toggle_i_auto = mqtt_toggle_i.clone();
             let download_update_i_check = download_update_i.clone();
@@ -783,9 +760,9 @@ pub fn run() {
                             "Start MQTT"
                         });
                         let _ = mqtt_status_i.set_text(if running {
-                            "MQTT: Starting..."
+                            "MQTT: running"
                         } else {
-                            "MQTT: Off"
+                            "MQTT: stopped"
                         });
                     }
                     "restart_store" => {
@@ -1006,8 +983,9 @@ pub fn run() {
                 let state = app.state::<Mutex<AppState>>();
                 start_mqtt_service(app.handle(), &state);
                 // Update menu texts for auto-started MQTT
-                let _ = mqtt_toggle_i_auto.set_text("Stop MQTT");
-                let _ = mqtt_status_i_auto.set_text("MQTT: Starting...");
+                let running = state.lock().unwrap().mqtt_running;
+                let _ = mqtt_toggle_i_auto.set_text(if running { "Stop MQTT" } else { "Start MQTT" });
+                let _ = mqtt_status_i_auto.set_text(if running { "MQTT: running" } else { "MQTT: stopped" });
             }
 
             // Restore windows on start if enabled
@@ -1044,23 +1022,6 @@ pub fn run() {
                     }
                 });
             }
-
-            // Spawn background task to poll MQTT status every 2s
-            let app_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                    let status_arc = {
-                        let state = app_handle.state::<Mutex<AppState>>();
-                        let s = state.lock().unwrap();
-                        s.mqtt_handle.as_ref().map(|mq| mq.status.clone())
-                    }; // MutexGuard dropped here before any await
-                    if let Some(arc) = status_arc {
-                        let status = arc.lock().await;
-                        let _ = mqtt_status_i_poll.set_text(status.label());
-                    }
-                }
-            });
 
             // Check for updates
             {
