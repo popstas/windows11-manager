@@ -107,7 +107,10 @@ describe('createHaExport', () => {
     ];
     const claudeWtSessions = vi.fn().mockReturnValue({ ok: true, sessions });
 
-    const { exporter: byCost } = make({ winMan: { claudeWtSessions } });
+    const { exporter: byCost } = make({
+      winMan: { claudeWtSessions },
+      config: { homeassistant: { slots: 2, interval: 15, sessionsSort: 'cost' } },
+    });
     byCost.start();
     expect(byCost.slots().filter((s) => s.id).map((s) => s.id)).toEqual(['p', 'q']);
 
@@ -117,6 +120,20 @@ describe('createHaExport', () => {
     });
     byName.start();
     expect(byName.slots().filter((s) => s.id).map((s) => s.id)).toEqual(['q', 'p']);
+  });
+
+  it('без sessionsSort слоты идут по свежести активности, а не по цене', () => {
+    // Умолчание HA — `recent`, своё, не унаследованное от пикера ('cost'):
+    // дорогая, но давно брошенная сессия не должна вытеснять работающую.
+    const sessions = [
+      { id: 'rich', title: 'bravo', open: true, agentState: 'idle', agentCostUsd: 40, lastActivity: 100 },
+      { id: 'fresh', title: 'charlie', open: true, agentState: 'idle', agentCostUsd: 1, lastActivity: 900 },
+    ];
+    const { exporter } = make({
+      winMan: { claudeWtSessions: vi.fn().mockReturnValue({ ok: true, sessions }) },
+    });
+    exporter.start();
+    expect(exporter.slots().filter((s) => s.id).map((s) => s.id)).toEqual(['fresh', 'rich']);
   });
 
   it('refresh() публикует ровно один внеочередной экспорт, а второй refresh() до него не добавляет ещё один', () => {

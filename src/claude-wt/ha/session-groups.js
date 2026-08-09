@@ -1,7 +1,11 @@
 /** Pure shaping of the claude-wt session list for the picker. No I/O. */
 
 const SORT_MODES = ['cost', 'oldest', 'newest', 'recent', 'name'];
-const DEFAULT_SORT = 'cost';
+// Своё умолчание, не унаследованное от пикера ('cost'): на панель попадают
+// девять строк из десятков сессий, и дорогая сессия недельной давности там
+// нужнее не бывает — нужна та, где работа идёт прямо сейчас. Меняется ключом
+// `homeassistant.sessionsSort`.
+const DEFAULT_SORT = 'recent';
 
 function normalizeSort(mode) {
   return SORT_MODES.includes(mode) ? mode : DEFAULT_SORT;

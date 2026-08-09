@@ -32,7 +32,7 @@ describe('session-slots', () => {
     expect(out.map(x => x.id)).toEqual(['live-d1', 'live-d2', 'closed']);
   });
 
-  it('orderSessions sorts live sessions by the picker sort mode', () => {
+  it('orderSessions sorts live sessions by the sessionsSort mode', () => {
     const out = orderSessions([
       s({ id: 'old', lastActivity: 100 }),
       s({ id: 'fresh', lastActivity: 900 }),
@@ -48,12 +48,12 @@ describe('session-slots', () => {
     expect(out.map(x => x.id)).toEqual(['recent', 'old']);
   });
 
-  it('orderSessions defaults to cost like the picker', () => {
+  it('orderSessions defaults to recent, not to the picker cost', () => {
     const out = orderSessions([
-      s({ id: 'cheap', agentCostUsd: 1 }),
-      s({ id: 'pricey', agentCostUsd: 40 }),
+      s({ id: 'rich-stale', agentCostUsd: 40, lastActivity: 100 }),
+      s({ id: 'cheap-fresh', agentCostUsd: 1, lastActivity: 900 }),
     ]);
-    expect(out.map(x => x.id)).toEqual(['pricey', 'cheap']);
+    expect(out.map(x => x.id)).toEqual(['cheap-fresh', 'rich-stale']);
   });
 
   it('slotStatus reports what the agent is doing', () => {

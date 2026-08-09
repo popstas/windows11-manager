@@ -38,9 +38,12 @@ describe('session-groups', () => {
     expect(out[1].label).toBe('agent');
   });
 
-  it('normalizeSort falls back to cost', () => {
+  it('normalizeSort falls back to the HA default, and it is recent', () => {
+    // Литерал нарочно: умолчание — часть настройки, а не деталь реализации,
+    // и молчаливый возврат к 'cost' пикера тест должен ловить.
+    expect(DEFAULT_SORT).toBe('recent');
     expect(normalizeSort('nope')).toBe(DEFAULT_SORT);
-    expect(normalizeSort('recent')).toBe('recent');
+    expect(normalizeSort('cost')).toBe('cost');
   });
 
   // Прямое покрытие compareSessions — раньше все пять режимов проверялись
