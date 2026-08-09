@@ -58,7 +58,12 @@ let watcherStarted = false;
 function watchAppliedLayouts() {
   if (watcherStarted) return;
   watcherStarted = true;
-  setInterval(() => {
+  // Ватчер поднимается в index.js до разбора аргументов, то есть для любой
+  // команды. Без unref() его таймер держал событийный цикл, и разовые команды
+  // без явного process.exit() (`place`) не завершались: работа сделана за
+  // 300 мс, а процесс висел часами по 60 МБ, просыпаясь раз в минуту. Трей
+  // ждёт такого ребёнка через .output(), так что копился ещё и он.
+  const timer = setInterval(() => {
     const config = getConfig();
     if (!config.fancyZones?.path) return;
     const file = `${config.fancyZones.path}/applied-layouts.json`;
@@ -75,6 +80,7 @@ function watchAppliedLayouts() {
       }
     });
   }, 60000);
+  timer.unref();
 }
 
 export { getConfig, reloadConfigs, watchAppliedLayouts };
