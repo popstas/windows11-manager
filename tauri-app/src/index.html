@@ -59,8 +59,8 @@
 
     <div class="field">
       <label for="place_hotkey">Place windows hotkey</label>
-      <input type="text" id="place_hotkey" placeholder="Ctrl+Win+Shift+0">
-      <small>Global shortcut that places all windows once. Modifiers: Ctrl, Alt, Shift, Win. Empty = disabled. Applied on save; a warning is logged if another app already holds the combination.</small>
+      <input type="text" id="place_hotkey" placeholder="Ctrl+Alt+Win+0">
+      <small>Global shortcut that places all windows once. Modifiers: Ctrl, Alt, Shift, Win. Empty = disabled. Applied on save; a warning is logged if the combination is taken. Note: Windows reserves every <code>Win</code>+digit combination (including Win+Ctrl+Shift+digit) for the taskbar — those can never be registered.</small>
     </div>
 
     <div class="field">

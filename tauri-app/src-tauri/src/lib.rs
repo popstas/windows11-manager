@@ -64,7 +64,14 @@ impl Default for Settings {
             // Прежде расстановка висела на захардкоженном Ctrl+Alt+Shift+P, и
             // занять его не удавалось: комбинацию держало другое приложение, а
             // единственным следом была строка warn в логе.
-            place_hotkey: "Ctrl+Win+Shift+0".to_string(),
+            //
+            // Alt, а не Shift, вынужденно: `Win+Ctrl+Shift+<цифра>` резервирует
+            // сама оболочка Windows («новый экземпляр приложения N панели задач
+            // от администратора»), и RegisterHotKey отдаёт на неё
+            // ERROR_HOTKEY_ALREADY_REGISTERED при любой цифре. Проверено на
+            // живой машине: Win+цифра, Win+Shift+цифра и Win+Ctrl+Shift+цифра
+            // заняты все, Ctrl+Alt+Win+0 свободна.
+            place_hotkey: "Ctrl+Alt+Win+0".to_string(),
         }
     }
 }
@@ -104,7 +111,7 @@ mod tests {
         assert!(s.store_match_list.is_empty());
         assert_eq!(s.timeout_before_open, 5);
         assert_eq!(s.update_check_interval, "launch");
-        assert_eq!(s.place_hotkey, "Ctrl+Win+Shift+0");
+        assert_eq!(s.place_hotkey, "Ctrl+Alt+Win+0");
     }
 
     #[test]
@@ -129,7 +136,7 @@ mod tests {
         assert_eq!(parsed.key, Code::Digit0);
         assert_eq!(
             parsed.mods,
-            Modifiers::CONTROL | Modifiers::SUPER | Modifiers::SHIFT
+            Modifiers::CONTROL | Modifiers::ALT | Modifiers::SUPER
         );
 
         // Прежнее захардкоженное значение — чтобы его можно было вернуть в поле
