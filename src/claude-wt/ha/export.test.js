@@ -83,6 +83,19 @@ describe('createHaExport', () => {
     );
   });
 
+  it('start() снимает слоты сверх текущего числа — уменьшили slots, лишние не висят', () => {
+    // `Session 10` пережил на этой машине уменьшение до девяти слотов: конфиг
+    // лежит в брокере retained, и снять его может только пустая публикация.
+    const { exporter, publish } = make();
+    exporter.start();
+    const cleared = publish.mock.calls.filter(([, payload]) => payload === '');
+    expect(cleared.some(([t]) => t === 'homeassistant/switch/claude_wt/slot_3/config')).toBe(true);
+    expect(cleared.some(([t]) => t === 'home/room/pc/windows/claude/slot/3')).toBe(true);
+    // Живые слоты (их два) чистка не трогает.
+    expect(cleared.some(([t]) => t.includes('slot_1/config'))).toBe(false);
+    expect(cleared.every(([, , opts]) => opts.retain === true)).toBe(true);
+  });
+
   it('enabled: false не публикует ничего', () => {
     const { exporter, publish } = make({ config: { homeassistant: { enabled: false } } });
     exporter.start();

@@ -12,7 +12,9 @@
  */
 import { labelSessions, normalizeSort } from './session-groups.js';
 import { buildSlots } from './session-slots.js';
-import { discoveryMessages, namesFingerprint, stateMessages, topics } from './discovery.js';
+import {
+  discoveryMessages, namesFingerprint, removalMessages, stateMessages, topics,
+} from './discovery.js';
 import { sessionEntity, buildSessionEntities, buildSummaryEntity } from './entities.js';
 
 // Два тика демона claude-wt (у него интервал 1000 мс). Отметку «просмотрено»
@@ -20,6 +22,13 @@ import { sessionEntity, buildSessionEntities, buildSummaryEntity } from './entit
 // focusWindowById() состояние на диске ещё прежнее, и экспорт по горячим
 // следам опубликовал бы ровно тот статус, от которого человек только что ушёл.
 const REFRESH_DELAY_MS = 2000;
+
+// Сколько слотов над текущим числом подчищать на старте. Уменьшили `slots` —
+// лишние сущности остаются в Home Assistant навсегда: их конфиг лежит в
+// брокере retained, и снимает его только такая же пустая публикация. Двадцать
+// — с запасом на любую прежнюю настройку; это разовые пустые сообщения на
+// подключение, не поток.
+const STALE_SLOT_SWEEP = 20;
 
 function createHaExport({ winMan, publish, log, config }) {
   const ha = config?.homeassistant ?? {};
@@ -85,6 +94,7 @@ function createHaExport({ winMan, publish, log, config }) {
     start() {
       if (!cfg.enabled) return;
       announced = null;
+      publishAll(removalMessages(base, cfg.slots + 1, cfg.slots + STALE_SLOT_SWEEP));
       if (timerId === null) {
         log(`home assistant: publishing ${cfg.slots} session slots every ${cfg.interval / 1000}s`);
         timerId = setInterval(tick, cfg.interval);

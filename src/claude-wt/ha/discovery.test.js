@@ -24,6 +24,25 @@ describe('discovery', () => {
     expect(summaryConfig(BASE).object_id).toBe('claude_sessions');
   });
 
+  it('имя слота начинается с его номера — карточка устройства сортирует по имени', () => {
+    // Без номера живая сессия уезжает под пустые слоты просто по алфавиту:
+    // в карточке видно `b2b-kpi … Session 9`, а `windows11-manager` последней.
+    const names = ['windows11-manager', 'b2b-kpi'];
+    expect(slotConfig(BASE, 1, names[0]).name).toBe('1. windows11-manager');
+    expect(slotConfig(BASE, 2, names[1]).name).toBe('2. b2b-kpi');
+    // Пустой слот тоже с номером, иначе он выпадает из того же порядка.
+    expect(slotConfig(BASE, 6).name).toBe('6. Session 6');
+  });
+
+  it('номер дополняется нулём, когда слотов десять и больше', () => {
+    // Иначе алфавитный порядок ставит `10` между `1` и `2`, и вся затея с
+    // номером в имени рассыпается ровно там, где слотов много.
+    const msgs = discoveryMessages(BASE, 12, ['alpha']);
+    const named = msgs.filter((m) => m.topic.endsWith('/config') && m.topic.includes('slot_'));
+    expect(JSON.parse(named[0].payload).name).toBe('01. alpha');
+    expect(JSON.parse(named[9].payload).name).toBe('10. Session 10');
+  });
+
   it('a slot has a unique id, which is what makes it renameable in the UI', () => {
     expect(slotConfig(BASE, 3).unique_id).toBe('claude_wt_slot_3');
     expect(slotConfig(BASE, 3).unique_id).not.toBe(slotConfig(BASE, 4).unique_id);
