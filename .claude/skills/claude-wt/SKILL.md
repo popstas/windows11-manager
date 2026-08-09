@@ -124,19 +124,34 @@ false` — состояние, в которое эту машину и пере
 
 ## Деплой после правок (обязательно)
 
-`deploy-fast` / `deploy-local` были только у windows-mqtt, и его в этой цепочке больше нет: пикер и MQTT — два разных Tauri-приложения без общего скрипта, каждое пересобирается и перезапускается само.
+**Машина доступна по `ssh popstas-pc`, и выкатка скриптованная.** Скрипты лежат вне git (`/data/` в .gitignore обоих проектов), потому что знают пути этой установки, а не проекта:
+
+| Скрипт | Что выкатывает |
+|---|---|
+| `windows11-manager/data/scripts/deploy-pc.sh` | трей этого проекта и его node-часть: `git pull` → `cargo build --release` → перезапуск. Флаги `--install` (npm install), `--no-build`, `--no-pull`, `--no-launch` |
+| `ccfzf-picker/data/scripts/deploy-win.sh` | пикер: `git pull` → `prepare-frontend.js` → `cargo build --release` → перезапуск |
+| `ccfzf-picker/data/scripts/deploy-pc.sh` | windows-mqtt (`npm run deploy-local`/`deploy-fast`) вместе с вендорённым сюда windows11-manager. Наследство старой цепочки; после Task 13 нужен только ради отката |
+
+Два свойства Windows, из которых растёт вся механика этих скриптов. Первое: служба OpenSSH сажает сессию в **session 0** (services), а рабочий стол человека — в session 1. Приложение с иконкой в трее, запущенное прямо из ssh, попадает туда, где нет ни трея, ни рабочего стола: процесс есть, на экране пусто. Поэтому запуск идёт `schtasks /ru popstas /it` — задача исполняется в интерактивной сессии залогиненного человека. Сборка в session 0 при этом работает; спотыкался на ней только windows-mqtt, у которого `realpathSync` по юнкции `node_modules\windows11-manager` оттуда отдаёт UNKNOWN (errno -4094), — оттого его сборка целиком уезжает в задачу планировщика. Второе: линковщик не может писать в .exe работающего процесса, но переименовать его Windows разрешает (образ держится по хэндлу, а не по имени). Поэтому бинарь отодвигается в `*.old.exe`, cargo кладёт новый на освободившееся имя, и прежний экземпляр живёт до самого перезапуска.
 
 | Что менялось | Что сделать |
 |---|---|
-| `src/mqtt/`, `src/claude-wt/ha/`, остальной node в windows11-manager | В трее: тумблер «Stop MQTT» → «Start MQTT» (пункт `mqtt_toggle` в `lib.rs`) — новый код подхватится, как только процесс `node src/index.js mqtt` стартует заново. Если процесс просто упал — трей сам покажет «stopped» (см. таблицу выше), но заново его поднимет только этот тумблер: у MQTT автоподъёма нет |
-| `src/claude-wt/` (демон) | То же самое тумблером «Stop/Start claude-wt», либо просто убить процесс — Tauri поднимет его сам (автоподъём, с откатом) |
-| Rust `tauri-app/src-tauri/` в windows11-manager | `cd tauri-app/src-tauri && . "$HOME/.cargo/env" && cargo build`, затем перезапустить трей |
-| Новый ключ верхнего уровня в `config.example.cjs` (`placeWindowOnOpen`, `notifyPlaced`, `publishStats`, `publishStatsTopic`, `homeassistant`) | Файл-образец сам не читается: перенести ключ руками в `C:\Users\popstas\.config\windows11-manager.config.js`, затем «Stop MQTT» → «Start MQTT» |
-| Что угодно в `ccfzf-picker` | `cd src-tauri && . "$HOME/.cargo/env" && cargo tauri build` из каталога `ccfzf-picker`, затем перезапустить приложение |
+| `src/mqtt/`, `src/claude-wt/ha/`, остальной node в windows11-manager | `./data/scripts/deploy-pc.sh --no-build` (перезапуск трея перезапустит и детей). Точечно, без выкатки, — тумблер «Stop MQTT» → «Start MQTT» в трее (`mqtt_toggle` в `lib.rs`) |
+| `src/claude-wt/` (демон) | То же самое тумблером «Stop/Start claude-wt», либо просто убить процесс — Tauri поднимет его сам (автоподъём с откатом; у MQTT-процесса он тоже есть) |
+| Rust `tauri-app/src-tauri/` в windows11-manager | `./data/scripts/deploy-pc.sh` |
+| Новая зависимость в `package.json` | `./data/scripts/deploy-pc.sh --install` |
+| Новый ключ верхнего уровня в `config.example.cjs` (`placeWindowOnOpen`, `notifyPlaced`, `publishStats`, `publishStatsTopic`, `homeassistant`) | Файл-образец сам не читается — переносить руками в живой конфиг, см. ниже |
+| Что угодно в `ccfzf-picker` | `./data/scripts/deploy-win.sh` из каталога пикера |
 
 Поднимать первым windows11-manager, вторым — `ccfzf-picker`: открытие сессии и отметка «непросмотрено» из пикера обе уходят публикацией в MQTT, который слушает менеджер (`open_session_mqtt` → `<base>/windows/claude-session-open`; см. «HTTP-сервер не участвует» ниже). Без брокера или без поднятого менеджера пикер для открытия сессии тихо откатывается на локальный запуск терминала (`chooseOpenTransport` в `frontend-src/open-transport.js`) — не ошибка, а другое поведение, которое легко принять за «доехало».
 
-Правку на живой машине нужно вносить так, чтобы не перепутать кодировку: `windows11-manager.config.js` там на Windows и содержит русский текст, а PowerShell `Set-Content` / `>` по умолчанию пишут UTF-16 или добавляют BOM — либо то, либо другое ломает файл. Редактировать инструментом, который сохраняет исходную кодировку (UTF-8 без BOM), не перенаправлением из PowerShell.
+### Живой конфиг node-части лежит не там, где кажется
+
+`C:\Users\popstas\AppData\Roaming\windows-mqtt\windows11-manager.config.js` — вот этот файл читается на самом деле. Каталог называется по windows-mqtt по историческим причинам, к его выключению отношения не имеет: `resolveConfigPath()` в `src/config.js` перебирает четыре пути, и `%APPDATA%\windows-mqtt\...` стоит **первым**, а `~/.config/windows11-manager.config.js` — третьим и на этой машине не существует вовсе (лежит только пустой `windows11-manager.config_.js`, подчёркивание — метка «выключено»). Правка по третьему пути не даст ни эффекта, ни ошибки.
+
+**Ключи `placeWindowOnOpen`, `notifyPlaced`, `publishStats`, `publishStatsTopic`, `homeassistant` — верхнего уровня, не внутри `claudeWt`.** Читают их `src/mqtt/autoplacer.js:25`, `src/mqtt/stats.js:65,87`, `src/commands/window-commands.js:65`, `src/commands/build.js:77`, `src/claude-wt/ha/export.js:25` — все через `config.<ключ>`. Вложенные в `claudeWt` они молча ничего не делают: расстановка новых окон не включится, статистика не поедет, а `homeassistant.slots` возьмёт умолчание 10 и заведёт лишнюю сущность `claude_session_10` при девяти строках на панели.
+
+Кодировка: файл на Windows и содержит русский текст, а PowerShell `Set-Content` / `>` по умолчанию пишут UTF-16 или добавляют BOM — и то и другое его ломает. Надёжный способ — забрать файл целиком (`scp popstas-pc:C:/Users/popstas/AppData/Roaming/windows-mqtt/windows11-manager.config.js .`), править локально и положить обратно тем же `scp`, сверив `cmp` после заливки. `node --check` перед заливкой ловит опечатку до того, как её увидит трей.
 
 Правки только в хуках на `V:` или в конфиге панели на `R:` — пересборка ни того, ни другого не нужна.
 
@@ -168,5 +183,5 @@ false` — состояние, в которое эту машину и пере
 | Отметка «непросмотрено» из пикера не действует | Проверить, что менеджер подписан на `claude-session-unread`: до переезда MQTT в windows11-manager подписки не было вовсе, и отметка молча ничего не делала — тот же симптом, что у настоящего бага в пикере |
 | «Open on \<host\>» / Enter в пикере не открывает сессию на трекере, хотя хост совпал | `chooseOpenTransport` требует ещё и настроенный брокер MQTT (`CONFIG.mqtt.configured`) — без него ветка тихо остаётся `local`, а не ошибкой |
 | Строка на панели дёргается между двумя сессиями, `restore` открывает приложения по два раза | Кто-то сделал только половину отката — вернул `windows.enabled: true` в windows-mqtt, не остановив MQTT-процесс windows11-manager (или наоборот). Нужны оба шага сразу |
-| Расстановка/статистика/сторож демона не завелись после правки конфига | Ключ добавлен только в `config.example.cjs` — в живой `C:\Users\popstas\.config\windows11-manager.config.js` его не перенесли руками |
+| Расстановка/статистика/сторож демона не завелись после правки конфига | Ключ добавлен только в `config.example.cjs`; либо перенесён не в тот файл (живой — `%APPDATA%\windows-mqtt\windows11-manager.config.js`, не `~/.config/`); либо положен внутрь `claudeWt` вместо верхнего уровня. Все три случая — молчание, не ошибка |
 | Русские строки в `windows11-manager.config.js` превратились в кракозябры после правки на Windows | Файл переписан не в UTF-8 — PowerShell `Set-Content` / `>` по умолчанию пишут UTF-16 или добавляют BOM. Редактировать инструментом, который сохраняет кодировку файла |
