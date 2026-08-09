@@ -34,6 +34,8 @@ pub struct Settings {
     pub store_match_list: Vec<String>,
     pub timeout_before_open: u32,
     pub update_check_interval: String,
+    /// Глобальный хоткей разовой расстановки окон. Пустая строка — выключен.
+    pub place_hotkey: String,
 }
 
 impl Default for Settings {
@@ -59,8 +61,30 @@ impl Default for Settings {
             store_match_list: Vec::new(),
             timeout_before_open: 5,
             update_check_interval: "launch".to_string(),
+            // Прежде расстановка висела на захардкоженном Ctrl+Alt+Shift+P, и
+            // занять его не удавалось: комбинацию держало другое приложение, а
+            // единственным следом была строка warn в логе.
+            place_hotkey: "Ctrl+Win+Shift+0".to_string(),
         }
     }
+}
+
+/// Привести написанное человеком к тому, что понимает парсер global-hotkey.
+///
+/// Клавишу Windows там зовут `Super`: `WIN` не входит в список модификаторов и
+/// уезжает в parse_key, где такой клавиши нет, — весь хоткей отваливается с
+/// ошибкой разбора. При этом на самой Windows её никто не называет Super,
+/// поэтому в настройках держим человеческое написание, а переводим здесь.
+fn normalize_hotkey(raw: &str) -> String {
+    raw.split('+')
+        .map(|token| token.trim())
+        .filter(|token| !token.is_empty())
+        .map(|token| match token.to_uppercase().as_str() {
+            "WIN" | "WINDOWS" | "META" => "Super",
+            _ => token,
+        })
+        .collect::<Vec<_>>()
+        .join("+")
 }
 
 #[cfg(test)]
@@ -80,6 +104,58 @@ mod tests {
         assert!(s.store_match_list.is_empty());
         assert_eq!(s.timeout_before_open, 5);
         assert_eq!(s.update_check_interval, "launch");
+        assert_eq!(s.place_hotkey, "Ctrl+Win+Shift+0");
+    }
+
+    #[test]
+    fn normalize_hotkey_translates_windows_key() {
+        assert_eq!(normalize_hotkey("Ctrl+Win+Shift+0"), "Ctrl+Super+Shift+0");
+        assert_eq!(normalize_hotkey("ctrl+win+shift+0"), "ctrl+Super+shift+0");
+        assert_eq!(normalize_hotkey("Ctrl+Windows+P"), "Ctrl+Super+P");
+        assert_eq!(normalize_hotkey("Ctrl+Meta+P"), "Ctrl+Super+P");
+    }
+
+    /// Проверка строки на строку доказывает только замену подстроки. Настоящее
+    /// требование — чтобы результат приняла та библиотека, которой его отдают:
+    /// список её модификаторов закрытый, и опечатка в названии видна лишь при
+    /// разборе. Умолчание разбирается здесь, а не на живой машине.
+    #[test]
+    fn normalized_default_hotkey_parses() {
+        use std::str::FromStr;
+        use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
+
+        let normalized = normalize_hotkey(&Settings::default().place_hotkey);
+        let parsed = Shortcut::from_str(&normalized).expect("умолчание должно разбираться");
+        assert_eq!(parsed.key, Code::Digit0);
+        assert_eq!(
+            parsed.mods,
+            Modifiers::CONTROL | Modifiers::SUPER | Modifiers::SHIFT
+        );
+
+        // Прежнее захардкоженное значение — чтобы его можно было вернуть в поле
+        // настройки и оно осталось рабочим.
+        assert!(Shortcut::from_str(&normalize_hotkey("Ctrl+Alt+Shift+P")).is_ok());
+        // А без перевода Win парсер именно отказывает — ради этого перевод и есть.
+        assert!(Shortcut::from_str("Ctrl+Win+Shift+0").is_err());
+    }
+
+    #[test]
+    fn normalize_hotkey_leaves_other_tokens_alone() {
+        // Ровно то, что было захардкожено до появления настройки.
+        assert_eq!(normalize_hotkey("Ctrl+Alt+Shift+P"), "Ctrl+Alt+Shift+P");
+        // Клавиша с "win" внутри имени — не модификатор, трогать нельзя.
+        assert_eq!(normalize_hotkey("Ctrl+Window"), "Ctrl+Window");
+    }
+
+    #[test]
+    fn normalize_hotkey_trims_and_drops_empty_tokens() {
+        assert_eq!(normalize_hotkey(" Ctrl + Win + 0 "), "Ctrl+Super+0");
+        // Пустая строка — выключенный хоткей, а не ошибка разбора.
+        assert_eq!(normalize_hotkey(""), "");
+        assert_eq!(normalize_hotkey("  "), "");
+        // Лишний плюс не должен превращаться в пустой токен: парсер на нём
+        // возвращает EmptyToken и хоткей не регистрируется вовсе.
+        assert_eq!(normalize_hotkey("Ctrl++0"), "Ctrl+0");
     }
 }
 
@@ -265,6 +341,10 @@ async fn get_settings(app: tauri::AppHandle) -> Result<Settings, String> {
             .get("update_check_interval")
             .and_then(|v| v.as_str().map(String::from))
             .unwrap_or(defaults.update_check_interval),
+        place_hotkey: store
+            .get("place_hotkey")
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or(defaults.place_hotkey),
     };
 
     Ok(settings)
@@ -310,7 +390,21 @@ async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), 
     );
     store.set("timeout_before_open", serde_json::json!(settings.timeout_before_open));
     store.set("update_check_interval", serde_json::json!(settings.update_check_interval));
+
+    // Прежнее значение читаем до записи: по нему снимается старая регистрация.
+    // Без снятия обе комбинации остались бы рабочими до перезапуска, а человек
+    // видел бы в настройках только новую.
+    let previous_hotkey = store
+        .get("place_hotkey")
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_else(|| Settings::default().place_hotkey);
+    store.set("place_hotkey", serde_json::json!(settings.place_hotkey));
     store.save().map_err(|e| e.to_string())?;
+
+    if normalize_hotkey(&previous_hotkey) != normalize_hotkey(&settings.place_hotkey) {
+        unregister_place_hotkey(&app, &previous_hotkey);
+        register_place_hotkey(&app, &settings.place_hotkey);
+    }
 
     // Write store-match-list.json to project dir so Node can read it
     let project_path = store
@@ -412,6 +506,7 @@ fn load_settings_from_store(app: &tauri::AppHandle) -> Settings {
         store_match_list: store.get("store_match_list").and_then(|v| v.as_array().map(|arr| arr.iter().filter_map(|item| item.as_str().map(String::from)).collect::<Vec<String>>())).unwrap_or_default(),
         timeout_before_open: store.get("timeout_before_open").and_then(|v| v.as_u64()).unwrap_or(5) as u32,
         update_check_interval: store.get("update_check_interval").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.update_check_interval),
+        place_hotkey: store.get("place_hotkey").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.place_hotkey),
     }
 }
 
@@ -475,6 +570,51 @@ fn place_windows(app: &tauri::AppHandle) {
         return;
     }
     run_node_command(app, &["src", "place", "--verbose"], "Place Windows");
+}
+
+/// Повесить разовую расстановку окон на глобальный хоткей.
+///
+/// Отказ регистрации — не повод падать: комбинацию мог занять кто угодно
+/// другой, и приложение в этом случае продолжает работать, просто без хоткея.
+/// Раньше единственным следом такого отказа была строка warn, и найти её мог
+/// только тот, кто уже знал, что искать; теперь комбинацию видно и в
+/// настройках, так что её можно сменить, не пересобирая приложение.
+fn register_place_hotkey(app: &tauri::AppHandle, raw: &str) {
+    use tauri_plugin_global_shortcut::ShortcutState;
+
+    let shortcut = normalize_hotkey(raw);
+    if shortcut.is_empty() {
+        info!("Place hotkey is empty — not registering");
+        return;
+    }
+
+    let label = shortcut.clone();
+    if let Err(e) = app
+        .global_shortcut()
+        .on_shortcut(shortcut.as_str(), move |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                info!("Hotkey {} pressed", label);
+                place_windows(app);
+            }
+        })
+    {
+        warn!("Could not register hotkey {}: {} (already in use?)", shortcut, e);
+    } else {
+        info!("Place hotkey registered: {}", shortcut);
+    }
+}
+
+/// Снять регистрацию прежней комбинации при смене настройки.
+fn unregister_place_hotkey(app: &tauri::AppHandle, raw: &str) {
+    let shortcut = normalize_hotkey(raw);
+    if shortcut.is_empty() {
+        return;
+    }
+    // Ошибка здесь ожидаема ровно в одном случае: прежнюю комбинацию так и не
+    // удалось занять при старте. Снимать нечего — это не повод шуметь ошибкой.
+    if let Err(e) = app.global_shortcut().unregister(shortcut.as_str()) {
+        info!("Place hotkey {} was not registered: {}", shortcut, e);
+    }
 }
 
 /// Ребёнок умер. Гасит статус, пишет код возврата и — для демона claude-wt —
@@ -1450,20 +1590,7 @@ pub fn run() {
                 });
             }
 
-            // Register global hotkey: Ctrl+Alt+Shift+P
-            use tauri_plugin_global_shortcut::ShortcutState;
-
-            if let Err(e) = app.global_shortcut().on_shortcut(
-                "Ctrl+Alt+Shift+P",
-                move |app, _shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
-                        info!("Hotkey Ctrl+Alt+Shift+P pressed");
-                        place_windows(app);
-                    }
-                },
-            ) {
-                warn!("Could not register hotkey Ctrl+Alt+Shift+P: {} (already in use?)", e);
-            }
+            register_place_hotkey(app.handle(), &settings.place_hotkey);
 
             Ok(())
         })
