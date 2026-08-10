@@ -67,22 +67,6 @@ function warnThrottled(message) {
 }
 
 /**
- * Read the ccfzf dump and index it. The file is re-read only when its mtime
- * changes: the daemon asks for the index once a second, the dump changes a few
- * times a day.
- *
- * Failure handling differs by kind, on purpose:
- * - the path cannot be stat'ed (V: unmounted) — keep serving the last index
- *   read from that same path, and only fall back to `{}` when we have nothing
- *   cached for it. Losing every session because a network drive blinked would
- *   be worse than a slightly stale index.
- * - the file is there but unreadable (truncated or half-written JSON) — cache
- *   an empty index for that mtime, so we neither re-parse it every tick nor
- *   keep serving data the file no longer contains.
- * Either way the tracker degrades to its own title history rather than throwing.
- */
-
-/**
  * Нужны ли этому дампу отметки хуков со стороны читателя.
  *
  * Не нужны, когда `hasHookStamp` верно для каждой сессии: ранжировать тёзок
@@ -102,6 +86,21 @@ function dumpNeedsHookStamps(dump) {
   return sessions.length === 0 || !sessions.every(hasHookStamp);
 }
 
+/**
+ * Read the ccfzf dump and index it. The file is re-read only when its mtime
+ * changes: the daemon asks for the index once a second, the dump changes a few
+ * times a day.
+ *
+ * Failure handling differs by kind, on purpose:
+ * - the path cannot be stat'ed (V: unmounted) — keep serving the last index
+ *   read from that same path, and only fall back to `{}` when we have nothing
+ *   cached for it. Losing every session because a network drive blinked would
+ *   be worse than a slightly stale index.
+ * - the file is there but unreadable (truncated or half-written JSON) — cache
+ *   an empty index for that mtime, so we neither re-parse it every tick nor
+ *   keep serving data the file no longer contains.
+ * Either way the tracker degrades to its own title history rather than throwing.
+ */
 function loadDump(filePath, progressDir = '', nowMs = Date.now()) {
   if (!filePath) return { index: {}, agents: {} };
   let stat;
