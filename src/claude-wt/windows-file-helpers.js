@@ -29,7 +29,7 @@ const WINDOWS_FILE_HEARTBEAT_MS = 30_000;
  * видит, и без этой его список продолжал бы звать к сессии, на которую уже
  * сходили руками.
  */
-function buildWindowsFile({ windows, slots, host, pid, nowMs, snapshots }) {
+function buildWindowsFile({ windows, slots, host, pid, nowMs, snapshots, projects }) {
   const out = {};
   for (const w of windows ?? []) {
     const id = w?.sessionId;
@@ -49,6 +49,20 @@ function buildWindowsFile({ windows, slots, host, pid, nowMs, snapshots }) {
     // Ключ на месте всегда, даже пустой: читателю дешевле пустой массив, чем
     // проверка на отсутствие ключа при каждом использовании.
     snapshots: (snapshots ?? []).map(trimSnapshot),
+    // Хоткеи проектов. Единственный их источник — claudeWt.projects здесь;
+    // регистрирует клавиши читатель (ccfzf-picker) на своей стороне, и знать
+    // про них ему больше неоткуда. Записи без хоткея не едут: список проектов
+    // читатель собирает сам, а сказать ему нечего.
+    //
+    // `profile` не едет намеренно: это знание про Windows Terminal на этой
+    // машине, читателю бесполезное.
+    projects: (projects ?? [])
+      .filter(p => typeof p?.hotkey === 'string' && p.hotkey.trim())
+      .map(p => ({
+        cwd: typeof p.cwd === 'string' ? p.cwd : '',
+        name: typeof p.name === 'string' ? p.name : '',
+        hotkey: p.hotkey.trim(),
+      })),
   };
 }
 
@@ -91,7 +105,7 @@ function trimSnapshot(snap) {
  * едут. Без этого запись снимка доезжала бы до читателя только
  * сердцебиением, до тридцати секунд.
  */
-function windowsFingerprint(windows, snapshots) {
+function windowsFingerprint(windows, snapshots, projects) {
   const win = Object.entries(windows ?? {})
     .map(([id, w]) => `${id}\u0000${w.desktop}\u0000${w.title}\u0000${w.focusedAt}`)
     .sort()
@@ -103,7 +117,13 @@ function windowsFingerprint(windows, snapshots) {
   const snaps = (snapshots ?? [])
     .map(s => `${s?.id} ${s?.created}`)
     .join('');
-  return snaps ? `${win}${snaps}` : win;
+  // Хоткеи входят по содержимому целиком: их мало, а смена клавиши в конфиге
+  // обязана доехать до читателя тем же тиком, а не сердцебиением.
+  const keys = (projects ?? [])
+    .map(p => `${p?.cwd} ${p?.hotkey}`)
+    .join('');
+  const tail = `${snaps}${keys ? `${keys}` : ''}`;
+  return tail ? `${win}${tail}` : win;
 }
 
 function shouldWriteWindowsFile({ fingerprint, lastFingerprint, lastWriteMs, nowMs }) {

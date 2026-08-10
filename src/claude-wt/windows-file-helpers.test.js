@@ -51,7 +51,7 @@ describe('buildWindowsFile', () => {
     const out = buildWindowsFile({
       windows: [], slots: {}, host: 'pc', pid: 42, nowMs: 1_800_500,
     });
-    expect(out).toEqual({ host: 'pc', pid: 42, generated: 1800, windows: {}, snapshots: [] });
+    expect(out).toEqual({ host: 'pc', pid: 42, generated: 1800, windows: {}, snapshots: [], projects: [] });
   });
 
   it('survives a window whose session has no slot yet', () => {
@@ -180,5 +180,55 @@ describe('windowsFingerprint — снимки', () => {
       windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000,
     }).windows;
     expect(windowsFingerprint(windows, [])).toBe(windowsFingerprint(windows));
+  });
+});
+
+describe('buildWindowsFile — projects', () => {
+  // Хоткеи едут читателю на другую машину: единственный их источник — конфиг
+  // здесь, а регистрирует клавиши ccfzf-picker там. Записи без хоткея не едут
+  // вовсе — читателю они не говорят ничего, а список проектов он и так знает.
+  it('publishes only projects that carry a hotkey', () => {
+    const out = buildWindowsFile({
+      windows: [], slots: {}, host: 'pc', pid: 42, nowMs: 0,
+      projects: [
+        { name: 'home', cwd: '/p/home', hotkey: 'Ctrl+F11', profile: 'home' },
+        { name: 'plain', cwd: '/p/plain', profile: 'work' },
+      ],
+    });
+    expect(out.projects).toEqual([{ cwd: '/p/home', name: 'home', hotkey: 'Ctrl+F11' }]);
+  });
+
+  // profile — знание про Windows Terminal на этой машине; читателю оно
+  // бесполезно, а лишнее поле в чужом файле рано или поздно кто-нибудь прочтёт.
+  it('does not leak the terminal profile to the reader', () => {
+    const out = buildWindowsFile({
+      windows: [], slots: {}, host: 'pc', pid: 42, nowMs: 0,
+      projects: [{ name: 'home', cwd: '/p/home', hotkey: 'Ctrl+F11', profile: 'home' }],
+    });
+    expect(out.projects[0].profile).toBeUndefined();
+  });
+
+  // Ключ на месте всегда — читателю дешевле пустой массив, чем проверка на
+  // отсутствие ключа при каждом использовании. То же правило, что у snapshots.
+  it('keeps the key even with nothing to publish', () => {
+    expect(buildWindowsFile({ host: 'pc', pid: 1, nowMs: 0 }).projects).toEqual([]);
+  });
+});
+
+describe('windowsFingerprint — projects', () => {
+  // Без этого смена хоткея в конфиге доезжала бы до читателя только
+  // сердцебиением — до тридцати секунд, — а если расклад окон при этом не
+  // менялся, то и вовсе ждала бы чужого движения.
+  it('notices a changed hotkey', () => {
+    const win = { one: { desktop: 1, title: 'x', focusedAt: 0 } };
+    const a = [{ cwd: '/p/home', name: 'home', hotkey: 'Ctrl+F11' }];
+    const b = [{ cwd: '/p/home', name: 'home', hotkey: 'Ctrl+F12' }];
+    expect(windowsFingerprint(win, [], a)).not.toBe(windowsFingerprint(win, [], b));
+  });
+
+  it('notices a project that gained or lost its hotkey', () => {
+    const win = { one: { desktop: 1, title: 'x', focusedAt: 0 } };
+    const one = [{ cwd: '/p/home', name: 'home', hotkey: 'Ctrl+F11' }];
+    expect(windowsFingerprint(win, [], [])).not.toBe(windowsFingerprint(win, [], one));
   });
 });

@@ -262,8 +262,9 @@ function publishWindows(cfg, windows, slots) {
   const snapshots = currentSnapshots();
   const payload = buildWindowsFile({
     windows, slots, host: os.hostname(), pid: process.pid, nowMs, snapshots,
+    projects: claudeWtProjects(),
   });
-  const fingerprint = windowsFingerprint(payload.windows, payload.snapshots);
+  const fingerprint = windowsFingerprint(payload.windows, payload.snapshots, payload.projects);
   const due = shouldWriteWindowsFile({
     fingerprint, lastFingerprint: lastWindowsFingerprint, lastWriteMs: lastWindowsWrite, nowMs,
   });
