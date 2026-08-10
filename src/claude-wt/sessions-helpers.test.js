@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { indexSessions, indexBackgroundAgents, compareSessions } from './sessions-helpers.js';
+import { indexSessions, indexBackgroundAgents, compareSessions, hasHookStamp } from './sessions-helpers.js';
 
 const session = (over = {}) => ({
   id: 'a1', cwd: '/home/popstas/p', title: 'ccfzf', mtime: 100, live: false, ...over,
@@ -231,5 +231,23 @@ describe('background agents', () => {
   it('yields nothing for a dump without agents', () => {
     expect(indexBackgroundAgents({ sessions: [session()] })).toEqual({});
     expect(indexBackgroundAgents(null)).toEqual({});
+  });
+});
+
+describe('hasHookStamp', () => {
+  // Общая калитка со stampOf (см. её докстринг) и с dumpNeedsHookStamps в
+  // sessions.js — sessions.js своего условия не заводит, а зовёт эту же
+  // функцию, так что расхождение между «нужны ли сетевые отметки» и «откуда
+  // stampOf берёт число» структурно исключено, а не просто протестировано.
+  it('верно для записи со своей отметкой, даже нулевой', () => {
+    expect(hasHookStamp({ activityAt: 0 })).toBe(true);
+    expect(hasHookStamp({ activityAt: 900 })).toBe(true);
+  });
+
+  it('ложно, когда отметки нет вовсе', () => {
+    expect(hasHookStamp({})).toBe(false);
+    expect(hasHookStamp({ activityAt: undefined })).toBe(false);
+    expect(hasHookStamp({ activityAt: NaN })).toBe(false);
+    expect(hasHookStamp(null)).toBe(false);
   });
 });

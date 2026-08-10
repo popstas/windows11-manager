@@ -2,6 +2,23 @@
 import { stripTitleDecoration } from './title-helpers.js';
 
 /**
+ * У записи есть собственная отметка активности, добытая ccfzf, а не той, что
+ * ещё предстоит добыть пробой читателя.
+ *
+ * Общая калитка для `stampOf` (чем сравнивать тёзок) и для
+ * `dumpNeedsHookStamps` в sessions.js (нужны ли этому дампу вообще сетевые
+ * отметки хука). Одно правило — в одном месте: разъедься они, `stampOf` мог
+ * бы однажды провалиться в пробу для записи, которую `dumpNeedsHookStamps`
+ * уже сочла «со своей отметкой», — и `progressStamp` выпал бы из ключа кэша
+ * sessions.js, хотя индекс от него уже зависит. Именно такое расхождение
+ * между кэшем и его настоящей зависимостью пятнадцать минут привязывало окна
+ * к id перезапустившихся сессий (см. MAX_AGE_MS в sessions.js).
+ */
+function hasHookStamp(s) {
+  return Number.isFinite(s?.activityAt);
+}
+
+/**
  * Отметка активности сессии: своя, из дампа, либо добытая у читателя.
  *
  * Поле `activityAt` кладёт ccfzf: файлы `<id>.state.json` у него локальные, а
@@ -11,7 +28,7 @@ import { stripTitleDecoration } from './title-helpers.js';
  * вызов при отсутствии файла.
  */
 function stampOf(s, probe) {
-  if (Number.isFinite(s?.activityAt)) return s.activityAt;
+  if (hasHookStamp(s)) return s.activityAt;
   return probe ? (probe(s?.id) ?? 0) : 0;
 }
 
@@ -139,4 +156,4 @@ function indexBackgroundAgents(dump) {
   return index;
 }
 
-export { compareSessions, byActivityThen, stampOf, indexSessions, indexBackgroundAgents };
+export { compareSessions, byActivityThen, stampOf, hasHookStamp, indexSessions, indexBackgroundAgents };

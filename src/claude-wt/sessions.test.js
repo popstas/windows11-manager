@@ -5,7 +5,18 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Мокается модуль целиком, а не через vi.spyOn: sessions.js держит ссылку на
 // импортированную функцию с момента импорта, и подмена свойства её не достанет.
-const progressStamp = vi.hoisted(() => vi.fn(() => 0));
+//
+// Для пустого каталога (``, что и шлют все тесты без явного progressDir) мок
+// ведёт себя как настоящий progressStamp('') — стабильный 0, иначе старые
+// тесты на кэш по mtime ловили бы лишний re-read просто от смены отметки на
+// каждый вызов. Для непустого каталога отметка растёт с каждым вызовом — так
+// в тестах ниже видно, действительно ли переход usesHookStamps в false
+// перестаёт её спрашивать, а не просто совпадает по случайно одинаковому
+// возврату.
+const progressStamp = vi.hoisted(() => {
+  let n = 0;
+  return vi.fn(dir => (dir ? ++n : 0));
+});
 vi.mock('./progress.js', async (importOriginal) => ({
   ...await importOriginal(),
   progressStamp,
@@ -21,6 +32,14 @@ let n = 0;
 
 const dumpWith = (...titles) => ({
   sessions: titles.map((title, i) => ({ id: `s${i}`, title, cwd: `/p${i}`, live: true, mtime: 100 + i })),
+});
+
+// То же самое, но с activityAt на каждой сессии — дамп, для которого
+// usesHookStamps становится false и progressStamp выпадает из ключа кэша.
+const withStamps = (...titles) => ({
+  sessions: titles.map((title, i) => ({
+    id: `s${i}`, title, cwd: `/p${i}`, live: true, mtime: 100 + i, activityAt: 1000 + i,
+  })),
 });
 
 // Explicit mtimes: two writes in a row can land on the same timestamp, and
@@ -206,32 +225,81 @@ describe('loadSessionIndex against a lying read cache', () => {
 });
 
 describe('loadSessionIndex и отметка каталога состояний', () => {
-  const withStamps = () => ({
-    sessions: [{ id: 's0', title: 'ccfzf', cwd: '/p0', live: true, mtime: 100, activityAt: 50 }],
-  });
-  const withoutStamps = () => ({
-    sessions: [{ id: 's0', title: 'ccfzf', cwd: '/p0', live: true, mtime: 100 }],
-  });
-
   it('перестаёт статить каталог состояний, когда дамп несёт activityAt', () => {
     // progressStamp — сетевой stat на V: в каждом тике демона, то есть раз в
     // секунду. Он там только ради зависимости, которой больше нет.
     const p = freshPath();
-    writeDump(p, withStamps(), T0);
+    writeDump(p, withStamps('ccfzf'), T0);
     loadSessionIndex(p, '/progress');            // первое чтение: ещё не знаем
     progressStamp.mockClear();
-    writeDump(p, withStamps(), T1);
+    writeDump(p, withStamps('ccfzf'), T1);
     loadSessionIndex(p, '/progress');
     expect(progressStamp).not.toHaveBeenCalled();
   });
 
   it('продолжает статить каталог, когда дамп поля не несёт', () => {
     const p = freshPath();
-    writeDump(p, withoutStamps(), T0);
+    writeDump(p, dumpWith('ccfzf'), T0);
     loadSessionIndex(p, '/progress');
     progressStamp.mockClear();
-    writeDump(p, withoutStamps(), T1);
+    writeDump(p, dumpWith('ccfzf'), T1);
     loadSessionIndex(p, '/progress');
+    expect(progressStamp).toHaveBeenCalled();
+  });
+
+  // Опасная половина: одних только счётчиков вызовов недостаточно, потому что
+  // они ничего не говорят о самом индексе. Ниже — те же три сценария
+  // инвалидации, что и в 'loadSessionIndex' выше (смена mtime, MAX_AGE_MS,
+  // invalidateSessionIndex), но на дампе с activityAt на каждой сессии —
+  // именно там, где progressStamp выпадает из ключа кэша, и где регресс в
+  // индексации был бы не пойман старыми тестами (у dumpWith() поля нет).
+  it('re-reads the file after its mtime changes, even once progressStamp stops being consulted', () => {
+    const p = freshPath();
+    writeDump(p, withStamps('ccfzf'), T0);
+    loadSessionIndex(p, '/progress');             // учится: usesHookStamps === false
+    progressStamp.mockClear();
+    writeDump(p, withStamps('home'), T1);
+    const index = loadSessionIndex(p, '/progress');
+    expect(progressStamp).not.toHaveBeenCalled();
+    expect(index.home).toEqual({ id: 's0', cwd: '/p0', title: 'home', ambiguous: false });
+    expect(index.ccfzf).toBeUndefined();
+  });
+
+  it('re-reads once the cached index is older than max age, even with activityAt on every session', () => {
+    const p = freshPath();
+    writeDump(p, withStamps('ccfzf'), T0);
+    const base = 1_000_000;
+    loadSessionIndex(p, '/progress', base);       // учится: usesHookStamps === false
+    // Ровно на этом, первом после установления режима чтении кэшевый stamp
+    // ещё хранит настоящее, ненулевое значение progressStamp с того момента,
+    // когда режим ещё не был известен, — а вычисленный stamp уже 0, раз
+    // usesHookStamps теперь false. Несовпадение бьёт по условию кэша и
+    // безопасно, но один раз пересобирает дамп заново, даже без смены mtime.
+    // Даём этому осесть до начала отсчёта MAX_AGE_MS, иначе тест ловил бы
+    // этот безвредный лишний пересбор, а не то, что проверяет.
+    loadSessionIndex(p, '/progress', base);
+    progressStamp.mockClear();
+    // Тот же mtime, другое содержимое — врущий SMB-кэш; без stamp в ключе
+    // единственная страховка здесь — срок годности MAX_AGE_MS.
+    writeDump(p, withStamps('home'), T0);
+    expect(loadSessionIndex(p, '/progress', base + 1000).home).toBeUndefined();
+    expect(loadSessionIndex(p, '/progress', base + 20000).home)
+      .toEqual({ id: 's0', cwd: '/p0', title: 'home', ambiguous: false });
+    expect(progressStamp).not.toHaveBeenCalled();
+  });
+
+  it('invalidateSessionIndex forces a re-read even with activityAt on every session', () => {
+    const p = freshPath();
+    writeDump(p, withStamps('ccfzf'), T0);
+    const base = 1_000_000;
+    loadSessionIndex(p, '/progress', base);       // учится: usesHookStamps === false
+    progressStamp.mockClear();
+    writeDump(p, withStamps('home'), T0);
+    invalidateSessionIndex();
+    // Сброс кэша забывает и usesHookStamps: следующее чтение снова «не знает»
+    // и опять спрашивает сеть — ровно как первое чтение нового пути.
+    expect(loadSessionIndex(p, '/progress', base + 1000).home)
+      .toEqual({ id: 's0', cwd: '/p0', title: 'home', ambiguous: false });
     expect(progressStamp).toHaveBeenCalled();
   });
 });

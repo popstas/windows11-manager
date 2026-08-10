@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { indexSessions, indexBackgroundAgents } from './sessions-helpers.js';
+import { indexSessions, indexBackgroundAgents, hasHookStamp } from './sessions-helpers.js';
 import { progressStamp, activityAt } from './progress.js';
 
 let cache = { path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {}, agents: {}, usesHookStamps: true };
@@ -85,14 +85,21 @@ function warnThrottled(message) {
 /**
  * Нужны ли этому дампу отметки хуков со стороны читателя.
  *
- * Не нужны, когда `activityAt` есть у каждой сессии: ранжировать тёзок тогда
- * нечем, кроме самого дампа, и `progressStamp` в ключе кэша — сетевой stat
- * каталога на V: в каждом тике демона — становится платой ни за что.
+ * Не нужны, когда `hasHookStamp` верно для каждой сессии: ранжировать тёзок
+ * тогда нечем, кроме самого дампа, и `progressStamp` в ключе кэша — сетевой
+ * stat каталога на V: в каждом тике демона — становится платой ни за что.
  * Пустой список сессий ничего не доказывает, поэтому считается «нужны».
+ *
+ * Калитка нарочно зовёт ту же функцию, что и `stampOf` в sessions-helpers.js,
+ * а не повторяет её условие: `indexSessions` проваливается в пробу ровно
+ * тогда, когда `hasHookStamp` лжёт «нет своей отметки», и если бы здесь стояло
+ * своё, отдельно живущее условие, расхождение с `stampOf` было бы возможным
+ * молча — то самое расхождение кэша с его настоящей зависимостью, которое уже
+ * стоило пятнадцати минут потерянных окон (см. MAX_AGE_MS выше).
  */
 function dumpNeedsHookStamps(dump) {
   const sessions = Array.isArray(dump?.sessions) ? dump.sessions : [];
-  return sessions.length === 0 || !sessions.every(s => Number.isFinite(s?.activityAt));
+  return sessions.length === 0 || !sessions.every(hasHookStamp);
 }
 
 function loadDump(filePath, progressDir = '', nowMs = Date.now()) {
