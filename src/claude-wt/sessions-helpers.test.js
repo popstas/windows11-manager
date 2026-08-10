@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { indexSessions, indexBackgroundAgents, compareSessions } from './sessions-helpers.js';
 
 const session = (over = {}) => ({
@@ -66,6 +66,39 @@ describe('indexSessions', () => {
     expect(indexSessions(null)).toEqual({});
     expect(indexSessions({})).toEqual({});
     expect(indexSessions({ sessions: 'nope' })).toEqual({});
+  });
+
+  it('берёт отметку активности из дампа и не ходит по сети', () => {
+    const probe = vi.fn(() => 0);
+    const index = indexSessions({ sessions: [
+      { id: 'stale', title: 'ccfzf', cwd: '/p', mtime: 900, live: true, activityAt: 100 },
+      { id: 'fresh', title: 'ccfzf', cwd: '/p', mtime: 100, live: false, activityAt: 900 },
+    ] }, probe);
+    expect(index.ccfzf.id).toBe('fresh');
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it('ранжирует по отметке из дампа и без сетевой функции вовсе', () => {
+    // Читатель может быть позван без progressDir — раньше это значило
+    // «сравнивать только по live и mtime», и работающая сессия с live: false
+    // проигрывала мёртвой тёзке. Поле в дампе снимает и этот случай.
+    const index = indexSessions({ sessions: [
+      { id: 'stale', title: 'ccfzf', cwd: '/p', mtime: 900, live: true, activityAt: 100 },
+      { id: 'fresh', title: 'ccfzf', cwd: '/p', mtime: 100, live: false, activityAt: 900 },
+    ] });
+    expect(index.ccfzf.id).toBe('fresh');
+  });
+
+  it('считает отсутствующую отметку нулём, а не поводом идти в сеть', () => {
+    // Смешанный дамп бывает между поколениями писателя. Ноль — то же, что
+    // возвращает сетевой вызов, когда файла хука нет.
+    const probe = vi.fn(() => 5000);
+    const index = indexSessions({ sessions: [
+      { id: 'has', title: 'ccfzf', cwd: '/p', mtime: 100, live: false, activityAt: 900 },
+      { id: 'none', title: 'ccfzf', cwd: '/p', mtime: 900, live: true },
+    ] }, probe);
+    expect(index.ccfzf.id).toBe('has');
+    expect(probe).not.toHaveBeenCalled();
   });
 });
 

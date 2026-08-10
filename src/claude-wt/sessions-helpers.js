@@ -2,20 +2,34 @@
 import { stripTitleDecoration } from './title-helpers.js';
 
 /**
+ * Отметка активности сессии: своя, из дампа, либо добытая у читателя.
+ *
+ * Поле `activityAt` кладёт ccfzf: файлы `<id>.state.json` у него локальные, а
+ * здесь они на сетевом диске, и мерить одно и то же с двух сторон незачем —
+ * 354 сетевых stat на 200 сессий, 455 мс на перечитывание индекса. Ноль
+ * значит «хук про эту сессию не писал», ровно то же, что возвращает сетевой
+ * вызов при отсутствии файла.
+ */
+function stampOf(s, probe) {
+  if (Number.isFinite(s?.activityAt)) return s.activityAt;
+  return probe ? (probe(s?.id) ?? 0) : 0;
+}
+
+/**
  * Сравнение с учётом того, что говорят хуки самих агентов.
  *
  * Флаг `live` в дампе ccfzf бывает неверен: замерено 2026-08-01, когда две
  * сессии делили заголовок `shared` — работала та, у которой стояло
  * `live=false`, а `live=true` висело на старой. Хук же срабатывает на каждый
- * вызов инструмента реально работающего агента, поэтому свежая запись от него
- * — довод сильнее любого флага в дампе.
+ * вызов инструмента реально работающего агента, поэтому свежая отметка от
+ * него — довод сильнее любого флага в дампе.
  *
  * Если хук не установлен, обе отметки нулевые и всё сводится к прежнему
  * правилу.
  */
-function byActivityThen(activityAt) {
+function byActivityThen(probe) {
   return (a, b) => {
-    const diff = (activityAt(b.id) ?? 0) - (activityAt(a.id) ?? 0);
+    const diff = stampOf(b, probe) - stampOf(a, probe);
     return diff !== 0 ? diff : compareSessions(a, b);
   };
 }
@@ -57,10 +71,11 @@ function indexSessions(dump, activityAt) {
   const index = {};
   for (const [key, list] of byTitle) {
     // Спрашивать про активность есть смысл только когда кандидатов больше
-    // одного: у единственного всё равно нет соперника, а каждый вопрос — это
-    // stat по сетевому диску.
-    const compare = list.length > 1 && activityAt
-      ? byActivityThen(activityAt)
+    // одного: у единственного всё равно нет соперника. Отметка из дампа
+    // бесплатна, поэтому её достаточно и без сетевой функции.
+    const hasStamps = list.some(s => Number.isFinite(s?.activityAt));
+    const compare = list.length > 1 && (hasStamps || activityAt)
+      ? byActivityThen(hasStamps ? null : activityAt)
       : compareSessions;
     const sorted = [...list].sort(compare);
     const [best, second] = sorted;
@@ -102,4 +117,4 @@ function indexBackgroundAgents(dump) {
   return index;
 }
 
-export { compareSessions, byActivityThen, indexSessions, indexBackgroundAgents };
+export { compareSessions, byActivityThen, stampOf, indexSessions, indexBackgroundAgents };
