@@ -2,6 +2,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// Мокается модуль целиком, а не через vi.spyOn: sessions.js держит ссылку на
+// импортированную функцию с момента импорта, и подмена свойства её не достанет.
+const progressStamp = vi.hoisted(() => vi.fn(() => 0));
+vi.mock('./progress.js', async (importOriginal) => ({
+  ...await importOriginal(),
+  progressStamp,
+}));
+
 import { loadSessionIndex, invalidateSessionIndex } from './sessions.js';
 
 // loadSessionIndex keeps its cache at module scope, keyed by path. Every test
@@ -193,5 +202,36 @@ describe('loadSessionIndex against a lying read cache', () => {
       errors.mockRestore();
       fs.chmodSync(p, 0o644);
     }
+  });
+});
+
+describe('loadSessionIndex и отметка каталога состояний', () => {
+  const withStamps = () => ({
+    sessions: [{ id: 's0', title: 'ccfzf', cwd: '/p0', live: true, mtime: 100, activityAt: 50 }],
+  });
+  const withoutStamps = () => ({
+    sessions: [{ id: 's0', title: 'ccfzf', cwd: '/p0', live: true, mtime: 100 }],
+  });
+
+  it('перестаёт статить каталог состояний, когда дамп несёт activityAt', () => {
+    // progressStamp — сетевой stat на V: в каждом тике демона, то есть раз в
+    // секунду. Он там только ради зависимости, которой больше нет.
+    const p = freshPath();
+    writeDump(p, withStamps(), T0);
+    loadSessionIndex(p, '/progress');            // первое чтение: ещё не знаем
+    progressStamp.mockClear();
+    writeDump(p, withStamps(), T1);
+    loadSessionIndex(p, '/progress');
+    expect(progressStamp).not.toHaveBeenCalled();
+  });
+
+  it('продолжает статить каталог, когда дамп поля не несёт', () => {
+    const p = freshPath();
+    writeDump(p, withoutStamps(), T0);
+    loadSessionIndex(p, '/progress');
+    progressStamp.mockClear();
+    writeDump(p, withoutStamps(), T1);
+    loadSessionIndex(p, '/progress');
+    expect(progressStamp).toHaveBeenCalled();
   });
 });

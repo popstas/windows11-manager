@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { indexSessions, indexBackgroundAgents } from './sessions-helpers.js';
 import { progressStamp, activityAt } from './progress.js';
 
-let cache = { path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {}, agents: {} };
+let cache = { path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {}, agents: {}, usesHookStamps: true };
 let lastWarnedAt = 0;
 const WARN_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -81,6 +81,20 @@ function warnThrottled(message) {
  *   keep serving data the file no longer contains.
  * Either way the tracker degrades to its own title history rather than throwing.
  */
+
+/**
+ * Нужны ли этому дампу отметки хуков со стороны читателя.
+ *
+ * Не нужны, когда `activityAt` есть у каждой сессии: ранжировать тёзок тогда
+ * нечем, кроме самого дампа, и `progressStamp` в ключе кэша — сетевой stat
+ * каталога на V: в каждом тике демона — становится платой ни за что.
+ * Пустой список сессий ничего не доказывает, поэтому считается «нужны».
+ */
+function dumpNeedsHookStamps(dump) {
+  const sessions = Array.isArray(dump?.sessions) ? dump.sessions : [];
+  return sessions.length === 0 || !sessions.every(s => Number.isFinite(s?.activityAt));
+}
+
 function loadDump(filePath, progressDir = '', nowMs = Date.now()) {
   if (!filePath) return { index: {}, agents: {} };
   let stat;
@@ -93,8 +107,13 @@ function loadDump(filePath, progressDir = '', nowMs = Date.now()) {
   // Индекс зависит не только от дампа: у спорных заголовков победителя выбирают
   // отметки хуков, а они меняются независимо. Каталог состояний меняет mtime
   // на каждую запись хука (временный файл + переименование), так что его
-  // отметка — достаточный признак «пора пересобрать».
-  const stamp = progressStamp(progressDir);
+  // отметка — достаточный признак «пора пересобрать». Но только пока дамп сам
+  // не несёт activityAt на каждую сессию — тогда пересборка зависит только от
+  // дампа, и сетевой stat каталога состояний в ключе кэша ничего не решает.
+  // Пока не известно, какой дамп придёт, — спрашиваем. Первое чтение после
+  // старта процесса платит один stat, дальше ноль.
+  const needStamp = cache.path !== filePath || cache.usesHookStamps !== false;
+  const stamp = needStamp ? progressStamp(progressDir) : 0;
   if (cache.path === filePath && cache.mtimeMs === stat.mtimeMs && cache.stamp === stamp
       && nowMs - cache.readAt < MAX_AGE_MS) {
     return cache;
@@ -108,11 +127,13 @@ function loadDump(filePath, progressDir = '', nowMs = Date.now()) {
     cache = {
       path: filePath, mtimeMs: stat.mtimeMs, stamp, readAt: nowMs,
       index, agents: indexBackgroundAgents(dump),
+      usesHookStamps: dumpNeedsHookStamps(dump),
     };
   } catch (e) {
     warnThrottled(`session dump unreadable (${filePath}): ${e.message}`);
     cache = {
       path: filePath, mtimeMs: stat.mtimeMs, stamp, readAt: nowMs, index: {}, agents: {},
+      usesHookStamps: true,
     };
   }
   return cache;
@@ -133,7 +154,7 @@ function loadBackgroundAgents(filePath, progressDir = '', nowMs = Date.now()) {
 
 /** Drop the cached dump so the next loadSessionIndex re-reads from disk. */
 function invalidateSessionIndex() {
-  cache = { path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {}, agents: {} };
+  cache = { path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {}, agents: {}, usesHookStamps: true };
 }
 
 export { indexSessions, indexBackgroundAgents, compareSessions } from './sessions-helpers.js';
