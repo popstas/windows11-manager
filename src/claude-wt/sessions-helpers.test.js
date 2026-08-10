@@ -89,16 +89,30 @@ describe('indexSessions', () => {
     expect(index.ccfzf.id).toBe('fresh');
   });
 
-  it('считает отсутствующую отметку нулём, а не поводом идти в сеть', () => {
-    // Смешанный дамп бывает между поколениями писателя. Ноль — то же, что
-    // возвращает сетевой вызов, когда файла хука нет.
-    const probe = vi.fn(() => 5000);
+  it('запись без отметки идёт в пробу, даже если у соседки по группе она есть', () => {
+    // Смешанный дамп бывает между поколениями писателя. Откат к сети —
+    // по-записочный: соседняя запись со своим activityAt не должна глушить
+    // пробу для той, у которой поля нет.
+    const probe = vi.fn(id => (id === 'none' ? 5000 : 0));
     const index = indexSessions({ sessions: [
       { id: 'has', title: 'ccfzf', cwd: '/p', mtime: 100, live: false, activityAt: 900 },
       { id: 'none', title: 'ccfzf', cwd: '/p', mtime: 900, live: true },
     ] }, probe);
-    expect(index.ccfzf.id).toBe('has');
-    expect(probe).not.toHaveBeenCalled();
+    expect(index.ccfzf.id).toBe('none');
+    expect(probe).toHaveBeenCalledWith('none');
+    expect(probe).not.toHaveBeenCalledWith('has');
+  });
+
+  it('устаревшая отметка в дампе не побеждает свежую пробу у тёзки без поля', () => {
+    // Ровно тот отказ, который давала групповая калитка: X несёт старый
+    // activityAt, у Y поля нет вовсе, но Y работает прямо сейчас — и её
+    // проба это подтверждает. Окно обязано уйти к Y, а не к X по умолчанию.
+    const probe = vi.fn(id => (id === 'Y' ? 9000 : 0));
+    const index = indexSessions({ sessions: [
+      { id: 'X', title: 'ccfzf', cwd: '/p', mtime: 900, live: true, activityAt: 5 },
+      { id: 'Y', title: 'ccfzf', cwd: '/p', mtime: 100, live: false },
+    ] }, probe);
+    expect(index.ccfzf.id).toBe('Y');
   });
 });
 

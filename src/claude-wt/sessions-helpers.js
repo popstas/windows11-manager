@@ -71,12 +71,12 @@ function indexSessions(dump, activityAt) {
   const index = {};
   for (const [key, list] of byTitle) {
     // Спрашивать про активность есть смысл только когда кандидатов больше
-    // одного: у единственного всё равно нет соперника. Отметка из дампа
-    // бесплатна, поэтому её достаточно и без сетевой функции.
-    const hasStamps = list.some(s => Number.isFinite(s?.activityAt));
-    const compare = list.length > 1 && (hasStamps || activityAt)
-      ? byActivityThen(hasStamps ? null : activityAt)
-      : compareSessions;
+    // одного: у единственного всё равно нет соперника. Решение — за
+    // stampOf: у него отметка из дампа своя, а до пробы он опускается
+    // по каждой записи отдельно, а не по группе целиком — иначе одна
+    // проштампованная соседка глушила бы пробу и той записи, у которой
+    // поля нет.
+    const compare = list.length > 1 ? byActivityThen(activityAt) : compareSessions;
     const sorted = [...list].sort(compare);
     const [best, second] = sorted;
     index[key] = {
