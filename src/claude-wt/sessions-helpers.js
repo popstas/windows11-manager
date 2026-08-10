@@ -43,6 +43,24 @@ function compareSessions(a, b) {
 }
 
 /**
+ * Заворачивает пробу в память на одну сборку индекса.
+ *
+ * Один и тот же id внутри группы тёзок сравнивается компаратором помногу
+ * раз за время `sort()`, а следом ещё раз — отдельным вызовом `compare` для
+ * поля `ambiguous`. Без памятки это значило `fs.statSync` по сетевому диску
+ * на каждое такое обращение: 354 запроса на 200 сессий. Память живёт ровно
+ * вызов `indexSessions` и не переживает его — за пределами одной сборки
+ * отметка хука уже могла обновиться, и закешированный ответ был бы устаревшим.
+ */
+function memoize(probe) {
+  const cache = new Map();
+  return id => {
+    if (!cache.has(id)) cache.set(id, probe(id));
+    return cache.get(id);
+  };
+}
+
+/**
  * Build a title -> session index out of a ccfzf dump.
  * A title shared by two equally good sessions is still marked ambiguous for
  * diagnostics, but the tracker binds to `best` anyway — refusing left windows
@@ -68,6 +86,10 @@ function indexSessions(dump, activityAt) {
     if (!byTitle.has(key)) byTitle.set(key, []);
     byTitle.get(key).push(s);
   }
+  // Память на всю сборку: id не повторяются между группами (у каждой сессии
+  // свой), так что один Map безопасно накрывает и сортировку, и проверку
+  // ambiguous во всех группах разом.
+  const probe = activityAt ? memoize(activityAt) : activityAt;
   const index = {};
   for (const [key, list] of byTitle) {
     // Спрашивать про активность есть смысл только когда кандидатов больше
@@ -76,7 +98,7 @@ function indexSessions(dump, activityAt) {
     // по каждой записи отдельно, а не по группе целиком — иначе одна
     // проштампованная соседка глушила бы пробу и той записи, у которой
     // поля нет.
-    const compare = list.length > 1 ? byActivityThen(activityAt) : compareSessions;
+    const compare = list.length > 1 ? byActivityThen(probe) : compareSessions;
     const sorted = [...list].sort(compare);
     const [best, second] = sorted;
     index[key] = {

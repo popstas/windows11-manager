@@ -169,6 +169,35 @@ describe('indexSessions with agent activity', () => {
   });
 });
 
+describe('indexSessions без activityAt в дампе', () => {
+  const twin = (id, mtime, over = {}) => ({
+    id, title: 'ExpertizeMe', cwd: '/p', mtime, live: false, ...over,
+  });
+
+  it('спрашивает про каждый id не больше одного раза за сборку, и сортировка остаётся верной', () => {
+    // Раньше каждое сравнение внутри sort() било в сеть заново — 354
+    // обращения на 200 сессий. mtime у всех троих одинаков нарочно: победителя
+    // должна решать только проба, а не случайное совпадение с сортировкой по
+    // mtime, — так тест ловит и сломанный порядок, а не только число вызовов.
+    const stamps = { a: 100, b: 300, c: 200 };
+    const probe = vi.fn(id => stamps[id] ?? 0);
+    const index = indexSessions({ sessions: [twin('a', 1), twin('b', 1), twin('c', 1)] }, probe);
+    expect(index.ExpertizeMe.id).toBe('b');
+    expect(new Set(probe.mock.calls.map(c => c[0])).size).toBe(probe.mock.calls.length);
+  });
+
+  it('не спрашивает дважды и про пару, которую отдельно проверяет ambiguous', () => {
+    // 'x' и 'y' делят одну пробу — ambiguous будет true, а вычисление этого
+    // поля зовёт compare(best, second) ещё раз, отдельно от сортировки. Без
+    // памятки это второй сетевой stat за ту же пару.
+    const probe = vi.fn(() => 500);
+    const index = indexSessions({ sessions: [twin('x', 1), twin('y', 1)] }, probe);
+    expect(index.ExpertizeMe.ambiguous).toBe(true);
+    expect(probe).toHaveBeenCalledTimes(2);
+    expect(new Set(probe.mock.calls.map(c => c[0]))).toEqual(new Set(['x', 'y']));
+  });
+});
+
 describe('background agents', () => {
   const bg = (over = {}) => session({
     id: 'child', kind: 'background', parent: 'a1', live: true, mtime: 200, ...over,
