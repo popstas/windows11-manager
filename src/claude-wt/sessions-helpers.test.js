@@ -149,6 +149,29 @@ describe('indexSessions with agent activity', () => {
     expect(indexSessions(dump, activity).shared.id).toBe('working');
   });
 
+  it('сессия без отметки хука не проигрывает тёзке по одному факту наличия отметки', () => {
+    // Замерено 2026-08-12: две живые сессии `obsidian-agent-workspace`. У той,
+    // в которой человек работал, activityAt был 0 — хук ещё не срабатывал ни
+    // разу, — а у суточной тёзки лежала позавчерашняя отметка. Ноль сравнивался
+    // с ней как число, окно уходило к старой, у выбранной в пикере сессии окна
+    // «не было», и вместо подъёма открывалось второе окно. Ноль значит «не
+    // знаем», а не «активности не было с 1970 года»: сравнивать в этом случае
+    // надо то, что есть у обеих, — свежесть транскрипта.
+    const twins = { sessions: [
+      { id: 'old', title: 'twin', cwd: '/p', live: true, mtime: 1000, activityAt: 900 },
+      { id: 'fresh', title: 'twin', cwd: '/p', live: true, mtime: 5000, activityAt: 0 },
+    ] };
+    expect(indexSessions(twins).twin.id).toBe('fresh');
+  });
+
+  it('но отсутствие отметки само по себе не побеждает: транскрипт старее — проигрывает', () => {
+    const twins = { sessions: [
+      { id: 'old', title: 'twin', cwd: '/p', live: true, mtime: 1000, activityAt: 900 },
+      { id: 'stale', title: 'twin', cwd: '/p', live: true, mtime: 500, activityAt: 0 },
+    ] };
+    expect(indexSessions(twins).twin.id).toBe('old');
+  });
+
   it('never asks about a title only one session claims', () => {
     // Every question is a stat over a network share; with no rival there is
     // nothing to decide.
