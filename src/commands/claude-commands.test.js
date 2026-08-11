@@ -181,6 +181,46 @@ describe('claude-session-open', () => {
     expect(d.winMan.openClaudeProject).toHaveBeenCalledWith({ cwd: '/p/home', name: 'home' });
   });
 
+  it('terminal-new заводит сессию, не поднимая открытую', async () => {
+    // `^N` в пикере нажимают именно потому, что сессия уже есть: искать её
+    // здесь значило бы поднять ту самую, рядом с которой просили открыть новую.
+    const d = deps();
+    await claudeCommands(d)['claude-session-open']({
+      action: 'terminal-new', cwd: '/p/site', name: 'site-2',
+    });
+    expect(d.winMan.openClaudeProject).toHaveBeenCalledWith({
+      cwd: '/p/site', name: 'site-2', reuseOpen: false,
+    });
+    expect(d.winMan.focusWindowById).not.toHaveBeenCalled();
+  });
+
+  it('terminal-new с id всё равно про каталог, а не про сессию', async () => {
+    // Пикер id сюда не шлёт, но если он появится, поднимать сессию нельзя:
+    // просили обратного.
+    const d = deps();
+    await claudeCommands(d)['claude-session-open']({
+      id: 'abc', action: 'terminal-new', cwd: '/p/site', name: 'site-2',
+    });
+    expect(d.winMan.focusWindowById).not.toHaveBeenCalled();
+    expect(d.winMan.openClaudeProject).toHaveBeenCalledWith({
+      cwd: '/p/site', name: 'site-2', reuseOpen: false,
+    });
+  });
+
+  it('terminal-new без каталога — сообщает человеку, а не молчит', async () => {
+    const d = deps();
+    await claudeCommands(d)['claude-session-open']({ action: 'terminal-new', name: 'site-2' });
+    expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
+    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('cwd'));
+  });
+
+  it('неизвестное действие по-прежнему отклоняется вслух', async () => {
+    const d = deps();
+    await claudeCommands(d)['claude-session-open']({ action: 'terminal-old', cwd: '/p/site' });
+    expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
+    expect(d.log).toHaveBeenCalledWith(expect.stringContaining('terminal-old'), 'warn');
+  });
+
   it('имя из тела просьбы побеждает имя каталога', async () => {
     const d = deps();
     await claudeCommands(d)['claude-session-open']({ ...PROJECT, name: 'мой сайт' });

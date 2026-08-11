@@ -90,10 +90,15 @@ function claudeCommands({ winMan, log, notify, slots }) {
    * из каталога — ровно так же его считает сам `openClaudeProject`, и так же
    * называет новую сессию ccfzf.
    */
-  async function openProject(cwd, name) {
+  async function openProject(cwd, name, { reuseOpen = true } = {}) {
+    const opts = { cwd, name: name || basenameOfCwd(cwd) };
+    // Ключа `reuseOpen: true` в обычной просьбе нет: у `openClaudeProject` это
+    // и так умолчание, а лишний ключ пришлось бы дописать в каждый
+    // существующий тест, ничего этим не проверив.
+    if (!reuseOpen) opts.reuseOpen = false;
     let res;
     try {
-      res = await winMan.openClaudeProject({ cwd, name: name || basenameOfCwd(cwd) });
+      res = await winMan.openClaudeProject(opts);
     } catch (e) {
       log(`claude-wt session-open ${cwd}: ${e.message}`, 'error');
       notify(`claude-wt: ${e.message}`);
@@ -173,9 +178,12 @@ function claudeCommands({ winMan, log, notify, slots }) {
     /**
      * Просьба пикера открыть сессию здесь: `{id, action: 'terminal', cwd}`.
      *
-     * Пока поддержано одно действие — `terminal`: остальные (cursor, explorer,
-     * pr) осмысленны только там, где стоит человек, и пикер выполняет их у
-     * себя.
+     * Поддержано два действия. `terminal` — «покажи мне проект»: сессию
+     * поднимают, если она есть. `terminal-new` — «дай ещё один терминал»:
+     * поиск пропускается целиком, и имя берётся из тела, потому что basename
+     * каталога занят той сессией, рядом с которой просят открыть новую.
+     * Остальные действия (cursor, explorer, pr) осмысленны только там, где
+     * стоит человек, и пикер выполняет их у себя.
      *
      * «Открыть» и «поднять» — разные просьбы, и это единственное, чем этот
      * обработчик отличается от `claude-focus`. Фокусу нужна живая сессия, а
@@ -198,8 +206,24 @@ function claudeCommands({ winMan, log, notify, slots }) {
     async 'claude-session-open'(payload) {
       const { id, action, cwd, name } = parseIdPayload(payload);
       if (!action) return;
-      if (action !== 'terminal') {
+      if (action !== 'terminal' && action !== 'terminal-new') {
         log(`claude-wt session-open: unsupported action ${action}`, 'warn');
+        return;
+      }
+      const dir = typeof cwd === 'string' ? cwd.trim() : '';
+      const asked = typeof name === 'string' ? name.trim() : '';
+      // «Заведи ещё одну» — просьба про каталог и только про него. Сессию не
+      // ищем даже при заданном id: нашлась бы та самая, рядом с которой просят
+      // открыть новую, и вместо второго терминала человек получил бы подъём
+      // первого — обратное тому, о чём просил.
+      if (action === 'terminal-new') {
+        if (!dir) {
+          const reason = 'session-open: terminal-new нужен cwd проекта';
+          log(`claude-wt ${reason}`, 'warn');
+          notify(`claude-wt: ${reason}`);
+          return;
+        }
+        await openProject(dir, asked, { reuseOpen: false });
         return;
       }
       const found = id ? findSession(id) : null;
@@ -207,9 +231,8 @@ function claudeCommands({ winMan, log, notify, slots }) {
         await focusOrRestore(id, found.session);
         return;
       }
-      const dir = typeof cwd === 'string' ? cwd.trim() : '';
       if (dir) {
-        await openProject(dir, typeof name === 'string' ? name.trim() : '');
+        await openProject(dir, asked);
         return;
       }
       const reason = found?.error ?? 'session-open: нужен id известной сессии или cwd проекта';
