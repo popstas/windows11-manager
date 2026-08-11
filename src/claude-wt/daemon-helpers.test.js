@@ -17,6 +17,8 @@ import {
   suppressFocus,
   applyFocusSuppression,
   applyPendingUnread,
+  desktopRelearnTarget,
+  relearnedDesktop,
 } from './daemon-helpers.js';
 
 describe('mergeClaudeWtConfig', () => {
@@ -259,6 +261,65 @@ describe('focusedSessionIds', () => {
   it('ignores an empty foreground handle', () => {
     // GetForegroundWindow returns 0 when the foreground is being handed over.
     expect(focusedSessionIds({ activeWindowId: 0, prevActiveWindowId: 1, windows, slots })).toEqual([]);
+  });
+});
+
+describe('desktopRelearnTarget', () => {
+  const windows = [
+    { id: 1, sessionId: 'alpha' },
+    { id: 2, sessionId: 'beta' },
+    { id: 3, sessionId: null },
+  ];
+  const slots = {
+    alpha: { titles: ['work'], desktop: 2 },
+    beta: { titles: ['other'], desktop: null },
+    'alpha-old': { titles: ['work'], desktop: 2 },
+  };
+
+  it('называет окно, которое только что вышло вперёд', () => {
+    expect(desktopRelearnTarget({ activeWindowId: 1, prevActiveWindowId: 9, windows, slots }))
+      .toEqual({ windowId: 1, sessionId: 'alpha' });
+  });
+
+  it('молчит, пока окно остаётся впереди', () => {
+    // Чтение спавнит VirtualDesktop11.exe: раз на переход, а не раз в секунду.
+    expect(desktopRelearnTarget({ activeWindowId: 1, prevActiveWindowId: 1, windows, slots }))
+      .toBeNull();
+  });
+
+  it('не трогает слот, у которого номер стола ещё не читали', () => {
+    // Это работа bindings; двойное чтение на одном тике ничего не добавит.
+    expect(desktopRelearnTarget({ activeWindowId: 2, prevActiveWindowId: 1, windows, slots }))
+      .toBeNull();
+  });
+
+  it('переучивает только своё окно, не близнецов по заголовку', () => {
+    // Отметку «просмотрено» близнецы делят, а стол — нет: два окна с одним
+    // заголовком законно живут на разных столах, и чужой номер затёр бы их.
+    const out = desktopRelearnTarget({ activeWindowId: 1, prevActiveWindowId: 9, windows, slots });
+    expect(out.sessionId).toBe('alpha');
+  });
+
+  it('пропускает окно без сессии, чужое окно и пустой хэндл', () => {
+    expect(desktopRelearnTarget({ activeWindowId: 3, prevActiveWindowId: 1, windows, slots })).toBeNull();
+    expect(desktopRelearnTarget({ activeWindowId: 99, prevActiveWindowId: 1, windows, slots })).toBeNull();
+    expect(desktopRelearnTarget({ activeWindowId: 0, prevActiveWindowId: 1, windows, slots })).toBeNull();
+  });
+});
+
+describe('relearnedDesktop', () => {
+  it('переводит 0-based ответ VirtualDesktop11 в номер слота', () => {
+    expect(relearnedDesktop('0')).toBe(1);
+    expect(relearnedDesktop(1)).toBe(2);
+  });
+
+  it('молчит, когда номер прочитать не удалось', () => {
+    // vd11Command отдаёт undefined на непрочитанный вывод и null на stderr —
+    // ни то, ни другое не должно затирать запомненный стол нулём или NaN.
+    expect(relearnedDesktop(undefined)).toBeNull();
+    expect(relearnedDesktop(null)).toBeNull();
+    expect(relearnedDesktop('')).toBeNull();
+    expect(relearnedDesktop('boom')).toBeNull();
   });
 });
 

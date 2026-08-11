@@ -18,6 +18,8 @@ import {
   mergeClaudeWtConfig,
   isTerminalPath,
   desktopOnlyActions,
+  desktopRelearnTarget,
+  relearnedDesktop,
   layoutFingerprint,
   focusedSessionIds,
   unresolvedTitles,
@@ -211,6 +213,26 @@ async function claudeWtTick(tickGen = null) {
     const seenAt = Math.floor(Date.now() / 1000);
     for (const id of focused) {
       if (nextState.slots[id]) nextState.slots[id] = upsertSlot(nextState.slots[id], { focusedAt: seenAt });
+    }
+  }
+  // Тем же переходом фокуса переучивается номер виртуального стола: окно, на
+  // которое человек только что перешёл, стоит там, где он его и хочет видеть.
+  // Пометка «пропустить этот фокус» сюда не относится — она про «посмотрел
+  // осознанно», а стол окна от намерения не зависит.
+  if (cfg.desktop) {
+    const relearn = desktopRelearnTarget({
+      activeWindowId, prevActiveWindowId, windows: nextWindows, slots: nextState.slots,
+    });
+    if (relearn) {
+      try {
+        const desktop = relearnedDesktop(await virtualDesktop.GetWindowDesktopNumber(relearn.windowId));
+        const slot = nextState.slots[relearn.sessionId];
+        if (desktop !== null && slot && slot.desktop !== desktop) {
+          nextState.slots[relearn.sessionId] = upsertSlot(slot, { desktop });
+        }
+      } catch (e) {
+        console.error(`[claude-wt] failed to relearn desktop for ${relearn.windowId}: ${e.message}`);
+      }
     }
   }
   prevActiveWindowId = activeWindowId;

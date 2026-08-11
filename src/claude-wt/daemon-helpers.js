@@ -110,6 +110,49 @@ function focusedSessionIds({ activeWindowId, prevActiveWindowId, windows = [], s
 }
 
 /**
+ * Окно, у которого пора перечитать номер виртуального стола.
+ *
+ * Стол слот получал ровно один раз, на привязке — чтение спавнит
+ * VirtualDesktop11.exe, и в горячем цикле ему не место, — а дальше навязывался
+ * окну при каждой смене заголовка и перепривязке (см. desktopOnlyActions) и
+ * ещё и переезжал в слот следующей сессии того же окна. Позицию демон при этом
+ * переучивает каждый тик. Из-за этой несимметричности ручной перенос окна на
+ * другой стол не значил ничего: 2026-08-12 сессия `home` возвращалась на стол
+ * «work» через минуту после того, как её уносили на «home», — номер в слоте
+ * помнил единственную привязку, случившуюся когда-то на чужом столе.
+ *
+ * Переход фокуса — и редкое событие (одно чтение на переход, не на тик), и
+ * точный момент, когда человек показал, где окну быть: чтобы дать окну фокус,
+ * его сначала надо увидеть.
+ *
+ * Близнецам по заголовку номер не раздаётся, в отличие от отметки «просмотрено»:
+ * два окна с одним названием законно живут на разных столах (у `ExpertizeMe`
+ * так и есть), и чужой номер затёр бы их собственный.
+ */
+function desktopRelearnTarget({ activeWindowId, prevActiveWindowId, windows = [], slots = {} }) {
+  if (!activeWindowId || activeWindowId === prevActiveWindowId) return null;
+  const win = windows.find(w => w.id === activeWindowId);
+  if (!win?.sessionId) return null;
+  // Стол ещё не читали — это работа bindings, и второе чтение на том же тике
+  // ничего не добавит.
+  if (slots?.[win.sessionId]?.desktop == null) return null;
+  return { windowId: win.id, sessionId: win.sessionId };
+}
+
+/**
+ * Ответ GetWindowDesktopNumber → номер стола, как его хранит слот (1-based).
+ *
+ * Неудачное чтение обязано остаться неудачным: vd11Command отдаёт undefined на
+ * невыпарсенный вывод и null на stderr, и `Number(null) + 1` — это 1, готовый
+ * молча уехать в слот вместо настоящего номера.
+ */
+function relearnedDesktop(raw) {
+  if (raw === undefined || raw === null || raw === '') return null;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num + 1 : null;
+}
+
+/**
  * Сколько держится пометка «следующий фокус не считать». Пикер — окно поверх, и
  * на Esc фокус возвращается тому окну, из которого пришли: без этого только что
  * поставленная пометка гасла бы через секунду после закрытия списка. Пятнадцать
@@ -271,6 +314,8 @@ export {
   mergeClaudeWtConfig,
   isTerminalPath,
   desktopOnlyActions,
+  desktopRelearnTarget,
+  relearnedDesktop,
   layoutFingerprint,
   focusedSessionIds,
   sameTitleSessionIds,
