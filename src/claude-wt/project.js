@@ -4,7 +4,7 @@ import { virtualDesktop } from '../virtual-desktop.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { claudeWtSessions } from './view.js';
 import { stripTitleDecoration } from './title-helpers.js';
-import { basenameOfCwd, pickOpenProjectSession, planLaunchNew, profileForCwd } from './project-helpers.js';
+import { pickOpenProjectSession, planLaunchNew, profileForCwd, sessionNameFor } from './project-helpers.js';
 
 async function focusTerminalWindow(windowId) {
   try {
@@ -36,38 +36,47 @@ function findOpenTerminalByTitle(title) {
  * Focus the last open Claude session for a project cwd, or spawn a fresh
  * `claude -n <basename(cwd)>` there when none is on screen.
  *
- * @param {{ cwd: string, name: string, profile?: string }} opts
+ * `reuseOpen: false` — «заведи ещё одну»: оба поиска пропускаются, и терминал
+ * открывается всегда. Просьба приходит от `^N` в ccfzf-picker, где человек
+ * нажимает её именно потому, что сессия уже есть и нужна вторая. Умолчание
+ * `true` оставляет проектный хоткей и Enter прежними.
+ *
+ * @param {{ cwd: string, name: string, profile?: string, reuseOpen?: boolean }} opts
  * @returns {Promise<{ ok: boolean, action?: string, reason?: string, sessionId?: string, sessionName?: string }>}
  */
-async function openClaudeProject({ cwd, name, profile } = {}) {
+async function openClaudeProject({ cwd, name, profile, reuseOpen = true } = {}) {
   if (typeof cwd !== 'string' || !cwd || typeof name !== 'string' || !name) {
     return { ok: false, reason: 'cwd and name are required' };
   }
-  // Display name matches ccfzf "[+] new session" (`claude -n basename`).
-  const sessionName = basenameOfCwd(cwd) || name;
+  const sessionName = sessionNameFor({ cwd, name, reuseOpen });
 
-  let res;
-  try {
-    res = claudeWtSessions();
-  } catch (e) {
-    return { ok: false, reason: e.message };
-  }
-  if (!res.ok) return { ok: false, reason: res.reason };
-
-  const session = pickOpenProjectSession(res.sessions, cwd);
-  if (session?.windowId && getWindowById(session.windowId)) {
-    if (!(await focusTerminalWindow(session.windowId))) {
-      return { ok: false, action: 'focus', reason: 'window is not on screen', sessionId: session.id };
+  // Просьбе «заведи ещё одну» оба поиска не нужны и вредны: первый поднял бы
+  // ту самую сессию, рядом с которой просят открыть новую, а второй — её окно
+  // по заголовку. Заодно не читается список сессий, а он ходит на сетевой диск.
+  if (reuseOpen) {
+    let res;
+    try {
+      res = claudeWtSessions();
+    } catch (e) {
+      return { ok: false, reason: e.message };
     }
-    return { ok: true, action: 'focus', sessionId: session.id };
-  }
+    if (!res.ok) return { ok: false, reason: res.reason };
 
-  const byTitle = findOpenTerminalByTitle(sessionName);
-  if (byTitle) {
-    if (!(await focusTerminalWindow(byTitle.id))) {
-      return { ok: false, action: 'focus-title', reason: 'window is not on screen' };
+    const session = pickOpenProjectSession(res.sessions, cwd);
+    if (session?.windowId && getWindowById(session.windowId)) {
+      if (!(await focusTerminalWindow(session.windowId))) {
+        return { ok: false, action: 'focus', reason: 'window is not on screen', sessionId: session.id };
+      }
+      return { ok: true, action: 'focus', sessionId: session.id };
     }
-    return { ok: true, action: 'focus-title', sessionName };
+
+    const byTitle = findOpenTerminalByTitle(sessionName);
+    if (byTitle) {
+      if (!(await focusTerminalWindow(byTitle.id))) {
+        return { ok: false, action: 'focus-title', reason: 'window is not on screen' };
+      }
+      return { ok: true, action: 'focus-title', sessionName };
+    }
   }
 
   const cfg = getClaudeWtConfig();

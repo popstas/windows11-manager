@@ -10,6 +10,24 @@ function basenameOfCwd(cwd) {
 }
 
 /**
+ * Имя новой сессии: чьё главнее — каталога или просьбы.
+ *
+ * По умолчанию каталог: так называет сессию ccfzf (`claude -n <basename>`), и
+ * по этому же имени `openClaudeProject` ищет уже открытое окно по заголовку —
+ * присланное имя перебило бы поиск и открыло второй терминал.
+ *
+ * У просьбы «заведи ещё одну» (`reuseOpen: false`) поиска нет вовсе, а
+ * basename каталога занят той сессией, рядом с которой просят открыть новую.
+ * Уникальное имя считает пикер по списку занятых (`uniqueSessionName`) — здесь
+ * такого списка нет, — поэтому там главнее оно.
+ */
+function sessionNameFor({ cwd, name, reuseOpen = true } = {}) {
+  const base = basenameOfCwd(cwd);
+  const asked = typeof name === 'string' ? name.trim() : '';
+  return reuseOpen ? (base || asked) : (asked || base);
+}
+
+/**
  * Among open sessions whose cwd matches exactly, pick the one the user looked
  * at most recently (`focusedAt`), falling back to `lastActivity`.
  */
@@ -79,6 +97,7 @@ function planLaunchNew({ launchNew, cwd, name, profile }) {
 
 export {
   basenameOfCwd,
+  sessionNameFor,
   pickOpenProjectSession,
   escapeForSingleQuoted,
   normalizeProjects,

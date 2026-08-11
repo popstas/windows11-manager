@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   basenameOfCwd,
+  sessionNameFor,
   pickOpenProjectSession,
   escapeForSingleQuoted,
   planWtLaunch,
@@ -177,5 +178,28 @@ describe('profileForCwd', () => {
 
   it('returns empty when no project and no cfg.profile', () => {
     expect(profileForCwd('/other', { profile: '', projects: [] })).toBe('');
+  });
+});
+
+describe('sessionNameFor', () => {
+  it('обычная просьба берёт имя каталога', () => {
+    // Так же назвал бы сессию ccfzf (`claude -n <basename>`), и по этому же
+    // имени openClaudeProject ищет открытое окно по заголовку.
+    expect(sessionNameFor({ cwd: '/p/site', name: 'что угодно' })).toBe('site');
+  });
+
+  it('просьба «заведи ещё одну» берёт имя из тела', () => {
+    // basename там занят открытой сессией, и уникальное имя посчитал пикер.
+    expect(sessionNameFor({ cwd: '/p/site', name: 'site-2', reuseOpen: false })).toBe('site-2');
+  });
+
+  it('без имени в теле остаётся каталог — в обоих случаях', () => {
+    expect(sessionNameFor({ cwd: '/p/site', reuseOpen: false })).toBe('site');
+    expect(sessionNameFor({ cwd: '/p/site' })).toBe('site');
+  });
+
+  it('без каталога остаётся имя — иначе сессия была бы безымянной', () => {
+    // Безымянную сессию оконный трекер не найдёт по заголовку вовсе.
+    expect(sessionNameFor({ cwd: '', name: 'site-2' })).toBe('site-2');
   });
 });
