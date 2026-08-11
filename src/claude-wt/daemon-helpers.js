@@ -140,6 +140,37 @@ function desktopRelearnTarget({ activeWindowId, prevActiveWindowId, windows = []
 }
 
 /**
+ * Сколько после старта демона переносы не считаются поводом сменить стол.
+ *
+ * На перезапуске prevWindows пуст, и каждое открытое окно за пару тиков
+ * привязывается заново — часть при этом уезжает на свой стол. Уводить за ними
+ * вид означало бы, что деплой или перезапуск трея молча выбрасывает человека на
+ * чужой рабочий стол. Десяти секунд хватает на всю стартовую волну: заголовок
+ * устаканивается за stableTicks (2 тика по секунде).
+ */
+const FOLLOW_GRACE_MS = 10000;
+
+/**
+ * Стол, на который нужно уйти вслед за уехавшим окном.
+ *
+ * Окно новой сессии открывается на том столе, где человек сейчас, а слот может
+ * помнить другой — и демон честно уносит окно туда. Со стороны человека это
+ * выглядит как исчезновение: окно открыли, оно мигнуло и пропало.
+ *
+ * Идём только за окном, которое в этот момент было передним, то есть за тем, с
+ * которым человек работает. Фоновое окно, уносимое на свой стол, вида не
+ * трогает — иначе чужая перепривязка выдёргивала бы человека с его стола.
+ * Переднее окно по определению стоит на видимом столе, поэтому переключение
+ * туда, где оно уже было, — безобидный холостой вызов.
+ */
+function desktopFollowTarget({ moves = [], activeWindowId, startedAt = 0, nowMs = 0 }) {
+  if (!activeWindowId) return null;
+  if (startedAt && nowMs - startedAt < FOLLOW_GRACE_MS) return null;
+  const mine = moves.filter(m => m.windowId === activeWindowId && m.desktop);
+  return mine.length ? mine[mine.length - 1].desktop : null;
+}
+
+/**
  * Ответ GetWindowDesktopNumber → номер стола, как его хранит слот (1-based).
  *
  * Неудачное чтение обязано остаться неудачным: vd11Command отдаёт undefined на
@@ -310,11 +341,13 @@ export {
   TICK_SILENCE_MS,
   TICK_GRACE_MS,
   FOCUS_SUPPRESS_MS,
+  FOLLOW_GRACE_MS,
   isStaleTick,
   mergeClaudeWtConfig,
   isTerminalPath,
   desktopOnlyActions,
   desktopRelearnTarget,
+  desktopFollowTarget,
   relearnedDesktop,
   layoutFingerprint,
   focusedSessionIds,

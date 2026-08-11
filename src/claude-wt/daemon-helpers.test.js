@@ -18,7 +18,9 @@ import {
   applyFocusSuppression,
   applyPendingUnread,
   desktopRelearnTarget,
+  desktopFollowTarget,
   relearnedDesktop,
+  FOLLOW_GRACE_MS,
 } from './daemon-helpers.js';
 
 describe('mergeClaudeWtConfig', () => {
@@ -304,6 +306,45 @@ describe('desktopRelearnTarget', () => {
     expect(desktopRelearnTarget({ activeWindowId: 3, prevActiveWindowId: 1, windows, slots })).toBeNull();
     expect(desktopRelearnTarget({ activeWindowId: 99, prevActiveWindowId: 1, windows, slots })).toBeNull();
     expect(desktopRelearnTarget({ activeWindowId: 0, prevActiveWindowId: 1, windows, slots })).toBeNull();
+  });
+});
+
+describe('desktopFollowTarget', () => {
+  const base = { activeWindowId: 7, startedAt: 1000, nowMs: 1000 + FOLLOW_GRACE_MS + 1 };
+
+  it('уводит вслед за окном, с которым человек работает', () => {
+    const moves = [{ windowId: 7, desktop: 2 }];
+    expect(desktopFollowTarget({ ...base, moves })).toBe(2);
+  });
+
+  it('не трогает вид, когда уехало фоновое окно', () => {
+    // Чужое окно, уносимое на свой стол, — не повод выдёргивать человека с
+    // того стола, где он сейчас работает.
+    const moves = [{ windowId: 8, desktop: 2 }];
+    expect(desktopFollowTarget({ ...base, moves })).toBeNull();
+  });
+
+  it('молчит на переносе без стола и на пустом списке', () => {
+    expect(desktopFollowTarget({ ...base, moves: [{ windowId: 7 }] })).toBeNull();
+    expect(desktopFollowTarget({ ...base, moves: [] })).toBeNull();
+  });
+
+  it('молчит первые секунды после старта демона', () => {
+    // На перезапуске каждое открытое окно привязывается заново и часть из них
+    // едет на свой стол; переключать вид на последнее из них — не то, что
+    // должен делать поднявшийся трекер позиций.
+    const moves = [{ windowId: 7, desktop: 2 }];
+    expect(desktopFollowTarget({ ...base, moves, nowMs: 1000 + FOLLOW_GRACE_MS - 1 })).toBeNull();
+  });
+
+  it('молчит, когда переднего окна нет', () => {
+    const moves = [{ windowId: 0, desktop: 2 }];
+    expect(desktopFollowTarget({ ...base, moves, activeWindowId: 0 })).toBeNull();
+  });
+
+  it('берёт последний перенос своего окна, если их было несколько', () => {
+    const moves = [{ windowId: 7, desktop: 2 }, { windowId: 8, desktop: 1 }, { windowId: 7, desktop: 3 }];
+    expect(desktopFollowTarget({ ...base, moves })).toBe(3);
   });
 });
 

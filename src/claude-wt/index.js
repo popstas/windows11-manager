@@ -19,6 +19,7 @@ import {
   isTerminalPath,
   desktopOnlyActions,
   desktopRelearnTarget,
+  desktopFollowTarget,
   relearnedDesktop,
   layoutFingerprint,
   focusedSessionIds,
@@ -165,10 +166,20 @@ async function claudeWtTick(tickGen = null) {
   prevWindows = nextWindows;
   if (cfg.debug) reportUnresolved(nextWindows);
 
+  // Переднее окно читается ДО переносов, и это существенно дважды. Во-первых,
+  // за уехавшим окном идём только если человек работал именно с ним, а
+  // переехавшее на чужой стол окно передним быть перестаёт. Во-вторых,
+  // placeWindow() зовёт bringToTop() на каждый перенос координат: прочитанный
+  // после этого hwnd — наш собственный ход, и он засчитывался как «человек
+  // посмотрел на сессию».
+  const activeWindowId = getActiveWindowId();
+  const moves = [];
+
   for (const action of actions) {
     // action.bounds уже зажаты внутри step() — повторно клампить не нужно
     const rule = { window: action.windowId, ...action.bounds };
     if (cfg.desktop && action.desktop) rule.desktop = action.desktop;
+    moves.push({ windowId: action.windowId, desktop: rule.desktop });
     await place(rule, `window ${action.windowId}`);
   }
 
@@ -177,7 +188,24 @@ async function claudeWtTick(tickGen = null) {
       prevWindows: seenWindows, nextWindows, slots: nextState.slots, actions,
     });
     for (const fix of fixes) {
+      moves.push({ windowId: fix.windowId, desktop: fix.desktop });
       await place({ window: fix.windowId, desktop: fix.desktop }, `window ${fix.windowId} on desktop ${fix.desktop}`);
+    }
+  }
+
+  // Окно новой сессии открывается там, где человек сейчас, а слот может помнить
+  // другой стол — и окно уезжает у него из-под рук, выглядя исчезнувшим. Идём
+  // следом, но только за тем окном, которое было передним.
+  if (cfg.desktop) {
+    const follow = desktopFollowTarget({ moves, activeWindowId, startedAt, nowMs: Date.now() });
+    if (follow) {
+      try {
+        // Слот хранит 1-based номер, GoToDesktopNumber ждёт 0-based — та же
+        // пара, что у GetWindowDesktopNumber выше.
+        await virtualDesktop.GoToDesktopNumber(follow - 1);
+      } catch (e) {
+        console.error(`[claude-wt] failed to follow window to desktop ${follow}: ${e.message}`);
+      }
     }
   }
 
@@ -201,7 +229,6 @@ async function claudeWtTick(tickGen = null) {
   // Отметка «человек посмотрел на эту сессию». Читается голый hwnd переднего
   // окна — один GetForegroundWindow, без initWindow, — и записывается только в
   // момент перехода фокуса на окно, привязанное к сессии.
-  const activeWindowId = getActiveWindowId();
   const caught = focusedSessionIds({
     activeWindowId, prevActiveWindowId, windows: nextWindows, slots: nextState.slots,
   });
