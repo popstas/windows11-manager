@@ -2,6 +2,7 @@ import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { getWindows } from '../windows.js';
 import { placeWindowByConfig } from '../placement.js';
+import { virtualDesktop } from '../virtual-desktop.js';
 import { getWindowsMonitors } from '../monitors.js';
 import { clampBoundsToMonitors } from '../geometry.js';
 import { readState } from './state.js';
@@ -9,7 +10,7 @@ import { loadSessionIndex } from './sessions.js';
 import { resolveSession } from './tracker-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
-import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds } from './restore-helpers.js';
+import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFollowDesktop } from './restore-helpers.js';
 import { planSnapshotRestore, findSnapshot } from './snapshot-helpers.js';
 import { listSnapshots } from './snapshotter.js';
 import { profileForCwd } from './project-helpers.js';
@@ -97,6 +98,7 @@ async function restoreClaudeSessions({ force = false, sessionIds } = {}) {
  */
 async function launchPlan({ plan, cfg, restored, skipped }) {
   const monitors = getWindowsMonitors();
+  const placed = [];
   let first = true;
   for (const item of plan) {
     // Пауза между запусками. Windows Terminal открывает окно асинхронно, и
@@ -129,9 +131,22 @@ async function launchPlan({ plan, cfg, restored, skipped }) {
     try {
       await placeWindowByConfig(rule);
       restored.push(item.sessionId);
+      placed.push({ desktop: rule.desktop ?? null });
     } catch (e) {
       console.error(`[claude-wt] failed to place ${item.sessionId}: ${e.message}`);
       skipped.push(item.sessionId);
+    }
+  }
+
+  // Окно уехало на свой стол — уходим следом, иначе открытая сессия выглядит
+  // исчезнувшей. Переключение на стол, где человек и так стоит, — холостой ход.
+  const follow = restoreFollowDesktop({ planned: plan.length, placed });
+  if (follow) {
+    try {
+      // Слоты хранят 1-based номер, GoToDesktopNumber ждёт 0-based.
+      await virtualDesktop.GoToDesktopNumber(follow - 1);
+    } catch (e) {
+      console.error(`[claude-wt] failed to follow restored window to desktop ${follow}: ${e.message}`);
     }
   }
 }

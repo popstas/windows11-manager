@@ -74,4 +74,26 @@ function partitionPlan(plan, openSessionIds) {
   };
 }
 
-export { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds };
+/**
+ * Стол, на который нужно уйти вслед за поднятым окном.
+ *
+ * Окно сессии всплывает там, где человек сейчас, а слот помнит свой стол — и
+ * восстановление честно уносит окно туда. Со стороны это выглядит как
+ * исчезновение: сессию открыли, окно мигнуло и пропало. Демон за такими
+ * переносами следом уже ходит (`desktopFollowTarget`), но здесь переносит не
+ * он: открытие сессии из пикера идёт через MQTT-процесс и `launchPlan()`, и до
+ * тика демона окно успевает уехать. Замерено 2026-08-12 на
+ * `obsidian-agent-workspace`.
+ *
+ * Только у одиночного подъёма — открытия конкретной сессии, самого осознанного
+ * случая из всех. Восстановление пачкой (снимок, падение) поднимает окна на
+ * разные столы, и выбрать из них один, чтобы выбросить туда человека, значит
+ * решить за него.
+ */
+function restoreFollowDesktop({ planned = 0, placed = [] } = {}) {
+  if (planned !== 1 || placed.length !== 1) return null;
+  const desktop = placed[0]?.desktop;
+  return Number.isFinite(desktop) && desktop > 0 ? desktop : null;
+}
+
+export { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFollowDesktop };

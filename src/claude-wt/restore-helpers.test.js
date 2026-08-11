@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds } from './restore-helpers.js';
+import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFollowDesktop } from './restore-helpers.js';
 
 const bounds = { x: 10, y: 20, width: 800, height: 600 };
 const slot = (over = {}) => ({ titles: ['ccfzf'], cwd: '/p', bounds, desktop: 2, lastSeen: 500, ...over });
@@ -157,5 +157,27 @@ describe('resolveRestoreIds', () => {
     const launch = { command: 'wt.exe', args: ['--session {id}'] };
     const plan = planRestore({ state: twoSlots, launch, sessionIds: ['b2'] });
     expect(plan.map(i => i.sessionId)).toEqual(['b2']);
+  });
+});
+
+describe('restoreFollowDesktop', () => {
+  it('уводит на стол единственной поднятой сессии', () => {
+    // Открытие сессии из пикера — самый осознанный случай: человек попросил
+    // именно это окно, и оно уехало на свой стол у него из-под рук.
+    expect(restoreFollowDesktop({ planned: 1, placed: [{ desktop: 2 }] })).toBe(2);
+  });
+
+  it('молчит на восстановлении пачкой', () => {
+    // Снимок раскладки поднимает окна на разные столы; выбрать из них один и
+    // выбросить туда человека — произвол.
+    expect(restoreFollowDesktop({ planned: 3, placed: [{ desktop: 2 }] })).toBeNull();
+    expect(restoreFollowDesktop({ planned: 1, placed: [{ desktop: 1 }, { desktop: 2 }] })).toBeNull();
+  });
+
+  it('молчит, когда стол не запрашивали или окно не встало', () => {
+    expect(restoreFollowDesktop({ planned: 1, placed: [{ desktop: null }] })).toBeNull();
+    expect(restoreFollowDesktop({ planned: 1, placed: [{}] })).toBeNull();
+    expect(restoreFollowDesktop({ planned: 1, placed: [] })).toBeNull();
+    expect(restoreFollowDesktop({})).toBeNull();
   });
 });
