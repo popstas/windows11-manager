@@ -34,7 +34,9 @@ function findOpenTerminalByTitle(title) {
 
 /**
  * Focus the last open Claude session for a project cwd, or spawn a fresh
- * `claude -n <basename(cwd)>` there when none is on screen.
+ * `claude -n <name>` there when none is on screen — `<name>` defaults to
+ * `basename(cwd)`, but at `reuseOpen: false` it comes straight from the
+ * request body instead (see below).
  *
  * `reuseOpen: false` — «заведи ещё одну»: оба поиска пропускаются, и терминал
  * открывается всегда. Просьба приходит от `^N` в ccfzf-picker, где человек

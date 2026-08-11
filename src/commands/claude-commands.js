@@ -84,7 +84,8 @@ function claudeCommands({ winMan, log, notify, slots }) {
    * и собранная в пикере команда `wt.exe` профиль теряет. `openClaudeProject`
    * сначала ищет уже открытую сессию этого каталога и поднимает её окно, и
    * только если такой нет — заводит новую: второй терминал на тот же проект
-   * человеку не нужен.
+   * человеку не нужен. При `reuseOpen: false` (просьба `terminal-new`) поиск
+   * пропускается целиком — второй терминал как раз и нужен.
    *
    * Имя нужно `claude -n` при запуске новой сессии. По умолчанию берётся
    * из каталога — ровно так же его считает сам `openClaudeProject`, и так же
@@ -207,7 +208,12 @@ function claudeCommands({ winMan, log, notify, slots }) {
       const { id, action, cwd, name } = parseIdPayload(payload);
       if (!action) return;
       if (action !== 'terminal' && action !== 'terminal-new') {
-        log(`claude-wt session-open: unsupported action ${action}`, 'warn');
+        // Незнакомое действие не делает хотя бы ничего и жалуется — тем же
+        // стилем, что terminal-new без cwd: в журнал и человеку, а не только
+        // в журнал, иначе отказ был бы неотличим от тишины.
+        const reason = `session-open: unsupported action ${action}`;
+        log(`claude-wt ${reason}`, 'warn');
+        notify(`claude-wt: ${reason}`);
         return;
       }
       const dir = typeof cwd === 'string' ? cwd.trim() : '';

@@ -219,6 +219,9 @@ describe('claude-session-open', () => {
     await claudeCommands(d)['claude-session-open']({ action: 'terminal-old', cwd: '/p/site' });
     expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
     expect(d.log).toHaveBeenCalledWith(expect.stringContaining('terminal-old'), 'warn');
+    // Отказ должен быть слышен не только в журнале — иначе он неотличим от
+    // тишины, которую спека прямо запрещает.
+    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('terminal-old'));
   });
 
   it('имя из тела просьбы побеждает имя каталога', async () => {
@@ -258,6 +261,7 @@ describe('claude-session-open', () => {
     await claudeCommands(d)['claude-session-open']({ ...PROJECT, action: 'cursor' });
     expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
     expect(d.log).toHaveBeenCalledWith(expect.stringContaining('cursor'), 'warn');
+    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('cursor'));
   });
 
   it('без action ничего не делает', async () => {
