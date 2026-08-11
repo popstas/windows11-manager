@@ -120,9 +120,9 @@ function windowsFingerprint(windows, snapshots, projects) {
   // Хоткеи входят по содержимому целиком: их мало, а смена клавиши в конфиге
   // обязана доехать до читателя тем же тиком, а не сердцебиением.
   const keys = (projects ?? [])
-    .map(p => `${p?.cwd} ${p?.hotkey}`)
-    .join('');
-  const tail = `${snaps}${keys ? `${keys}` : ''}`;
+    .map(p => `${p?.cwd}\u0000${p?.hotkey}`)
+    .join('\u0001');
+  const tail = `${snaps}${keys ? `\u0002${keys}` : ''}`;
   return tail ? `${win}${tail}` : win;
 }
 
