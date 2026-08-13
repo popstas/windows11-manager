@@ -352,7 +352,7 @@ function startClaudeWt({ skipCrashCheck = false } = {}) {
   prevWindows = [];
   lastWritten = '';
   // Свежий демон обязан опубликовать файл первым же тиком: pid в нём сменился,
-  // а по старому читатель выдал бы право на передний план мёртвому процессу.
+  // а по старому сторож демона снял бы мёртвый процесс — то есть ничей.
   lastWindowsFingerprint = '';
   lastWindowsWrite = 0;
   prevActiveWindowId = 0;
@@ -425,8 +425,7 @@ function claudeWtStatus() {
   return {
     running: intervalId !== null,
     // Диагностика: чей это процесс. Рабочий экземпляр того же числа уходит в
-    // windowsFile — читателю на другой машине он нужен, чтобы выдать демону
-    // право на передний план перед просьбой о подъёме окна.
+    // windowsFile — по нему сторож демона (watchdog.js) снимает замолчавшего.
     pid: process.pid,
     startedAt,
     lastTickAt: tickStats.lastTickAt,

@@ -32,6 +32,62 @@ function findOpenTerminalByTitle(title) {
   return null;
 }
 
+// Окно ждём дольше, чем кажется нужным: `wt.exe` рисуется за полсекунды, но
+// заголовок ему ставит уже сам `claude -n`, а тот поднимается на удалённой
+// машине через ssh. Пятнадцать секунд — с запасом на холодный старт; не нашли
+// за это время — значит и не найдём, а не «подождём ещё».
+const WINDOW_WAIT_MS = 15000;
+const WINDOW_POLL_MS = 250;
+// Пауза между появлением окна и фокусом. За неё успевают оба, кто двигает окно
+// новой сессии: автопостановщик (такт 1.5 с плюс задержка 1 с) и демон
+// claude-wt, привязывающий сессию к слоту за два тика и способный увести окно
+// на чужой стол. Фокус, взятый раньше них, у человека отберут — переход на
+// другой стол оставляет передним что придётся.
+const PLACEMENT_SETTLE_MS = 4000;
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Дождаться окна только что запущенной сессии и сфокусировать его.
+ *
+ * Зачем это вообще нужно: `wt.exe` запускает фоновый процесс службы MQTT, а
+ * Windows отдаёт передний план только процессу, который им уже владеет либо
+ * получил последнее событие ввода. Новый терминал — ни то, ни другое, и его
+ * окно то открывается за чужими, то вовсе оказывается свёрнутым; выглядит это
+ * случайным, потому что случайно и есть — гонка с тем, кто в этот момент
+ * владеет передним планом. Здесь окно поднимают явно, и это работает без
+ * всякой грамоты: `bringToTop()` в node-window-manager подцепляет свой ввод к
+ * потоку переднего окна (`AttachThreadInput`), а такой подъём Windows не
+ * запрещает.
+ *
+ * Фокус идёт через `focusTerminalWindow`, а не через голый `focusWindowById`:
+ * демон к этому моменту мог увести окно на стол слота, а фокус на окне с
+ * чужого стола Windows отдаёт молча и без результата.
+ *
+ * Зависимости — аргументами: без них проверить можно было бы только настоящие
+ * четыре секунды ожидания.
+ */
+async function focusSpawnedWindow(title, deps = {}) {
+  const {
+    findWindow = findOpenTerminalByTitle,
+    focus = focusTerminalWindow,
+    wait = sleep,
+    now = Date.now,
+    waitMs = WINDOW_WAIT_MS,
+    pollMs = WINDOW_POLL_MS,
+    settleMs = PLACEMENT_SETTLE_MS,
+  } = deps;
+  const deadline = now() + waitMs;
+  let w = findWindow(title);
+  while (!w && now() < deadline) {
+    await wait(pollMs);
+    w = findWindow(title);
+  }
+  if (!w) return false;
+  await wait(settleMs);
+  return focus(w.id);
+}
+
 /**
  * Focus the last open Claude session for a project cwd, or spawn a fresh
  * `claude -n <name>` there when none is on screen — `<name>` defaults to
@@ -42,6 +98,12 @@ function findOpenTerminalByTitle(title) {
  * открывается всегда. Просьба приходит от `^N` в ccfzf-picker, где человек
  * нажимает её именно потому, что сессия уже есть и нужна вторая. Умолчание
  * `true` оставляет проектный хоткей и Enter прежними.
+ *
+ * Ответ возвращается сразу после `spawn`, но работа на этом не кончается:
+ * окно новой сессии поднимает `focusSpawnedWindow` отдельным хвостом — см.
+ * его докстроку о том, почему без этого терминал открывается за чужими окнами
+ * или свёрнутым. Найденное окно (обе ветки `focus*`) поднимается на месте:
+ * там ждать нечего, окно уже стоит там, где стояло.
  *
  * @param {{ cwd: string, name: string, profile?: string, reuseOpen?: boolean }} opts
  * @returns {Promise<{ ok: boolean, action?: string, reason?: string, sessionId?: string, sessionName?: string }>}
@@ -97,7 +159,14 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true } = {}) 
   } catch (e) {
     return { ok: false, action: 'spawn', reason: e.message };
   }
+  // Хвостом, а не до ответа: окно появится через секунды, а просьба должна
+  // вернуться сразу — её ждёт обработчик MQTT, который пишет в журнал исход.
+  // `.catch()` обязателен: необработанное отклонение в node 22 роняет процесс
+  // целиком, а в нём же живут экспорт в Home Assistant и сторож демона.
+  focusSpawnedWindow(sessionName).catch((e) => {
+    console.error(`[claude-wt] failed to focus ${sessionName}: ${e.message}`);
+  });
   return { ok: true, action: 'spawn', cwd, name: sessionName, sessionName };
 }
 
-export { openClaudeProject };
+export { openClaudeProject, focusSpawnedWindow };
