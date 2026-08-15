@@ -9,3 +9,6 @@ tauri-app/src-tauri/gen/schemas/windows-schema.json
 
 # ralphex progress logs
 .ralphex/progress/
+
+# local Claude Code settings (per-machine permissions)
+.claude/settings.local.json

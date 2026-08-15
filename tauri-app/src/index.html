@@ -49,6 +49,20 @@
       </label>
     </div>
 
+    <div class="field checkbox">
+      <label>
+        <input type="checkbox" id="claude_wt_enabled">
+        Start claude-wt watcher on launch
+      </label>
+      <small>Window tracker daemon. Restarted automatically if it exits.</small>
+    </div>
+
+    <div class="field">
+      <label for="place_hotkey">Place windows hotkey</label>
+      <input type="text" id="place_hotkey" placeholder="Ctrl+Alt+Win+0">
+      <small>Global shortcut that places all windows once. Modifiers: Ctrl, Alt, Shift, Win. Empty = disabled. Applied on save; a warning is logged if the combination is taken. Note: Windows reserves every <code>Win</code>+digit combination (including Win+Ctrl+Shift+digit) for the taskbar — those can never be registered.</small>
+    </div>
+
     <div class="field">
       <label for="store_interval">Store windows interval (seconds)</label>
       <input type="number" id="store_interval" min="0" value="300">
@@ -112,12 +126,6 @@
     <div class="field">
       <label for="mqtt_topic">MQTT Topic prefix</label>
       <input type="text" id="mqtt_topic" placeholder="home/windows11-manager">
-    </div>
-
-    <div class="field">
-      <label for="ws_port">WebSocket bridge port</label>
-      <input type="number" id="ws_port" min="1024" max="65535" value="9721">
-      <small>Local port for Rust→Node.js communication.</small>
     </div>
 
     <div class="actions">

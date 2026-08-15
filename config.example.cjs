@@ -96,6 +96,45 @@ module.exports = {
     topic: 'home/room/pc/windows',
   },
 
+  // Переехало из windows-mqtt (config.yml, секция `windows:`): там эти ключи
+  // читал модуль `windows`, а его выключает `windows.enabled: false`. Читает их
+  // теперь долгоживущая служба `node src/index.js mqtt`. Этот файл сама служба
+  // не читает — только образец; ключи ниже, вплоть до `homeassistant`, нужно
+  // руками перенести в живой `C:\Users\popstas\.config\windows11-manager.config.js`
+  // (см. поиск конфига в шапке файла), иначе все они молчат.
+
+  // Расставлять окно сразу при его появлении (`placeWindowOnOpen()`): опрос
+  // видимых hwnd раз в 1500 мс, дорогой getWindows() — только на новый hwnd.
+  placeWindowOnOpen: true,
+  // Публиковать «Placed windows: N» в топик уведомлений после autoplace.
+  notifyPlaced: true,
+  // Статистика окон в Home Assistant раз в минуту.
+  publishStats: true,
+  // Топик статистики. По умолчанию `${base}/stats`, где base — W11M_MQTT_BASE;
+  // на этой машине он задан отдельно и под базой окон не лежит.
+  publishStatsTopic: 'state/pc/windows',
+
+  // Панель openHASP: сколько строк-слотов claude-wt отдавать в Home Assistant
+  // и как часто (session slots, экспорт из createHaExport() в
+  // src/claude-wt/ha/export.js). Тоже жило в windows-mqtt (config.yml,
+  // `modules.windows.homeassistant`) и тоже не переехало само: без этого
+  // блока createHaExport() берёт умолчание в 10 слотов, а кнопок на плате
+  // девять — лишняя сущность появится и никогда не найдёт себе кнопки.
+  homeassistant: {
+    slots: 9,
+    // Опрос окон (claudeWtSessions() → getWindows()) недёшев, а панель не
+    // требует секундной точности — интервал сделан редким нарочно. В секундах.
+    interval: 15,
+    // Только живые сессии: строк на панели единицы, и каждая, занятая давно
+    // закрытой сессией, вытесняет работающую. Закрытые остаются в пикере —
+    // там места хватает, и восстановить их можно только оттуда.
+    openOnly: true,
+    // Порядок слотов на панели: cost | oldest | newest | recent | name.
+    // Настройка своя, от пикера не зависит; по умолчанию `recent` — в девять
+    // слотов должно попасть то, где работа идёт сейчас, а не самое дорогое.
+    // sessionsSort: 'recent',
+  },
+
   store: {
     path: './data/windows-store.json',
 
@@ -121,12 +160,35 @@ module.exports = {
     stableTicks: 2,
     sessionsFile: 'V:\\.ccfzf.sessions.json',
     statePath: 'C:\\Users\\popstas\\AppData\\Local\\windows11-manager\\claude-wt.json',
+    // Published for readers on the agent's side: which session has a window
+    // open right now, on which desktop, on which host. ccfzf picks it up to
+    // mark its session list; ccfzf-picker then knows whether that window is on
+    // the machine in front of the human, and which pid to hand the foreground
+    // to. Goes on the share, because the reader lives on the other machine.
+    // Empty (the default) — do not write it at all.
+    windowsFile: 'V:\\.ccfzf.sessions.claude-wt.json',
     desktop: true, // return the window to its virtual desktop too
     debug: false,  // log terminal titles that could not be matched to a session
+    // profile: 'your_wt_profile', // optional; omit → no -p
+    // projects: [
+    //   { name: 'home', cwd: '/path/to/home', hotkey: 'Ctrl+F11', profile: 'home' },
+    // ],
     launch: {
       command: 'wt.exe',
-      args: ['-w', '-1', '-p', 'popstas', 'ssh', '-A', 'popstas@pc-virt.popstas.pro',
+      args: ['-w', '-1', 'ssh', '-A', 'popstas@pc-virt.popstas.pro',
              '-t', 'ccfzf --session {id} --kiosk'],
+    },
+    // Fresh Claude in a project folder (project hotkeys). {cwd} and {name}
+    // are substituted; wrap them in single quotes in the remote command.
+    // Run through an *interactive* shell with the cd inside it: `ssh host cmd`
+    // is non-interactive (zsh reads only .zshenv), so rc-file exports and
+    // chpwd hooks — OTEL_RESOURCE_ATTRIBUTES project= among them — never ran.
+    // cwd/name are positional args: quotes nested inside the inner script do
+    // not survive Windows Terminal's command line on the way to ssh.
+    launchNew: {
+      command: 'wt.exe',
+      args: ['-w', '-1', 'ssh', '-A', 'popstas@pc-virt.popstas.pro',
+             '-t', `exec $SHELL -ic 'cd -- "$1" && exec claude -n "$2"' claude-wt '{cwd}' '{name}'`],
     },
     restore: { auto: false, windowTimeoutMs: 30000, launchDelayMs: 2000, settleMs: 500 },
   },

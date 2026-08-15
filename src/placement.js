@@ -162,6 +162,7 @@ async function placeWindowsByConfig(wins = [], opts = {}) {
   let placedCount = 0;
   let skippedCount = 0;
   let processedCount = 0;
+  let failedCount = 0;
   for (let w of wins) {
     const matchedRules = getMatchedRules(w);
     if (matchedRules.length === 0) continue;
@@ -173,7 +174,15 @@ async function placeWindowsByConfig(wins = [], opts = {}) {
       if (!rule.pos && (rule.fancyZones || rule.x !== undefined || rule.y !== undefined)) {
         if (debugLog) verboseLogFileOnly(`placeWindowsByConfig: parsePos returned false for ${winName}`);
       }
-      const result = await placeWindow({ w, rule });
+      // Та же сетка, что и в placeWindows(): у окна, чей процесс умер между
+      // перечислением и расстановкой, getMonitor().getScaleFactor() бросает — и
+      // одно такое окно не должно ни обрывать остальную пачку, ни ронять
+      // процесс через необработанное отклонение.
+      const result = await placeWindow({ w, rule }).catch(error => {
+        console.error('Error placing window:', error);
+        failedCount++;
+        return null;
+      });
       processedCount++;
       const changes = result ? result.changes : [];
       const skipped = result ? result.skipped : [];
@@ -188,7 +197,8 @@ async function placeWindowsByConfig(wins = [], opts = {}) {
       }
     }
   }
-  if (debugLog) verboseLogFileOnly(`placeWindowsByConfig: ${placedCount} placed, ${skippedCount} skipped, ${processedCount} processed (${wins.length} windows)`);
+  if (debugLog) verboseLogFileOnly(`placeWindowsByConfig: ${placedCount} placed, ${skippedCount} skipped, ${processedCount} processed, ${failedCount} failed (${wins.length} windows)`);
+  if (failedCount > 0) verboseLogFileOnly(`placeWindowsByConfig: ${failedCount} window(s) failed to place`);
 }
 
 async function placeWindows(opts = {}) {
@@ -259,6 +269,24 @@ async function placeWindows(opts = {}) {
 
 let placeNewWindowsIntervalId = null;
 
+/**
+ * Расставить окна, которые только что появились.
+ *
+ * Вынесено из обработчика таймера, чтобы отклонению этого обещания было куда
+ * попасть. Расстановщик живёт в процессе службы MQTT рядом с клиентом брокера,
+ * экспортом в Home Assistant, статистикой окон и сторожем демона claude-wt, а
+ * node 22 на необработанном отклонении выходит целиком: одно окно, чей процесс
+ * умер между перечислением и расстановкой, уносило бы всех разом — и Tauri
+ * поднял бы заново только демона, но не эту службу.
+ */
+async function placeNewWindowIds(newIds) {
+  const newIdSet = new Set(newIds);
+  const winsToPlace = getWindows().filter(w => newIdSet.has(w.id));
+  if (winsToPlace.length === 0) return;
+  verboseLogFileOnly(`Autoplacer: placing ${winsToPlace.length} window(s): ${winsToPlace.map(w => w.title || path.basename(w.path)).join(', ')}`);
+  await placeWindowsByConfig(winsToPlace, { changeDesktop: winsToPlace.length === 1 });
+}
+
 function startPlaceNewWindows() {
   // Clear any existing interval first to prevent leaks
   if (placeNewWindowsIntervalId !== null) {
@@ -272,22 +300,32 @@ function startPlaceNewWindows() {
   // process paths and titles only when an unseen hwnd shows up.
   let knownIds = null;
   placeNewWindowsIntervalId = setInterval(() => {
-    const ids = getVisibleWindowIds();
-    if (knownIds === null) {
+    // Тело целиком под перехватом: getVisibleWindowIds() ходит в нативный
+    // модуль, а исключение из обработчика setInterval роняет процесс, в котором
+    // заодно живут MQTT, экспорт в Home Assistant и сторож демона claude-wt.
+    // Молчащий расстановщик лучше, чем молчащее всё.
+    try {
+      const ids = getVisibleWindowIds();
+      if (knownIds === null) {
+        knownIds = new Set(ids);
+        return;
+      }
+      const newIds = ids.filter(id => !knownIds.has(id));
       knownIds = new Set(ids);
-      return;
+      if (newIds.length === 0) return;
+      verboseLogFileOnly(`Autoplacer: detected ${newIds.length} new visible hwnd(s)`);
+      setTimeout(() => {
+        // .catch(), а не голый async-обработчик: необработанное отклонение
+        // отсюда — это немедленный выход процесса в node 22.
+        placeNewWindowIds(newIds).catch((e) => {
+          console.error('Autoplacer: failed to place new windows:', e);
+          verboseLogFileOnly(`Autoplacer: failed to place new windows: ${e?.message ?? e}`);
+        });
+      }, delay);
+    } catch (e) {
+      console.error('Autoplacer: failed to poll visible windows:', e);
+      verboseLogFileOnly(`Autoplacer: failed to poll visible windows: ${e?.message ?? e}`);
     }
-    const newIds = ids.filter(id => !knownIds.has(id));
-    knownIds = new Set(ids);
-    if (newIds.length === 0) return;
-    verboseLogFileOnly(`Autoplacer: detected ${newIds.length} new visible hwnd(s)`);
-    setTimeout(async () => {
-      const newIdSet = new Set(newIds);
-      const winsToPlace = getWindows().filter(w => newIdSet.has(w.id));
-      if (winsToPlace.length === 0) return;
-      verboseLogFileOnly(`Autoplacer: placing ${winsToPlace.length} window(s) after ${delay}ms delay: ${winsToPlace.map(w => w.title || path.basename(w.path)).join(', ')}`);
-      await placeWindowsByConfig(winsToPlace, { changeDesktop: winsToPlace.length === 1 });
-    }, delay);
   }, updateInterval);
 }
 

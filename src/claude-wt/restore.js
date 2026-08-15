@@ -2,6 +2,7 @@ import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { getWindows } from '../windows.js';
 import { placeWindowByConfig } from '../placement.js';
+import { virtualDesktop } from '../virtual-desktop.js';
 import { getWindowsMonitors } from '../monitors.js';
 import { clampBoundsToMonitors } from '../geometry.js';
 import { readState } from './state.js';
@@ -9,7 +10,10 @@ import { loadSessionIndex } from './sessions.js';
 import { resolveSession } from './tracker-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
-import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds } from './restore-helpers.js';
+import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFollowDesktop } from './restore-helpers.js';
+import { planSnapshotRestore, findSnapshot } from './snapshot-helpers.js';
+import { listSnapshots } from './snapshotter.js';
+import { profileForCwd } from './project-helpers.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -24,11 +28,11 @@ function terminalWindows() {
  * there, this restore would duplicate them".
  */
 function openSessionIds(cfg, state) {
-  const sessionIndex = loadSessionIndex(cfg.sessionsFile);
+  const sessionIndex = loadSessionIndex(cfg.sessionsFile, cfg.progressDir);
   const ids = new Set();
   for (const w of terminalWindows()) {
     const resolved = resolveSession(stripTitleDecoration(w.getTitle()), sessionIndex, state.slots);
-    if (resolved && !resolved.ambiguous) ids.add(resolved.id);
+    if (resolved) ids.add(resolved.id);
   }
   return ids;
 }
@@ -54,7 +58,8 @@ async function restoreClaudeSessions({ force = false, sessionIds } = {}) {
   const state = readState(cfg.statePath);
   const { unknown } = resolveRestoreIds({ state, sessionIds });
   for (const id of unknown) console.error(`[claude-wt] no remembered slot for session ${id}`);
-  const fullPlan = planRestore({ state, launch: cfg.launch, sessionIds });
+  const resolveProfile = cwd => profileForCwd(cwd, cfg);
+  const fullPlan = planRestore({ state, launch: cfg.launch, sessionIds, resolveProfile });
   const restored = [];
   const skipped = [];
   if (!fullPlan.length) {
@@ -78,7 +83,22 @@ async function restoreClaudeSessions({ force = false, sessionIds } = {}) {
     return { restored, skipped };
   }
   console.log(`[claude-wt] restoring ${plan.length} session(s)`);
+  await launchPlan({ plan, cfg, restored, skipped });
+  console.log(`[claude-wt] restored ${restored.length}, skipped ${skipped.length}`);
+  return { restored, skipped };
+}
+
+/**
+ * Запустить и расставить окна по плану.
+ *
+ * Последовательно, и это не про аккуратность: два окна, всплывшие одновременно,
+ * не отличить друг от друга, а по заголовку тем более — он в этот момент ещё не
+ * устоялся. `restored` и `skipped` заполняются на месте, потому что вызывающий
+ * печатает по ним итог.
+ */
+async function launchPlan({ plan, cfg, restored, skipped }) {
   const monitors = getWindowsMonitors();
+  const placed = [];
   let first = true;
   for (const item of plan) {
     // Пауза между запусками. Windows Terminal открывает окно асинхронно, и
@@ -111,11 +131,67 @@ async function restoreClaudeSessions({ force = false, sessionIds } = {}) {
     try {
       await placeWindowByConfig(rule);
       restored.push(item.sessionId);
+      placed.push({ desktop: rule.desktop ?? null });
     } catch (e) {
       console.error(`[claude-wt] failed to place ${item.sessionId}: ${e.message}`);
       skipped.push(item.sessionId);
     }
   }
+
+  // Окно уехало на свой стол — уходим следом, иначе открытая сессия выглядит
+  // исчезнувшей. Переключение на стол, где человек и так стоит, — холостой ход.
+  const follow = restoreFollowDesktop({ planned: plan.length, placed });
+  if (follow) {
+    try {
+      // Слоты хранят 1-based номер, GoToDesktopNumber ждёт 0-based.
+      await virtualDesktop.GoToDesktopNumber(follow - 1);
+    } catch (e) {
+      console.error(`[claude-wt] failed to follow restored window to desktop ${follow}: ${e.message}`);
+    }
+  }
+}
+
+/**
+ * Поднять сессии из снимка.
+ *
+ * Отличается от restoreClaudeSessions() двумя вещами, и обе — то, ради чего
+ * снимки заводились:
+ *
+ * - координаты берутся из снимка, а не из слотов. Слот переписывается: после
+ *   закрытия и переоткрытия сессии там оказывается дефолтная геометрия
+ *   Windows Terminal, и восстановление возвращало окно не на место;
+ * - дедупликация по уже открытым — всегда, без флагов. Прежний отказ «сначала
+ *   закройте их» срабатывал в самом частом случае (закрыл одну из трёх) и
+ *   делал команду бесполезной.
+ */
+async function restoreSnapshot({ id, sessionIds } = {}) {
+  const cfg = getClaudeWtConfig();
+  const snapshot = findSnapshot(listSnapshots(cfg), id);
+  const restored = [];
+  const skipped = [];
+  if (!snapshot) {
+    console.error(id && id !== 'last' ? `[claude-wt] no snapshot ${id}` : '[claude-wt] no snapshots yet');
+    return { restored, skipped };
+  }
+  if (!cfg.launch.command) {
+    console.error('[claude-wt] claudeWt.launch.command is not set in config, nothing to run');
+    return { restored, skipped: snapshot.sessions.map(s => s.id) };
+  }
+  const state = readState(cfg.statePath);
+  const resolveProfile = cwd => profileForCwd(cwd, cfg);
+  const plan = planSnapshotRestore({
+    snapshot,
+    openSessionIds: openSessionIds(cfg, state),
+    sessionIds,
+    launch: cfg.launch,
+    resolveProfile,
+  });
+  if (!plan.length) {
+    console.log(`[claude-wt] snapshot ${snapshot.id}: every session is already open, nothing to restore`);
+    return { restored, skipped };
+  }
+  console.log(`[claude-wt] snapshot ${snapshot.id}: restoring ${plan.length} of ${snapshot.sessions.length} session(s)`);
+  await launchPlan({ plan, cfg, restored, skipped });
   console.log(`[claude-wt] restored ${restored.length}, skipped ${skipped.length}`);
   return { restored, skipped };
 }
@@ -140,4 +216,10 @@ async function maybeRestoreOnStart() {
   return true;
 }
 
-export { waitForNewWindow, openSessionIds, restoreClaudeSessions, maybeRestoreOnStart };
+export {
+  waitForNewWindow,
+  openSessionIds,
+  restoreClaudeSessions,
+  restoreSnapshot,
+  maybeRestoreOnStart,
+};

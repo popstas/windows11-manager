@@ -1,7 +1,12 @@
 import fs from 'node:fs';
 import { windowManager } from 'node-window-manager';
 import { getConfig } from './config.js';
-import { findMonitorByPoint, findMonitorNumByName, sortMonitors } from './monitors-helpers.js';
+import {
+  findMonitorByPoint,
+  findMonitorNumByName,
+  monitorsByConfigNumber,
+  sortMonitors,
+} from './monitors-helpers.js';
 
 function getWindowsMonitors() {
   return windowManager.getMonitors().map(mon => {
@@ -14,23 +19,14 @@ function getWindowsMonitors() {
 function getMonitor(num) {
   const config = getConfig();
   const ind = config.monitors[num];
-  const mons = getWindowsMonitors();
-  const sorted = [];
-  for (const n in config.monitorsSize) {
-    const size = config.monitorsSize[n];
-    const found = mons.find(m => m.bounds.width === size.width && m.bounds.height === size.height);
-    if (found) sorted.push(found);
-  }
-  return sorted[ind];
+  return monitorsByConfigNumber(getWindowsMonitors(), config.monitorsSize)[ind];
 }
 
 function getMons() {
   const config = getConfig();
-  const mons = [{}];
-  for (const i in config.monitorsSize) {
-    mons.push(getMonitor(i));
-  }
-  return mons;
+  const byNumber = monitorsByConfigNumber(getWindowsMonitors(), config.monitorsSize);
+  // Индекс 0 — заглушка: номера мониторов в правилах размещения начинаются с 1.
+  return [{}, ...Object.keys(config.monitorsSize ?? {}).map(n => byNumber[config.monitors[n]])];
 }
 
 function getMonitorByPoint({ x, y }) {
@@ -53,7 +49,13 @@ function getFancyZoneMonitor(num) {
   return sortedMons[num - 1];
 }
 
-export { findMonitorByPoint, findMonitorNumByName, sortMonitors } from './monitors-helpers.js';
+export {
+  findMonitorByPoint,
+  findMonitorNumByName,
+  matchMonitorBySize,
+  monitorsByConfigNumber,
+  sortMonitors,
+} from './monitors-helpers.js';
 export {
   getWindowsMonitors,
   getMonitor,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds } from './restore-helpers.js';
+import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFollowDesktop } from './restore-helpers.js';
 
 const bounds = { x: 10, y: 20, width: 800, height: 600 };
 const slot = (over = {}) => ({ titles: ['ccfzf'], cwd: '/p', bounds, desktop: 2, lastSeen: 500, ...over });
@@ -76,6 +76,39 @@ describe('planRestore', () => {
       '--session a1 --title a1',
     ]);
   });
+
+  it('resolves profile per slot cwd', () => {
+    const st = state({
+      lastLayout: ['a1', 'b2'],
+      slots: {
+        a1: slot({ titles: ['home'], cwd: '/p/home' }),
+        b2: slot({ titles: ['ez'], cwd: '/p/ez' }),
+      },
+    });
+    const launch = { command: 'wt.exe', args: ['-w', '-1', 'ssh', '-t', 'ccfzf --session {id}'] };
+    const resolveProfile = cwd => cwd === '/p/home' ? 'home' : 'popstas';
+    const plan = planRestore({ state: st, launch, resolveProfile });
+    expect(plan[0].args).toEqual([
+      '-w', '-1', '-p', 'home', 'ssh', '-t', 'ccfzf --session a1',
+    ]);
+    expect(plan[1].args).toEqual([
+      '-w', '-1', '-p', 'popstas', 'ssh', '-t', 'ccfzf --session b2',
+    ]);
+  });
+
+  it('applies WT profile after {id} substitution', () => {
+    const launch = { command: 'wt.exe', args: ['-w', '-1', 'ssh', '-t', 'ccfzf --session {id}'] };
+    expect(planRestore({ state: state(), launch, resolveProfile: () => 'popstas' })[0].args).toEqual([
+      '-w', '-1', '-p', 'popstas', 'ssh', '-t', 'ccfzf --session a1',
+    ]);
+  });
+
+  it('strips baked-in -p when profile is empty', () => {
+    const launch = { command: 'wt.exe', args: ['-w', '-1', '-p', 'old', 'ssh'] };
+    expect(planRestore({ state: state(), launch, resolveProfile: () => '' })[0].args).toEqual([
+      '-w', '-1', 'ssh',
+    ]);
+  });
 });
 
 describe('partitionPlan', () => {
@@ -124,5 +157,27 @@ describe('resolveRestoreIds', () => {
     const launch = { command: 'wt.exe', args: ['--session {id}'] };
     const plan = planRestore({ state: twoSlots, launch, sessionIds: ['b2'] });
     expect(plan.map(i => i.sessionId)).toEqual(['b2']);
+  });
+});
+
+describe('restoreFollowDesktop', () => {
+  it('уводит на стол единственной поднятой сессии', () => {
+    // Открытие сессии из пикера — самый осознанный случай: человек попросил
+    // именно это окно, и оно уехало на свой стол у него из-под рук.
+    expect(restoreFollowDesktop({ planned: 1, placed: [{ desktop: 2 }] })).toBe(2);
+  });
+
+  it('молчит на восстановлении пачкой', () => {
+    // Снимок раскладки поднимает окна на разные столы; выбрать из них один и
+    // выбросить туда человека — произвол.
+    expect(restoreFollowDesktop({ planned: 3, placed: [{ desktop: 2 }] })).toBeNull();
+    expect(restoreFollowDesktop({ planned: 1, placed: [{ desktop: 1 }, { desktop: 2 }] })).toBeNull();
+  });
+
+  it('молчит, когда стол не запрашивали или окно не встало', () => {
+    expect(restoreFollowDesktop({ planned: 1, placed: [{ desktop: null }] })).toBeNull();
+    expect(restoreFollowDesktop({ planned: 1, placed: [{}] })).toBeNull();
+    expect(restoreFollowDesktop({ planned: 1, placed: [] })).toBeNull();
+    expect(restoreFollowDesktop({})).toBeNull();
   });
 });

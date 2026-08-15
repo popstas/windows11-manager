@@ -23,20 +23,31 @@ function trackTitle(before, win, stableTicks) {
   };
 }
 
-/** Titles shown by more than one window right now — those windows stay put. */
-function duplicateTitles(windows) {
-  const seen = new Map();
+/**
+ * Title → hwnd that may bind for it.
+ *
+ * When several windows show the same title, only the largest hwnd wins: Windows
+ * tends to hand out increasing handles, so that is the newest window. The rest
+ * stay unbound so two twins cannot fight over one slot.
+ */
+function titleWinnerIds(windows) {
+  const winners = new Map();
   for (const w of windows) {
     if (!w.title) continue;
-    seen.set(w.title, (seen.get(w.title) ?? 0) + 1);
+    const prev = winners.get(w.title);
+    if (prev === undefined || w.id > prev) winners.set(w.title, w.id);
   }
-  return new Set([...seen].filter(([, n]) => n > 1).map(([title]) => title));
+  return winners;
 }
 
 /**
  * Title -> session, first from the ccfzf dump, then from our own title history.
  * The fallback keeps the module working while V: is unmounted or the dump is
  * stale, at the cost of only knowing sessions we have already seen.
+ *
+ * Several slots claiming the same title: pick the one seen most recently.
+ * `ambiguous` stays true so callers can tell a tie happened, but binding no
+ * longer refuses — the pick is good enough.
  */
 function resolveSession(title, sessionIndex, slots) {
   if (!title) return null;
@@ -44,6 +55,7 @@ function resolveSession(title, sessionIndex, slots) {
   if (fromDump) return { id: fromDump.id, cwd: fromDump.cwd, ambiguous: fromDump.ambiguous };
   const matches = Object.entries(slots ?? {}).filter(([, slot]) => slot.titles?.includes(title));
   if (!matches.length) return null;
+  matches.sort((a, b) => (b[1].lastSeen ?? 0) - (a[1].lastSeen ?? 0));
   const [id, slot] = matches[0];
   return { id, cwd: slot.cwd ?? '', ambiguous: matches.length > 1 };
 }
@@ -85,7 +97,7 @@ function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, o
   // everything persisted to state (lastSeen, updated) is stamped in epoch seconds.
   const nowSec = Math.floor(now / 1000);
   const prev = new Map(prevWindows.map(w => [w.id, w]));
-  const duplicates = duplicateTitles(windows);
+  const winners = titleWinnerIds(windows);
   const slots = { ...state.slots };
   const nextWindows = [];
   const actions = [];
@@ -97,12 +109,39 @@ function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, o
     const tracked = trackTitle(before, win, stableTicks);
     const minimized = win.bounds.x < minimizedX;
     const titleChanged = tracked.stableTitle !== (before?.stableTitle ?? null);
+    // Twin titles: only the largest hwnd may own the session. An older window
+    // that was already bound must release — otherwise both would rewrite one slot.
+    const titleKey = tracked.stableTitle ?? tracked.title;
+    const losesToNewer = Boolean(titleKey)
+      && winners.has(titleKey)
+      && winners.get(titleKey) !== win.id;
+    if (losesToNewer) tracked.sessionId = null;
 
-    if (titleChanged) {
-      const resolved = duplicates.has(tracked.stableTitle)
-        ? null
-        : resolveSession(tracked.stableTitle, sessionIndex, slots);
-      tracked.sessionId = resolved && !resolved.ambiguous ? resolved.id : null;
+    // Сессия в окне меняется и без смены заголовка: человек вышел из claude и
+    // запустил его снова в том же терминале — id новый, заголовок прежний.
+    // Привязка же делалась ровно один раз, в момент смены заголовка, и окно
+    // навсегда оставалось на прежнем id. Замерено 2026-08-03: строка
+    // `ExpertizeMe` пять часов стояла на сводке мёртвой сессии, а работающая в
+    // этом же окне не появлялась в списке вовсе — своего слота у неё не было.
+    //
+    // Судья тут только дамп. Пока он этого заголовка не знает (новая сессия ещё
+    // не попала в него), молчим: иначе окно теряло бы слот на каждое отставание
+    // дампа. Свёрнутое окно и незавершённый перенос пропускаем — у первого
+    // нечего записать в слот, у второго на привязке держится сторож pendingMove.
+    const dumpSays = sessionIndex?.[tracked.stableTitle];
+    const rebinds = Boolean(tracked.sessionId) && !losesToNewer && !titleChanged
+      && !minimized && !tracked.pendingMove
+      && Boolean(dumpSays) && dumpSays.id !== tracked.sessionId;
+    // Виртуальный стол у окна прежний — оно никуда не уезжало. Спрашивать его
+    // заново значило бы спавнить VirtualDesktop11.exe на каждую перепривязку.
+    const releasedDesktop = rebinds ? (slots[tracked.sessionId]?.desktop ?? null) : null;
+    if (rebinds) tracked.sessionId = null;
+
+    if (losesToNewer) {
+      // skip binding
+    } else if (titleChanged) {
+      const resolved = resolveSession(tracked.stableTitle, sessionIndex, slots);
+      tracked.sessionId = resolved ? resolved.id : null;
       if (tracked.sessionId) {
         const known = slots[tracked.sessionId];
         const common = { title: tracked.stableTitle, cwd: resolved.cwd, now: nowSec };
@@ -167,19 +206,21 @@ function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, o
       // в момент смены заголовка. Без второй попытки такое окно осталось бы
       // без слота навсегда, пока заголовок не сменится ещё раз. Стоило это
       // на живом прогоне двух сессий из шести.
-      const resolved = duplicates.has(tracked.stableTitle)
-        ? null
-        : resolveSession(tracked.stableTitle, sessionIndex, slots);
-      if (resolved && !resolved.ambiguous) {
+      const resolved = resolveSession(tracked.stableTitle, sessionIndex, slots);
+      if (resolved) {
         tracked.sessionId = resolved.id;
         const known = slots[resolved.id];
         // Окно не двигаем: это не вход в сессию, а догнавший дамп. Окно стоит
         // здесь давно, и его позиция — выбор пользователя, а не то, что нужно
         // исправлять.
         slots[resolved.id] = upsertSlot(known, {
-          title: tracked.stableTitle, cwd: resolved.cwd, bounds: win.bounds, now: nowSec,
+          title: tracked.stableTitle, cwd: resolved.cwd, bounds: win.bounds,
+          desktop: releasedDesktop, now: nowSec,
         });
-        if (!known || known.desktop == null) {
+        // Спрашиваем номер стола по итоговому слоту, а не по тому, был ли он до
+        // нас: у перепривязки слот новый, но стол уже известен от предыдущей
+        // сессии этого же окна.
+        if (slots[resolved.id].desktop == null) {
           bindings.push({ windowId: win.id, sessionId: resolved.id });
         }
       }
@@ -199,4 +240,4 @@ function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, o
   };
 }
 
-export { trackTitle, duplicateTitles, resolveSession, step, boundsEqual };
+export { trackTitle, titleWinnerIds, resolveSession, step, boundsEqual };

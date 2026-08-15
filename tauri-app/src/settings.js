@@ -12,6 +12,8 @@ async function loadSettings() {
     document.getElementById('show_notifications').checked = settings.show_notifications;
     document.getElementById('restore_on_start').checked = settings.restore_on_start;
     document.getElementById('store_before_exit').checked = settings.store_before_exit;
+    document.getElementById('claude_wt_enabled').checked = settings.claude_wt_enabled;
+    document.getElementById('place_hotkey').value = settings.place_hotkey ?? '';
     document.getElementById('store_interval').value = settings.store_interval;
     document.getElementById('store_match_list').value = (settings.store_match_list || []).join('\n');
     document.getElementById('timeout_before_open').value = settings.timeout_before_open;
@@ -22,7 +24,6 @@ async function loadSettings() {
     document.getElementById('mqtt_username').value = settings.mqtt_username;
     document.getElementById('mqtt_password').value = settings.mqtt_password;
     document.getElementById('mqtt_topic').value = settings.mqtt_topic;
-    document.getElementById('ws_port').value = settings.ws_port;
   } catch (e) {
     console.error('Failed to load settings:', e);
   }
@@ -45,6 +46,8 @@ form.addEventListener('submit', async (e) => {
     show_notifications: document.getElementById('show_notifications').checked,
     restore_on_start: document.getElementById('restore_on_start').checked,
     store_before_exit: document.getElementById('store_before_exit').checked,
+    claude_wt_enabled: document.getElementById('claude_wt_enabled').checked,
+    place_hotkey: document.getElementById('place_hotkey').value.trim(),
     store_interval: parseInt(document.getElementById('store_interval').value, 10) || 0,
     store_match_list: document.getElementById('store_match_list').value.split('\n').map(s => s.trim()).filter(Boolean),
     timeout_before_open: parseInt(document.getElementById('timeout_before_open').value, 10) || 5,
@@ -55,7 +58,6 @@ form.addEventListener('submit', async (e) => {
     mqtt_username: document.getElementById('mqtt_username').value,
     mqtt_password: document.getElementById('mqtt_password').value,
     mqtt_topic: document.getElementById('mqtt_topic').value,
-    ws_port: parseInt(document.getElementById('ws_port').value, 10) || 9721,
   };
 
   try {

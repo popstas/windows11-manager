@@ -73,6 +73,48 @@ async function start() {
       startHttpServer(Number(options.port));
     });
 
+  program
+    .command('mqtt')
+    .description('MQTT: подписка на команды окон и экспорт сессий в Home Assistant')
+    .action(async () => {
+      const { startMqttService } = await import('./mqtt/service.js');
+      const log = (message, level = 'info') => {
+        if (level === 'error') console.error(`[mqtt] ${message}`);
+        else console.log(`[mqtt] ${message}`);
+      };
+      // Общая сетка под всеми долгоживущими обработчиками этого процесса.
+      // Здесь живут разом клиент MQTT, экспорт в Home Assistant, статистика
+      // окон, автоматическая расстановка и сторож демона claude-wt, а node 22
+      // на необработанном отклонении выходит целиком и молча. Tauri при этом
+      // поднимает заново только демона claude-wt, но не эту службу, так что
+      // одно упавшее обещание в расстановщике уносило бы вообще всё — и
+      // человек узнавал бы об этом по остывшей панели.
+      process.on('unhandledRejection', (reason) => {
+        const detail = reason instanceof Error ? (reason.stack || reason.message) : String(reason);
+        log(`необработанное отклонение обещания, служба продолжает работу: ${detail}`, 'error');
+      });
+      // uncaughtException сюда намеренно не добавлен: синхронные исключения
+      // ловятся на месте (обработчики таймеров), а глушить их скопом — значит
+      // оставлять процесс жить в состоянии, про которое ничего не известно.
+
+      const service = startMqttService({ winMan, config: winMan.getConfig(), log });
+      // stop() — единственный, кто публикует availability: offline. Без этих
+      // подписок он не звался никогда, и Home Assistant показывал все
+      // переключатели живыми даже после остановки службы из трея: и `online`,
+      // и состояния слотов уходят retained. Падение и reboot перекрыты
+      // завещанием брокеру (см. mqtt/service.js).
+      let stopping = false;
+      const shutdown = (signal) => {
+        if (stopping) return;
+        stopping = true;
+        log(`${signal}: снимаю доступность в Home Assistant и отключаюсь`);
+        service.stop();
+        process.exit(0);
+      };
+      process.on('SIGINT', () => shutdown('SIGINT'));
+      process.on('SIGTERM', () => shutdown('SIGTERM'));
+    });
+
   program.command('stats').action(() => {
     const stats = winMan.getStats();
     console.log(stats);
@@ -134,6 +176,21 @@ async function start() {
   claudeWt.command('watch').action(async () => {
     const mod = await import('./claude-wt/index.js');
     mod.startClaudeWt();
+    // Уход по сигналу — единственный способ остановиться по-хорошему:
+    // stopClaudeWt() убирает опубликованный файл окон, и сторож в MQTT-службе не
+    // найдёт в нём pid процесса, которого больше нет. Демон, снятый жёстко
+    // (из трея это TerminateProcess, и обработчик не позовут), файл, конечно,
+    // оставит — на этот случай у сторожа срок годности pid.
+    let stopping = false;
+    const shutdown = (signal) => {
+      if (stopping) return;
+      stopping = true;
+      console.log(`[claude-wt] ${signal}: останавливаюсь и убираю файл окон`);
+      mod.stopClaudeWt();
+      process.exit(0);
+    };
+    process.on('SIGINT', () => shutdown('SIGINT'));
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
   });
 
   claudeWt.command('status').action(async () => {
@@ -144,15 +201,63 @@ async function start() {
 
   claudeWt
     .command('restore')
-    .option('--force', 'restore only the sessions that are missing, even if others are open')
-    .option('--session <id...>', 'restore these session ids instead of the last layout')
+    .description('alias for "snapshots-restore last"')
+    .option('--session <id...>', 'restore only these sessions from the snapshot')
+    .option('--slots', 'restore from the live slots instead of a snapshot (legacy)')
+    .option('--force', 'with --slots: bring back only the sessions that are missing')
     .action(async (options) => {
       const mod = await import('./claude-wt/restore.js');
-      const { skipped } = await mod.restoreClaudeSessions({
-        force: options.force,
-        sessionIds: options.session,
-      });
+      // По умолчанию — самый свежий снимок. lastLayout обнуляется через секунду
+      // после закрытия окон (демон переписывает его тем, что видит на экране),
+      // поэтому восстановление по нему работало только сразу после перезагрузки.
+      const { skipped } = options.slots
+        ? await mod.restoreClaudeSessions({ force: options.force, sessionIds: options.session })
+        : await mod.restoreSnapshot({ id: 'last', sessionIds: options.session });
       process.exit(skipped.length ? 1 : 0);
+    });
+
+  claudeWt
+    .command('snapshots-list')
+    .description('list remembered session layouts')
+    .option('--json', 'print the raw structure instead of a table')
+    .action(async (options) => {
+      const mod = await import('./claude-wt/snapshotter.js');
+      const { getClaudeWtConfig } = await import('./claude-wt/index.js');
+      const snapshots = mod.listSnapshots(getClaudeWtConfig());
+      if (options.json) {
+        console.log(JSON.stringify({ ok: true, snapshots }, null, 2));
+        process.exit(0);
+      }
+      if (!snapshots.length) console.log('[claude-wt] no snapshots yet');
+      for (const s of snapshots) {
+        console.log(`${s.id}  ${s.sessions.length} session(s)`);
+        for (const x of s.sessions) {
+          const where = `desktop ${x.desktop ?? '—'} · monitor ${x.monitor ?? '—'}`;
+          console.log(`    ${x.title || x.id}  (${where})`);
+        }
+      }
+      process.exit(0);
+    });
+
+  claudeWt
+    .command('snapshots-restore [id]')
+    .description('bring back a remembered layout ("last" for the newest)')
+    .option('--session <id...>', 'restore only these sessions from the snapshot')
+    .action(async (id, options) => {
+      const mod = await import('./claude-wt/restore.js');
+      const { skipped } = await mod.restoreSnapshot({ id: id ?? 'last', sessionIds: options.session });
+      process.exit(skipped.length ? 1 : 0);
+    });
+
+  claudeWt
+    .command('windows-clear')
+    .description('remove the published windows file of a daemon that is no longer running')
+    .action(async () => {
+      const mod = await import('./claude-wt/index.js');
+      const { windowsFile } = mod.getClaudeWtConfig();
+      mod.removeWindowsFile(windowsFile);
+      console.log(`[claude-wt] cleared ${windowsFile || '(windowsFile not set)'}`);
+      process.exit(0);
     });
 
   claudeWt.command('clear').action(async () => {
@@ -162,6 +267,18 @@ async function start() {
     console.log(`[claude-wt] cleared ${statePath}`);
     process.exit(0);
   });
+
+  claudeWt
+    .command('open-project')
+    .description('focus the last open session for a project cwd, or spawn a fresh named Claude')
+    .requiredOption('--cwd <path>', 'Linux project directory')
+    .requiredOption('--name <name>', 'display name for a newly spawned session')
+    .action(async (options) => {
+      const mod = await import('./claude-wt/project.js');
+      const res = await mod.openClaudeProject({ cwd: options.cwd, name: options.name });
+      console.log(JSON.stringify(res, null, 2));
+      process.exit(res.ok ? 0 : 1);
+    });
 
   program.allowExcessArguments();
   program.parse();

@@ -3,7 +3,7 @@
 This repository contains a Node.js tool for managing window placement on Windows 11 using PowerToys FancyZones and the VirtualDesktop11 utility. The codebase is small, but the main logic is in the **src** folder.
 
 ## Build commands
-- Node CLI: `node src <command>` (place, store, restore, clear, reload, open-default, stats, dashboard, `claude-wt watch|status|restore|clear`)
+- Node CLI: `node src <command>` (place, store, restore, clear, reload, open-default, stats, dashboard, `claude-wt watch|status|restore|clear|windows-clear`)
 - Tauri build: `cd tauri-app/src-tauri && . "$HOME/.cargo/env" && cargo build`
 - Tests: `npm test` (vitest). Unit tests for placement, windows, store, fancyzones, monitors, geometry, window-match, scale
 
@@ -29,16 +29,18 @@ This repository contains a Node.js tool for managing window placement on Windows
 ## Conventions
 - Tray menu items call node CLI commands via shell plugin, not direct FFI
 - Use `get_project_path(app)` to resolve the node project path from settings
-- MQTT/WS lifecycle managed in AppState behind Mutex
+- MQTT lifecycle managed in AppState behind Mutex (`mqtt_running`/`mqtt_child`/`mqtt_desired`)
 
 ## Tauri app architecture
 
-- **lib.rs** -- main entry point: tray menu, event handlers, settings, MQTT/WS lifecycle.
+- **lib.rs** -- main entry point: tray menu, event handlers, settings, MQTT child-process lifecycle.
+- **children.rs** -- child-process supervision shared by all three Node children (`ChildKind::{Mqtt,ClaudeWt,Autoplacer}`): reads each child's stdout/stderr into the `log` facade (so it lands in `data/windows11-manager.log` next to the rest of the app log -- check there first when a child looks like it's doing nothing), and computes the exponential restart backoff (`next_restart_attempt`, `restart_delay_secs`: 2s doubling to a 60s ceiling, reset to 1 after 60s of healthy uptime).
 - **logging.rs** -- file logging with `fern`.
-- **mqtt.rs** -- MQTT client (rumqttc).
-- **ws_server.rs** -- WebSocket server bridging MQTT commands to node.
+- MQTT itself is not a Rust module here: `node src/index.js mqtt` (the client in `src/mqtt/` plus the Home Assistant export in `src/claude-wt/ha/`) runs as a child process spawned from `lib.rs`, and the tray shows `MQTT: running/stopped` from that process's presence, not from a connection state -- `on_child_exit()` now flips it the moment the process actually dies, not just on manual toggle. The old `mqtt.rs` (rumqttc client) and `ws_server.rs` (WebSocket bridge to node) are gone -- so is `src/ws-client.js` on the node side.
+- `setup()` auto-starts the claude-wt daemon (`claude_wt_enabled` setting, defaults `true`) and MQTT (`mqtt_enabled`, if the user has it checked) at launch, the same way the tray toggles do. **The claude-wt daemon and the MQTT service are both resurrected automatically** if they exit (crashed or killed, backoff above) -- the autoplacer is not. MQTT earned this once it stopped being just an MQTT client: the same child now carries the Home Assistant export, the window statistics, the autoplacer and the claude-wt watchdog, so an unnoticed exit takes out half the supervision of the machine. Each child has its own `*_desired` flag and its own attempt counter (`claude_wt_desired`/`mqtt_desired`); stopping either from the tray -- and the app-exit path -- clears the flag first, so the supervisor does not fight a deliberate stop.
 - Use `run_node_command(app, &[args], "Label")` helper to spawn node CLI commands from Rust with logging.
 - Settings stored via `tauri-plugin-store` in `settings.json` (project_path, MQTT config, etc.).
+- Глобальный хоткей разовой расстановки — настройка `place_hotkey` (умолчание `Ctrl+Alt+Win+0`), а не константа в коде. Умолчание с `Alt` вынужденно: `Win`+цифра оболочка Windows резервирует под панель задач во всех сочетаниях (`Win+N`, `Win+Shift+N`, `Win+Ctrl+N`, `Win+Ctrl+Shift+N`), и `RegisterHotKey` отдаёт на них `ERROR_HOTKEY_ALREADY_REGISTERED` — проверять кандидатов надо на живой машине, из интерактивной сессии (из ssh всё падает с 1459, «требуется интерактивная window station»). `normalize_hotkey()` переводит `Win`/`Windows`/`Meta` в `Super`: список модификаторов у `global-hotkey` закрытый, и `Win` там нет — без перевода строка не разбирается вовсе. Пустое значение выключает хоткей. Смена в настройках снимает прежнюю регистрацию и вешает новую без перезапуска; занятую другим приложением комбинацию занять нельзя, и это видно только строкой `warn` в логе.
 - Build: `cd tauri-app/src-tauri && . "$HOME/.cargo/env" && cargo build`.
 
 ## FancyZones coordinate system & DPI gotchas
@@ -68,6 +70,23 @@ The code in `calcFancyZonePos` divides ALL values (monitor coords + zone coords)
 - `src/claude-wt/index.js` exports: `startClaudeWt`, `stopClaudeWt`, `claudeWtStatus`, `getClaudeWtConfig`
 - `src/claude-wt/restore.js` exports: `restoreClaudeSessions`, `maybeRestoreOnStart`
 
+## claude-wt: связка четырёх мест
+
+Список сессий собирается не только здесь. Хуки агента живут на pc-virt (`V:`),
+пикер — в отдельном проекте `ccfzf-picker`, MQTT-клиент и экспорт в Home
+Assistant переехали сюда же (`src/mqtt/`, `src/claude-wt/ha/`) и работают своим
+процессом, `node src/index.js mqtt`, который поднимает трей; конфиг панели
+openHASP — на shome (`R:`). Состояние течёт в одну сторону, нажатия — в
+обратную, и каждая граница между частями уже приносила по багу.
+
+Карта, потоки и измеренные ограничения: скилл `claude-wt`
+(`~/.claude/skills/claude-wt/`). Своей копии в репозитории больше нет —
+она разошлась с общей и слита в неё; правится только общая.
+Читать перед правками в `src/claude-wt/`, в `ccfzf-picker` или в конфиге панели —
+там же собраны грабли, которые невозможно вывести из кода одного репозитория
+(вранье `mtime` по SMB, обрезка шаблонов в Home Assistant, отсутствие отступов у
+кнопок openHASP).
+
 ## claude-wt polling budget
 
 Two rules keep the once-a-second daemon off the CPU graph; both were paid for once already and must not be re-learned:
@@ -76,6 +95,8 @@ Two rules keep the once-a-second daemon off the CPU graph; both were paid for on
 - **Never read the virtual desktop number in the loop.** `virtualDesktop.GetWindowDesktopNumber()` spawns `VirtualDesktop11.exe`; periodic exe spawns were the source of the parasitic load fixed in 2026-07-14. It is called only when a window is bound to a session, driven by the `bindings` list `step()` returns.
 
 Window titles are compared in decoration-stripped form (`title-helpers.js`): Claude Code prefixes the terminal title with a status glyph (`✳ ccfzf`) while the ccfzf dump stores the bare summary, so both sides are normalised by the same function.
+
+**There is a second poller now, and it is fine.** `placeWindowOnOpen` (`src/mqtt/autoplacer.js`, gated by `config.placeWindowOnOpen`) runs inside the `mqtt` process, not the daemon, and it polls too -- `getVisibleWindowIds()` every 1500ms, same call the daemon uses, same rule respected: `getWindows()` (~21-31ms) only fires once a new hwnd shows up among the visible ones, never in the loop, and the desktop number is never read in the loop either. So two processes now each poll `getVisibleWindowIds()` on their own timer (daemon at 1000ms, MQTT service at 1500ms) -- a few ms/s per process, not the pattern this rule exists to forbid.
 
 ## Getting started
 

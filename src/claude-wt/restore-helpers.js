@@ -1,5 +1,7 @@
 /** Pure helper functions for claude-wt crash restore. No external I/O. */
 
+import { planWtLaunch } from './project-helpers.js';
+
 function bootTimeSec(uptimeSec, nowMs) {
   return Math.floor(nowMs / 1000) - Math.floor(uptimeSec);
 }
@@ -35,18 +37,26 @@ function resolveRestoreIds({ state, sessionIds }) {
   };
 }
 
-function planRestore({ state, launch, sessionIds }) {
+function planRestore({ state, launch, sessionIds, resolveProfile }) {
+  const resolve = typeof resolveProfile === 'function' ? resolveProfile : () => '';
   return (resolveRestoreIds({ state, sessionIds }).ids)
     .map(sessionId => ({ sessionId, slot: state.slots?.[sessionId] }))
     .filter(({ slot }) => Boolean(slot))
-    .map(({ sessionId, slot }) => ({
-      sessionId,
-      title: slot.titles[0],
-      command: launch.command,
-      args: launch.args.map(arg => arg.replaceAll('{id}', sessionId)),
-      bounds: slot.bounds,
-      desktop: slot.desktop,
-    }));
+    .map(({ sessionId, slot }) => {
+      const planned = planWtLaunch({
+        launch,
+        vars: { id: sessionId },
+        profile: resolve(slot.cwd ?? ''),
+      });
+      return {
+        sessionId,
+        title: slot.titles[0],
+        command: planned.command,
+        args: planned.args,
+        bounds: slot.bounds,
+        desktop: slot.desktop,
+      };
+    });
 }
 
 /**
@@ -64,4 +74,26 @@ function partitionPlan(plan, openSessionIds) {
   };
 }
 
-export { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds };
+/**
+ * Стол, на который нужно уйти вслед за поднятым окном.
+ *
+ * Окно сессии всплывает там, где человек сейчас, а слот помнит свой стол — и
+ * восстановление честно уносит окно туда. Со стороны это выглядит как
+ * исчезновение: сессию открыли, окно мигнуло и пропало. Демон за такими
+ * переносами следом уже ходит (`desktopFollowTarget`), но здесь переносит не
+ * он: открытие сессии из пикера идёт через MQTT-процесс и `launchPlan()`, и до
+ * тика демона окно успевает уехать. Замерено 2026-08-12 на
+ * `obsidian-agent-workspace`.
+ *
+ * Только у одиночного подъёма — открытия конкретной сессии, самого осознанного
+ * случая из всех. Восстановление пачкой (снимок, падение) поднимает окна на
+ * разные столы, и выбрать из них один, чтобы выбросить туда человека, значит
+ * решить за него.
+ */
+function restoreFollowDesktop({ planned = 0, placed = [] } = {}) {
+  if (planned !== 1 || placed.length !== 1) return null;
+  const desktop = placed[0]?.desktop;
+  return Number.isFinite(desktop) && desktop > 0 ? desktop : null;
+}
+
+export { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFollowDesktop };

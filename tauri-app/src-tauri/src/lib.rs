@@ -1,8 +1,8 @@
+mod children;
 mod logging;
-mod mqtt;
 mod updater;
-mod ws_server;
 
+use children::{next_restart_attempt, pump_output, restart_delay_secs, ChildKind};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
@@ -27,13 +27,15 @@ pub struct Settings {
     pub mqtt_username: String,
     pub mqtt_password: String,
     pub mqtt_topic: String,
-    pub ws_port: u16,
+    pub claude_wt_enabled: bool,
     pub restore_on_start: bool,
     pub store_before_exit: bool,
     pub store_interval: u32,
     pub store_match_list: Vec<String>,
     pub timeout_before_open: u32,
     pub update_check_interval: String,
+    /// Глобальный хоткей разовой расстановки окон. Пустая строка — выключен.
+    pub place_hotkey: String,
 }
 
 impl Default for Settings {
@@ -49,15 +51,47 @@ impl Default for Settings {
             mqtt_username: String::new(),
             mqtt_password: String::new(),
             mqtt_topic: String::new(),
-            ws_port: 9721,
+            // По умолчанию включено: на демоне claude-wt держится вся цепочка
+            // (панель openHASP и пикер сессий), и выключенным он полезен только
+            // при отладке.
+            claude_wt_enabled: true,
             restore_on_start: true,
             store_before_exit: true,
             store_interval: 300,
             store_match_list: Vec::new(),
             timeout_before_open: 5,
             update_check_interval: "launch".to_string(),
+            // Прежде расстановка висела на захардкоженном Ctrl+Alt+Shift+P, и
+            // занять его не удавалось: комбинацию держало другое приложение, а
+            // единственным следом была строка warn в логе.
+            //
+            // Alt, а не Shift, вынужденно: `Win+Ctrl+Shift+<цифра>` резервирует
+            // сама оболочка Windows («новый экземпляр приложения N панели задач
+            // от администратора»), и RegisterHotKey отдаёт на неё
+            // ERROR_HOTKEY_ALREADY_REGISTERED при любой цифре. Проверено на
+            // живой машине: Win+цифра, Win+Shift+цифра и Win+Ctrl+Shift+цифра
+            // заняты все, Ctrl+Alt+Win+0 свободна.
+            place_hotkey: "Ctrl+Alt+Win+0".to_string(),
         }
     }
+}
+
+/// Привести написанное человеком к тому, что понимает парсер global-hotkey.
+///
+/// Клавишу Windows там зовут `Super`: `WIN` не входит в список модификаторов и
+/// уезжает в parse_key, где такой клавиши нет, — весь хоткей отваливается с
+/// ошибкой разбора. При этом на самой Windows её никто не называет Super,
+/// поэтому в настройках держим человеческое написание, а переводим здесь.
+fn normalize_hotkey(raw: &str) -> String {
+    raw.split('+')
+        .map(|token| token.trim())
+        .filter(|token| !token.is_empty())
+        .map(|token| match token.to_uppercase().as_str() {
+            "WIN" | "WINDOWS" | "META" => "Super",
+            _ => token,
+        })
+        .collect::<Vec<_>>()
+        .join("+")
 }
 
 #[cfg(test)]
@@ -68,8 +102,8 @@ mod tests {
     fn settings_default_values() {
         let s = Settings::default();
         assert_eq!(s.mqtt_port, 1883);
-        assert_eq!(s.ws_port, 9721);
         assert!(!s.mqtt_enabled);
+        assert!(s.claude_wt_enabled);
         assert!(s.restore_on_start);
         assert!(s.store_before_exit);
         assert_eq!(s.autoplacer_interval, 0);
@@ -77,23 +111,158 @@ mod tests {
         assert!(s.store_match_list.is_empty());
         assert_eq!(s.timeout_before_open, 5);
         assert_eq!(s.update_check_interval, "launch");
+        assert_eq!(s.place_hotkey, "Ctrl+Alt+Win+0");
+    }
+
+    #[test]
+    fn normalize_hotkey_translates_windows_key() {
+        assert_eq!(normalize_hotkey("Ctrl+Win+Shift+0"), "Ctrl+Super+Shift+0");
+        assert_eq!(normalize_hotkey("ctrl+win+shift+0"), "ctrl+Super+shift+0");
+        assert_eq!(normalize_hotkey("Ctrl+Windows+P"), "Ctrl+Super+P");
+        assert_eq!(normalize_hotkey("Ctrl+Meta+P"), "Ctrl+Super+P");
+    }
+
+    /// Проверка строки на строку доказывает только замену подстроки. Настоящее
+    /// требование — чтобы результат приняла та библиотека, которой его отдают:
+    /// список её модификаторов закрытый, и опечатка в названии видна лишь при
+    /// разборе. Умолчание разбирается здесь, а не на живой машине.
+    #[test]
+    fn normalized_default_hotkey_parses() {
+        use std::str::FromStr;
+        use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
+
+        let normalized = normalize_hotkey(&Settings::default().place_hotkey);
+        let parsed = Shortcut::from_str(&normalized).expect("умолчание должно разбираться");
+        assert_eq!(parsed.key, Code::Digit0);
+        assert_eq!(
+            parsed.mods,
+            Modifiers::CONTROL | Modifiers::ALT | Modifiers::SUPER
+        );
+
+        // Прежнее захардкоженное значение — чтобы его можно было вернуть в поле
+        // настройки и оно осталось рабочим.
+        assert!(Shortcut::from_str(&normalize_hotkey("Ctrl+Alt+Shift+P")).is_ok());
+        // А без перевода Win парсер именно отказывает — ради этого перевод и есть.
+        assert!(Shortcut::from_str("Ctrl+Win+Shift+0").is_err());
+    }
+
+    #[test]
+    fn normalize_hotkey_leaves_other_tokens_alone() {
+        // Ровно то, что было захардкожено до появления настройки.
+        assert_eq!(normalize_hotkey("Ctrl+Alt+Shift+P"), "Ctrl+Alt+Shift+P");
+        // Клавиша с "win" внутри имени — не модификатор, трогать нельзя.
+        assert_eq!(normalize_hotkey("Ctrl+Window"), "Ctrl+Window");
+    }
+
+    #[test]
+    fn normalize_hotkey_trims_and_drops_empty_tokens() {
+        assert_eq!(normalize_hotkey(" Ctrl + Win + 0 "), "Ctrl+Super+0");
+        // Пустая строка — выключенный хоткей, а не ошибка разбора.
+        assert_eq!(normalize_hotkey(""), "");
+        assert_eq!(normalize_hotkey("  "), "");
+        // Лишний плюс не должен превращаться в пустой токен: парсер на нём
+        // возвращает EmptyToken и хоткей не регистрируется вовсе.
+        assert_eq!(normalize_hotkey("Ctrl++0"), "Ctrl+0");
     }
 }
 
 struct AppState {
     autoplacer_running: bool,
     autoplacer_child: Option<tauri_plugin_shell::process::CommandChild>,
+    /// Номер поколения ребёнка. Событие о смерти приходит асинхронно и вполне
+    /// может застать уже следующий, только что поднятый процесс — тогда оно
+    /// погасило бы статус живого ребёнка. Обработчик сверяет поколение и
+    /// молча выбрасывает опоздавшее событие.
+    autoplacer_generation: u64,
     claude_wt_running: bool,
     claude_wt_child: Option<tauri_plugin_shell::process::CommandChild>,
+    claude_wt_generation: u64,
+    /// Демон должен работать. Отличает падение от «оператор выключил руками»:
+    /// первое поднимаем заново, второе — нет.
+    claude_wt_desired: bool,
+    /// Сколько раз подряд демон не смог прожить [`children::HEALTHY_UPTIME_SECS`].
+    claude_wt_restart_attempts: u32,
     mqtt_running: bool,
-    mqtt_handle: Option<mqtt::MqttHandle>,
-    ws_handle: Option<ws_server::WsServerHandle>,
-    ws_client_child: Option<tauri_plugin_shell::process::CommandChild>,
+    mqtt_child: Option<tauri_plugin_shell::process::CommandChild>,
+    mqtt_generation: u64,
+    /// Служба должна работать. Ровно та же роль, что и у `claude_wt_desired`:
+    /// когда-то этот ребёнок был просто клиентом MQTT, и его смерть стоила
+    /// панели в Home Assistant. Теперь в нём же живут экспорт сессий,
+    /// статистика окон, автоматическая расстановка и сторож демона claude-wt —
+    /// то есть незамеченное падение уносит половину надзора за машиной.
+    mqtt_desired: bool,
+    /// Сколько раз подряд служба не смогла прожить [`children::HEALTHY_UPTIME_SECS`].
+    mqtt_restart_attempts: u32,
     update_download_url: Option<String>,
+}
+
+impl AppState {
+    fn new() -> Self {
+        Self {
+            autoplacer_running: false,
+            autoplacer_child: None,
+            autoplacer_generation: 0,
+            claude_wt_running: false,
+            claude_wt_child: None,
+            claude_wt_generation: 0,
+            claude_wt_desired: false,
+            claude_wt_restart_attempts: 0,
+            mqtt_running: false,
+            mqtt_child: None,
+            mqtt_generation: 0,
+            mqtt_desired: false,
+            mqtt_restart_attempts: 0,
+            update_download_url: None,
+        }
+    }
 }
 
 struct TrayHolder {
     _tray: tauri::tray::TrayIcon<tauri::Wry>,
+}
+
+/// Пункты трея, которым нужно менять подпись не только из обработчика меню:
+/// ребёнок умирает в фоновой задаче, и подпись «running» обязана погаснуть
+/// именно оттуда.
+struct TrayMenuItems {
+    autoplacer: MenuItem<tauri::Wry>,
+    claude_wt: MenuItem<tauri::Wry>,
+    mqtt_status: MenuItem<tauri::Wry>,
+    mqtt_toggle: MenuItem<tauri::Wry>,
+}
+
+fn update_tray_label(app: &tauri::AppHandle, kind: ChildKind, running: bool) {
+    let Some(items) = app.try_state::<TrayMenuItems>() else {
+        return;
+    };
+    match kind {
+        ChildKind::Autoplacer => {
+            let _ = items.autoplacer.set_text(if running {
+                "Stop Autoplacer"
+            } else {
+                "Start Autoplacer"
+            });
+        }
+        ChildKind::ClaudeWt => {
+            let _ = items.claude_wt.set_text(if running {
+                "Stop claude-wt"
+            } else {
+                "Start claude-wt"
+            });
+        }
+        ChildKind::Mqtt => {
+            let _ = items.mqtt_toggle.set_text(if running {
+                "Stop MQTT"
+            } else {
+                "Start MQTT"
+            });
+            let _ = items.mqtt_status.set_text(if running {
+                "MQTT: running"
+            } else {
+                "MQTT: stopped"
+            });
+        }
+    }
 }
 
 #[tauri::command]
@@ -145,10 +314,10 @@ async fn get_settings(app: tauri::AppHandle) -> Result<Settings, String> {
             .get("mqtt_topic")
             .and_then(|v| v.as_str().map(String::from))
             .unwrap_or(defaults.mqtt_topic),
-        ws_port: store
-            .get("ws_port")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(defaults.ws_port as u64) as u16,
+        claude_wt_enabled: store
+            .get("claude_wt_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(defaults.claude_wt_enabled),
         restore_on_start: store
             .get("restore_on_start")
             .and_then(|v| v.as_bool())
@@ -179,6 +348,10 @@ async fn get_settings(app: tauri::AppHandle) -> Result<Settings, String> {
             .get("update_check_interval")
             .and_then(|v| v.as_str().map(String::from))
             .unwrap_or(defaults.update_check_interval),
+        place_hotkey: store
+            .get("place_hotkey")
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or(defaults.place_hotkey),
     };
 
     Ok(settings)
@@ -211,7 +384,10 @@ async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), 
     store.set("mqtt_username", serde_json::json!(settings.mqtt_username));
     store.set("mqtt_password", serde_json::json!(settings.mqtt_password));
     store.set("mqtt_topic", serde_json::json!(settings.mqtt_topic));
-    store.set("ws_port", serde_json::json!(settings.ws_port));
+    store.set(
+        "claude_wt_enabled",
+        serde_json::json!(settings.claude_wt_enabled),
+    );
     store.set("restore_on_start", serde_json::json!(settings.restore_on_start));
     store.set("store_before_exit", serde_json::json!(settings.store_before_exit));
     store.set("store_interval", serde_json::json!(settings.store_interval));
@@ -221,7 +397,21 @@ async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), 
     );
     store.set("timeout_before_open", serde_json::json!(settings.timeout_before_open));
     store.set("update_check_interval", serde_json::json!(settings.update_check_interval));
+
+    // Прежнее значение читаем до записи: по нему снимается старая регистрация.
+    // Без снятия обе комбинации остались бы рабочими до перезапуска, а человек
+    // видел бы в настройках только новую.
+    let previous_hotkey = store
+        .get("place_hotkey")
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_else(|| Settings::default().place_hotkey);
+    store.set("place_hotkey", serde_json::json!(settings.place_hotkey));
     store.save().map_err(|e| e.to_string())?;
+
+    if normalize_hotkey(&previous_hotkey) != normalize_hotkey(&settings.place_hotkey) {
+        unregister_place_hotkey(&app, &previous_hotkey);
+        register_place_hotkey(&app, &settings.place_hotkey);
+    }
 
     // Write store-match-list.json to project dir so Node can read it
     let project_path = store
@@ -316,13 +506,14 @@ fn load_settings_from_store(app: &tauri::AppHandle) -> Settings {
         mqtt_username: store.get("mqtt_username").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.mqtt_username),
         mqtt_password: store.get("mqtt_password").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.mqtt_password),
         mqtt_topic: store.get("mqtt_topic").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.mqtt_topic),
-        ws_port: store.get("ws_port").and_then(|v| v.as_u64()).unwrap_or(defaults.ws_port as u64) as u16,
+        claude_wt_enabled: store.get("claude_wt_enabled").and_then(|v| v.as_bool()).unwrap_or(defaults.claude_wt_enabled),
         restore_on_start: store.get("restore_on_start").and_then(|v| v.as_bool()).unwrap_or(true),
         store_before_exit: store.get("store_before_exit").and_then(|v| v.as_bool()).unwrap_or(true),
         store_interval: store.get("store_interval").and_then(|v| v.as_u64()).unwrap_or(300) as u32,
         store_match_list: store.get("store_match_list").and_then(|v| v.as_array().map(|arr| arr.iter().filter_map(|item| item.as_str().map(String::from)).collect::<Vec<String>>())).unwrap_or_default(),
         timeout_before_open: store.get("timeout_before_open").and_then(|v| v.as_u64()).unwrap_or(5) as u32,
         update_check_interval: store.get("update_check_interval").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.update_check_interval),
+        place_hotkey: store.get("place_hotkey").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.place_hotkey),
     }
 }
 
@@ -388,6 +579,234 @@ fn place_windows(app: &tauri::AppHandle) {
     run_node_command(app, &["src", "place", "--verbose"], "Place Windows");
 }
 
+/// Повесить разовую расстановку окон на глобальный хоткей.
+///
+/// Отказ регистрации — не повод падать: комбинацию мог занять кто угодно
+/// другой, и приложение в этом случае продолжает работать, просто без хоткея.
+/// Раньше единственным следом такого отказа была строка warn, и найти её мог
+/// только тот, кто уже знал, что искать; теперь комбинацию видно и в
+/// настройках, так что её можно сменить, не пересобирая приложение.
+fn register_place_hotkey(app: &tauri::AppHandle, raw: &str) {
+    use tauri_plugin_global_shortcut::ShortcutState;
+
+    let shortcut = normalize_hotkey(raw);
+    if shortcut.is_empty() {
+        info!("Place hotkey is empty — not registering");
+        return;
+    }
+
+    let label = shortcut.clone();
+    if let Err(e) = app
+        .global_shortcut()
+        .on_shortcut(shortcut.as_str(), move |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                info!("Hotkey {} pressed", label);
+                place_windows(app);
+            }
+        })
+    {
+        warn!("Could not register hotkey {}: {} (already in use?)", shortcut, e);
+    } else {
+        info!("Place hotkey registered: {}", shortcut);
+    }
+}
+
+/// Снять регистрацию прежней комбинации при смене настройки.
+fn unregister_place_hotkey(app: &tauri::AppHandle, raw: &str) {
+    let shortcut = normalize_hotkey(raw);
+    if shortcut.is_empty() {
+        return;
+    }
+    // Ошибка здесь ожидаема ровно в одном случае: прежнюю комбинацию так и не
+    // удалось занять при старте. Снимать нечего — это не повод шуметь ошибкой.
+    if let Err(e) = app.global_shortcut().unregister(shortcut.as_str()) {
+        info!("Place hotkey {} was not registered: {}", shortcut, e);
+    }
+}
+
+/// Ребёнок умер. Гасит статус, пишет код возврата и — для демона claude-wt —
+/// заводит подъём с откатом.
+///
+/// Зовётся из фоновой задачи, вычитывающей поток событий, поэтому берёт мьютекс
+/// сам и отпускает его до того, как трогать трей.
+fn on_child_exit(
+    app: &tauri::AppHandle,
+    kind: ChildKind,
+    generation: u64,
+    reason: String,
+    uptime_secs: u64,
+) {
+    let state = app.state::<Mutex<AppState>>();
+    let mut s = state.lock().unwrap();
+
+    let current = match kind {
+        ChildKind::Autoplacer => s.autoplacer_generation,
+        ChildKind::ClaudeWt => s.claude_wt_generation,
+        ChildKind::Mqtt => s.mqtt_generation,
+    };
+    if current != generation {
+        // Опоздавшее событие от процесса, который уже сменили или остановили
+        // руками. Гасить по нему статус нельзя — он относится к живому ребёнку.
+        info!(
+            "{}: previous instance exited with {} after {}s",
+            kind.label(),
+            reason,
+            uptime_secs
+        );
+        return;
+    }
+
+    match kind {
+        ChildKind::Autoplacer => {
+            s.autoplacer_child = None;
+            s.autoplacer_running = false;
+        }
+        ChildKind::ClaudeWt => {
+            s.claude_wt_child = None;
+            s.claude_wt_running = false;
+        }
+        ChildKind::Mqtt => {
+            s.mqtt_child = None;
+            s.mqtt_running = false;
+        }
+    }
+    warn!(
+        "{} exited with {} after {}s",
+        kind.label(),
+        reason,
+        uptime_secs
+    );
+
+    // Поднимаем ребёнка, только если его не выключил оператор. Убит он при этом
+    // снаружи (в том числе node-стороной, заметившей молчание) или упал сам —
+    // разницы нет, для нас это одинаковое «процесса больше нет».
+    let delay = match kind {
+        ChildKind::ClaudeWt if s.claude_wt_desired => {
+            let attempt = next_restart_attempt(s.claude_wt_restart_attempts, uptime_secs);
+            s.claude_wt_restart_attempts = attempt;
+            Some(attempt)
+        }
+        ChildKind::Mqtt if s.mqtt_desired => {
+            let attempt = next_restart_attempt(s.mqtt_restart_attempts, uptime_secs);
+            s.mqtt_restart_attempts = attempt;
+            Some(attempt)
+        }
+        _ => None,
+    }
+    .map(|attempt| {
+        let delay = restart_delay_secs(attempt);
+        warn!(
+            "{}: restarting in {}s after exit with {} (attempt {})",
+            kind.label(),
+            delay,
+            reason,
+            attempt
+        );
+        delay
+    });
+    drop(s);
+
+    update_tray_label(app, kind, false);
+    match kind {
+        ChildKind::Autoplacer => {
+            let _ = app.emit("autoplacer-toggled", false);
+        }
+        ChildKind::ClaudeWt => {
+            let _ = app.emit("claude-wt-toggled", false);
+        }
+        ChildKind::Mqtt => {}
+    }
+    if let Some(delay) = delay {
+        match kind {
+            ChildKind::ClaudeWt => schedule_claude_wt_restart(app, delay),
+            ChildKind::Mqtt => schedule_mqtt_restart(app, delay),
+            ChildKind::Autoplacer => {}
+        }
+    }
+}
+
+/// Подъём демона через `delay_secs`. Перед подъёмом ещё раз спрашивает
+/// состояние: за время паузы оператор мог и выключить демона, и поднять руками.
+fn schedule_claude_wt_restart(app: &tauri::AppHandle, delay_secs: u64) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
+        let running = {
+            let state = app.state::<Mutex<AppState>>();
+            let mut s = state.lock().unwrap();
+            if !s.claude_wt_desired || s.claude_wt_running {
+                return;
+            }
+            start_claude_wt_locked(&app, &mut s);
+            s.claude_wt_running
+        };
+        update_tray_label(&app, ChildKind::ClaudeWt, running);
+    });
+}
+
+/// Запуск демона при уже взятом мьютексе.
+///
+/// Неудача самого `spawn` (нет node в PATH, кривой путь проекта) — это тот же
+/// случай, что и мгновенное падение: попытка засчитывается, следующая уезжает
+/// по откату. Иначе цикл «не смог запустить → пробуем снова» крутился бы без
+/// паузы и залил бы лог.
+fn start_claude_wt_locked(app: &tauri::AppHandle, s: &mut AppState) {
+    let project_path = get_project_path(app);
+    if project_path.is_empty() {
+        warn!("Project path not configured");
+        return;
+    }
+    s.claude_wt_desired = true;
+
+    let shell = app.shell();
+    let result = shell
+        .command("node")
+        .args(["src/index.js", "claude-wt", "watch"])
+        .current_dir(&project_path)
+        .spawn();
+
+    match result {
+        Ok((rx, child)) => {
+            s.claude_wt_generation += 1;
+            let generation = s.claude_wt_generation;
+            s.claude_wt_child = Some(child);
+            s.claude_wt_running = true;
+            let app_handle = app.clone();
+            pump_output(ChildKind::ClaudeWt, rx, move |reason, uptime| {
+                on_child_exit(&app_handle, ChildKind::ClaudeWt, generation, reason, uptime);
+            });
+            info!("claude-wt started");
+        }
+        Err(e) => {
+            s.claude_wt_running = false;
+            let attempt = next_restart_attempt(s.claude_wt_restart_attempts, 0);
+            s.claude_wt_restart_attempts = attempt;
+            let delay = restart_delay_secs(attempt);
+            error!(
+                "Failed to start claude-wt: {} (retrying in {}s, attempt {})",
+                e, delay, attempt
+            );
+            schedule_claude_wt_restart(app, delay);
+        }
+    }
+}
+
+/// Остановка демона по воле оператора: подъём после неё не нужен.
+fn stop_claude_wt_locked(s: &mut AppState) {
+    s.claude_wt_desired = false;
+    s.claude_wt_restart_attempts = 0;
+    // Смена поколения: событие о смерти убитого процесса придёт позже и уже не
+    // будет относиться к текущему состоянию.
+    s.claude_wt_generation += 1;
+    if let Some(child) = s.claude_wt_child.take() {
+        let _ = child.kill();
+    }
+    if s.claude_wt_running {
+        info!("claude-wt stopped");
+    }
+    s.claude_wt_running = false;
+}
+
 fn toggle_autoplacer(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
     let project_path = get_project_path(app);
     if project_path.is_empty() {
@@ -400,6 +819,7 @@ fn toggle_autoplacer(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>)
 
     if app_state.autoplacer_running {
         // Stop autoplacer
+        app_state.autoplacer_generation += 1;
         if let Some(child) = app_state.autoplacer_child.take() {
             let _ = child.kill();
         }
@@ -415,17 +835,33 @@ fn toggle_autoplacer(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>)
             .spawn();
 
         match result {
-            Ok((_rx, child)) => {
+            Ok((rx, child)) => {
+                app_state.autoplacer_generation += 1;
+                let generation = app_state.autoplacer_generation;
                 app_state.autoplacer_child = Some(child);
                 app_state.autoplacer_running = true;
+                let app_handle = app.clone();
+                pump_output(ChildKind::Autoplacer, rx, move |reason, uptime| {
+                    on_child_exit(
+                        &app_handle,
+                        ChildKind::Autoplacer,
+                        generation,
+                        reason,
+                        uptime,
+                    );
+                });
                 info!("Autoplacer started");
             }
             Err(e) => error!("Failed to start autoplacer: {}", e),
         }
     }
 
+    let running = app_state.autoplacer_running;
+    drop(app_state);
+
+    update_tray_label(app, ChildKind::Autoplacer, running);
     // Notify frontend about state change
-    let _ = app.emit("autoplacer-toggled", app_state.autoplacer_running);
+    let _ = app.emit("autoplacer-toggled", running);
 }
 
 fn toggle_claude_wt(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
@@ -437,110 +873,204 @@ fn toggle_claude_wt(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) 
     }
 
     let mut app_state = state.lock().unwrap();
-
-    if app_state.claude_wt_running {
-        if let Some(child) = app_state.claude_wt_child.take() {
-            let _ = child.kill();
-        }
-        app_state.claude_wt_running = false;
-        info!("claude-wt stopped");
+    let stopped = app_state.claude_wt_running;
+    if stopped {
+        stop_claude_wt_locked(&mut app_state);
     } else {
-        let shell = app.shell();
-        let result = shell
-            .command("node")
-            .args(["src/index.js", "claude-wt", "watch"])
-            .current_dir(&project_path)
-            .spawn();
+        start_claude_wt_locked(app, &mut app_state);
+    }
+    let running = app_state.claude_wt_running;
+    drop(app_state);
 
-        match result {
-            Ok((_rx, child)) => {
-                app_state.claude_wt_child = Some(child);
-                app_state.claude_wt_running = true;
-                info!("claude-wt started");
-            }
-            Err(e) => error!("Failed to start claude-wt: {}", e),
-        }
+    if stopped {
+        // Демона снимают жёстко (TerminateProcess), поэтому убрать за собой
+        // опубликованный файл окон он не успевает — а в файле лежит его pid, по
+        // которому сторож в MQTT-службе снимает замолчавшего демона. Служба
+        // остановку из трея переживает, и полторы минуты спустя файл ещё
+        // считался бы свежим: ровно одно снятие могло уйти в чужой процесс,
+        // которому Windows уже отдала освободившийся номер. Убираем файл
+        // отдельным запуском node — путь к нему знает только конфиг проекта.
+        run_node_command(
+            app,
+            &["src/index.js", "claude-wt", "windows-clear"],
+            "Clear claude-wt windows file",
+        );
     }
 
-    let _ = app.emit("claude-wt-toggled", app_state.claude_wt_running);
+    update_tray_label(app, ChildKind::ClaudeWt, running);
+    let _ = app.emit("claude-wt-toggled", running);
 }
 
-fn start_mqtt_service(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
+/// Всё, что нужно для запуска службы, собранное до взятия мьютекса.
+///
+/// Ходит в хранилище настроек и — если пути проекта нет — открывает окно
+/// настроек. Второе и есть причина, по которой сбор вынесен наружу: webview
+/// строится только на главном потоке, и вызов из фоновой задачи ждёт, пока тот
+/// освободится. Главный поток в этот момент вполне может стоять в обработчике
+/// трея на мьютексе `AppState` — тогда фоновая задача держит мьютекс и ждёт
+/// главный поток, а главный поток ждёт мьютекс. Под замком не должно
+/// происходить ничего, что трогает UI.
+fn mqtt_launch_config(app: &tauri::AppHandle) -> Option<(Settings, String)> {
     let settings = load_settings_from_store(app);
     if settings.mqtt_host.is_empty() || settings.mqtt_topic.is_empty() {
         warn!("MQTT host or topic not configured");
-        return;
+        return None;
     }
 
     let project_path = get_project_path(app);
     if project_path.is_empty() {
         warn!("Project path not configured, opening settings");
         open_settings_window(app);
+        return None;
+    }
+
+    Some((settings, project_path))
+}
+
+fn start_mqtt_service(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
+    let Some((settings, project_path)) = mqtt_launch_config(app) else {
+        return;
+    };
+    let mut app_state = state.lock().unwrap();
+    start_mqtt_locked(app, &mut app_state, settings, project_path);
+}
+
+/// Подъём службы MQTT через `delay_secs`. Как и у демона, перед подъёмом ещё раз
+/// спрашивает состояние: за время паузы оператор мог и выключить службу из трея,
+/// и поднять её руками.
+fn schedule_mqtt_restart(app: &tauri::AppHandle, delay_secs: u64) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
+        {
+            let state = app.state::<Mutex<AppState>>();
+            let s = state.lock().unwrap();
+            if !s.mqtt_desired || s.mqtt_running {
+                return;
+            }
+        }
+        // Настройки спрашиваем с отпущенным мьютексом (см. mqtt_launch_config) и
+        // уже после проверки «служба ещё нужна»: иначе выключенная из трея
+        // служба открывала бы человеку окно настроек через минуту после
+        // выключения.
+        let Some((settings, project_path)) = mqtt_launch_config(&app) else {
+            return;
+        };
+        let running = {
+            let state = app.state::<Mutex<AppState>>();
+            let mut s = state.lock().unwrap();
+            if !s.mqtt_desired {
+                return;
+            }
+            // Между проверкой и этим местом службу могли поднять руками — от
+            // второго ребёнка спасает запрет внутри start_mqtt_locked.
+            start_mqtt_locked(&app, &mut s, settings, project_path);
+            s.mqtt_running
+        };
+        update_tray_label(&app, ChildKind::Mqtt, running);
+    });
+}
+
+/// Запуск службы MQTT при уже взятом мьютексе. Настройки и путь проекта берутся
+/// готовыми (`mqtt_launch_config`): здесь, под замком, ходить за ними нельзя.
+///
+/// Как и у демона claude-wt, неудача самого `spawn` (нет node в PATH, кривой
+/// путь проекта) считается попыткой: следующая уезжает по откату, иначе цикл
+/// «не смог запустить → пробуем снова» крутился бы без паузы.
+fn start_mqtt_locked(
+    app: &tauri::AppHandle,
+    s: &mut AppState,
+    settings: Settings,
+    project_path: String,
+) {
+    // Второй такой же ребёнок хуже, чем ни одного: два процесса пишут одни и те
+    // же retained-топики Home Assistant, каждый со своим порядком слотов, и
+    // каждый заводит своего сторожа демона. Ручка при этом теряется —
+    // `mqtt_child` переписывается вторым, и на выходе из приложения убьют
+    // только его, а первый останется висеть. Запрет стоит здесь, а не у
+    // вызывающих: их трое, и мьютекс каждый берёт по-своему.
+    if s.mqtt_running {
+        warn!("MQTT service already running, not starting a second one");
         return;
     }
 
-    let (mqtt_handle, mqtt_future) = mqtt::start_mqtt(
-        settings.mqtt_host,
-        settings.mqtt_port,
-        settings.mqtt_username,
-        settings.mqtt_password,
-        settings.mqtt_topic,
-    );
-    tauri::async_runtime::spawn(mqtt_future);
+    // Ставится после проверок настроек: без хоста, темы или пути проекта поднимать
+    // нечего, и откат крутился бы вокруг заведомо невозможного запуска.
+    s.mqtt_desired = true;
 
-    let (ws_handle, ws_future) =
-        ws_server::start_ws_server(settings.ws_port, mqtt_handle.command_tx.clone());
-    tauri::async_runtime::spawn(ws_future);
-
-    // Spawn Node.js WS client
+    // Spawn the Node.js MQTT service. Credentials go through the environment,
+    // never argv, since argv is world-readable in the process list.
     let shell = app.shell();
-    let ws_client = shell
+    let mqtt_child = shell
         .command("node")
-        .args(["src/ws-client.js", &settings.ws_port.to_string()])
+        .args(["src/index.js", "mqtt"])
         .current_dir(&project_path)
+        .env("W11M_MQTT_HOST", settings.mqtt_host)
+        .env("W11M_MQTT_PORT", settings.mqtt_port.to_string())
+        .env("W11M_MQTT_USER", settings.mqtt_username)
+        .env("W11M_MQTT_PASS", settings.mqtt_password)
+        .env("W11M_MQTT_BASE", settings.mqtt_topic)
         .spawn();
 
-    let mut app_state = state.lock().unwrap();
-
-    match ws_client {
-        Ok((_rx, child)) => {
-            app_state.ws_client_child = Some(child);
+    match mqtt_child {
+        Ok((rx, child)) => {
+            s.mqtt_generation += 1;
+            let generation = s.mqtt_generation;
+            s.mqtt_child = Some(child);
+            s.mqtt_running = true;
+            let app_handle = app.clone();
+            pump_output(ChildKind::Mqtt, rx, move |reason, uptime| {
+                on_child_exit(&app_handle, ChildKind::Mqtt, generation, reason, uptime);
+            });
+            info!("MQTT service started");
         }
-        Err(e) => error!("Failed to start WS client: {}", e),
+        Err(e) => {
+            s.mqtt_running = false;
+            let attempt = next_restart_attempt(s.mqtt_restart_attempts, 0);
+            s.mqtt_restart_attempts = attempt;
+            let delay = restart_delay_secs(attempt);
+            error!(
+                "Failed to start MQTT service: {} (retrying in {}s, attempt {})",
+                e, delay, attempt
+            );
+            schedule_mqtt_restart(app, delay);
+        }
     }
-
-    app_state.mqtt_handle = Some(mqtt_handle);
-    app_state.ws_handle = Some(ws_handle);
-    app_state.mqtt_running = true;
-    info!("MQTT service started");
 }
 
-fn stop_mqtt_service(state: &State<'_, Mutex<AppState>>) {
-    let mut app_state = state.lock().unwrap();
-    stop_mqtt_state(&mut app_state);
-}
-
+/// Остановка службы по воле оператора (или на выходе из приложения): подъём
+/// после неё не нужен, и «Stop MQTT» в трее обязан значить именно stop.
 fn stop_mqtt_state(app_state: &mut AppState) {
-    if let Some(child) = app_state.ws_client_child.take() {
+    app_state.mqtt_desired = false;
+    app_state.mqtt_restart_attempts = 0;
+    // Смена поколения: событие о смерти убитого процесса придёт позже и уже не
+    // будет относиться к текущему состоянию.
+    app_state.mqtt_generation += 1;
+    if let Some(child) = app_state.mqtt_child.take() {
         let _ = child.kill();
-    }
-    if let Some(mut ws) = app_state.ws_handle.take() {
-        ws.stop();
-    }
-    if let Some(mut mq) = app_state.mqtt_handle.take() {
-        mq.stop();
     }
     app_state.mqtt_running = false;
     info!("MQTT service stopped");
 }
 
 fn toggle_mqtt(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
-    let running = state.lock().unwrap().mqtt_running;
-    if running {
-        stop_mqtt_service(state);
-    } else {
-        start_mqtt_service(app, state);
+    // Настройки собираются до мьютекса — и потому, что под замком нельзя
+    // трогать UI, и потому, что решение «стоп или старт» обязано приниматься
+    // под тем же замком, под которым потом действуют. Прежний код читал
+    // `mqtt_running` под одним замком, а запускал под другим: в промежутке
+    // помещался подъём из фоновой задачи, и служба поднималась дважды.
+    let launch = mqtt_launch_config(app);
+
+    let mut app_state = state.lock().unwrap();
+    if app_state.mqtt_running {
+        stop_mqtt_state(&mut app_state);
+    } else if let Some((settings, project_path)) = launch {
+        start_mqtt_locked(app, &mut app_state, settings, project_path);
     }
+    let running = app_state.mqtt_running;
+    drop(app_state);
+
+    update_tray_label(app, ChildKind::Mqtt, running);
 }
 
 fn open_main_window(app: &tauri::AppHandle) {
@@ -594,17 +1124,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .manage(Mutex::new(AppState {
-            autoplacer_running: false,
-            autoplacer_child: None,
-            claude_wt_running: false,
-            claude_wt_child: None,
-            mqtt_running: false,
-            mqtt_handle: None,
-            ws_handle: None,
-            ws_client_child: None,
-            update_download_url: None,
-        }))
+        .manage(Mutex::new(AppState::new()))
         .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version, save_store_match_list])
         .setup(|app| {
             let project_path = get_project_path(app.handle());
@@ -638,7 +1158,7 @@ pub fn run() {
             )?;
             let sep1 = PredefinedMenuItem::separator(app)?;
             let mqtt_status_i =
-                MenuItem::with_id(app, "mqtt_status", "MQTT: Off", false, None::<&str>)?;
+                MenuItem::with_id(app, "mqtt_status", "MQTT: stopped", false, None::<&str>)?;
             let mqtt_toggle_i =
                 MenuItem::with_id(app, "mqtt_toggle", "Start MQTT", true, None::<&str>)?;
             let sep2 = PredefinedMenuItem::separator(app)?;
@@ -692,10 +1212,15 @@ pub fn run() {
                 ],
             )?;
 
-            // Clone menu items for use outside the on_menu_event closure
-            let mqtt_status_i_poll = mqtt_status_i.clone();
-            let mqtt_status_i_auto = mqtt_status_i.clone();
-            let mqtt_toggle_i_auto = mqtt_toggle_i.clone();
+            // Пункты, чью подпись меняют и обработчик меню, и фоновый надзор за
+            // детьми, живут в состоянии приложения — иначе фоновая задача не
+            // смогла бы погасить «running» у умершего процесса.
+            app.manage(TrayMenuItems {
+                autoplacer: auto_i.clone(),
+                claude_wt: claude_wt_i.clone(),
+                mqtt_status: mqtt_status_i.clone(),
+                mqtt_toggle: mqtt_toggle_i.clone(),
+            });
             let download_update_i_check = download_update_i.clone();
 
             let tray = TrayIconBuilder::new()
@@ -741,29 +1266,14 @@ pub fn run() {
                         run_node_command(app, &["src/index.js", "reload"], "Reload Configs");
                     }
                     "autoplacer" => {
+                        // Подписи пунктов меняет сам toggle: они же меняются,
+                        // когда ребёнок умирает без спроса.
                         let state = app.state::<Mutex<AppState>>();
                         toggle_autoplacer(app, &state);
-
-                        // Update menu item text
-                        let running = state.lock().unwrap().autoplacer_running;
-                        let text = if running {
-                            "Stop Autoplacer"
-                        } else {
-                            "Start Autoplacer"
-                        };
-                        let _ = auto_i.set_text(text);
                     }
                     "claude_wt" => {
                         let state = app.state::<Mutex<AppState>>();
                         toggle_claude_wt(app, &state);
-
-                        let running = state.lock().unwrap().claude_wt_running;
-                        let text = if running {
-                            "Stop claude-wt"
-                        } else {
-                            "Start claude-wt"
-                        };
-                        let _ = claude_wt_i.set_text(text);
                     }
                     "claude_wt_restore" => {
                         run_node_command(
@@ -775,18 +1285,6 @@ pub fn run() {
                     "mqtt_toggle" => {
                         let state = app.state::<Mutex<AppState>>();
                         toggle_mqtt(app, &state);
-
-                        let running = state.lock().unwrap().mqtt_running;
-                        let _ = mqtt_toggle_i.set_text(if running {
-                            "Stop MQTT"
-                        } else {
-                            "Start MQTT"
-                        });
-                        let _ = mqtt_status_i.set_text(if running {
-                            "MQTT: Starting..."
-                        } else {
-                            "MQTT: Off"
-                        });
                     }
                     "restart_store" => {
                         let project_path = get_project_path(app);
@@ -949,12 +1447,14 @@ pub fn run() {
                         // Kill all child processes
                         let state = app.state::<Mutex<AppState>>();
                         let mut s = state.lock().unwrap();
+                        s.autoplacer_generation += 1;
                         if let Some(child) = s.autoplacer_child.take() {
                             let _ = child.kill();
                         }
-                        if let Some(child) = s.claude_wt_child.take() {
-                            let _ = child.kill();
-                        }
+                        // Именно stop_claude_wt_locked, а не kill: иначе надзор
+                        // счёл бы это падением и поднял бы демона заново прямо
+                        // посреди выхода из приложения.
+                        stop_claude_wt_locked(&mut s);
                         stop_mqtt_state(&mut s);
                         drop(s);
 
@@ -1005,9 +1505,21 @@ pub fn run() {
             if settings.mqtt_enabled {
                 let state = app.state::<Mutex<AppState>>();
                 start_mqtt_service(app.handle(), &state);
-                // Update menu texts for auto-started MQTT
-                let _ = mqtt_toggle_i_auto.set_text("Stop MQTT");
-                let _ = mqtt_status_i_auto.set_text("MQTT: Starting...");
+                let running = state.lock().unwrap().mqtt_running;
+                update_tray_label(app.handle(), ChildKind::Mqtt, running);
+            }
+
+            // Автостарт демона claude-wt. На нём держатся панель openHASP и
+            // пикер сессий, поэтому ждать ручного тычка в трей — значит
+            // молча ронять всю цепочку после каждой перезагрузки.
+            if settings.claude_wt_enabled {
+                let state = app.state::<Mutex<AppState>>();
+                let running = {
+                    let mut s = state.lock().unwrap();
+                    start_claude_wt_locked(app.handle(), &mut s);
+                    s.claude_wt_running
+                };
+                update_tray_label(app.handle(), ChildKind::ClaudeWt, running);
             }
 
             // Restore windows on start if enabled
@@ -1044,23 +1556,6 @@ pub fn run() {
                     }
                 });
             }
-
-            // Spawn background task to poll MQTT status every 2s
-            let app_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                    let status_arc = {
-                        let state = app_handle.state::<Mutex<AppState>>();
-                        let s = state.lock().unwrap();
-                        s.mqtt_handle.as_ref().map(|mq| mq.status.clone())
-                    }; // MutexGuard dropped here before any await
-                    if let Some(arc) = status_arc {
-                        let status = arc.lock().await;
-                        let _ = mqtt_status_i_poll.set_text(status.label());
-                    }
-                }
-            });
 
             // Check for updates
             {
@@ -1102,20 +1597,7 @@ pub fn run() {
                 });
             }
 
-            // Register global hotkey: Ctrl+Alt+Shift+P
-            use tauri_plugin_global_shortcut::ShortcutState;
-
-            if let Err(e) = app.global_shortcut().on_shortcut(
-                "Ctrl+Alt+Shift+P",
-                move |app, _shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
-                        info!("Hotkey Ctrl+Alt+Shift+P pressed");
-                        place_windows(app);
-                    }
-                },
-            ) {
-                warn!("Could not register hotkey Ctrl+Alt+Shift+P: {} (already in use?)", e);
-            }
+            register_place_hotkey(app.handle(), &settings.place_hotkey);
 
             Ok(())
         })

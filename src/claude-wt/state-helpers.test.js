@@ -25,7 +25,7 @@ describe('upsertSlot', () => {
 
   it('creates a slot from scratch', () => {
     const slot = upsertSlot(undefined, { title: 'ccfzf', cwd: '/p', bounds, now: 1000 });
-    expect(slot).toEqual({ titles: ['ccfzf'], cwd: '/p', bounds, desktop: null, lastSeen: 1000 });
+    expect(slot).toEqual({ titles: ['ccfzf'], cwd: '/p', bounds, desktop: null, focusedAt: 0, lastSeen: 1000 });
   });
 
   it('updates bounds without touching the desktop number', () => {

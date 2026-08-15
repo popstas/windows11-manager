@@ -22,6 +22,15 @@ function getVisibleWindowIds() {
   return addon.getWindows().filter(id => addon.isWindowVisible(id));
 }
 
+// Bare hwnd of the foreground window — GetForegroundWindow() and nothing else.
+// windowManager.getActiveWindow() wraps the same hwnd in a Window, whose
+// constructor calls initWindow (OpenProcess + exe path); that is exactly the
+// per-tick cost the claude-wt daemon is written to avoid.
+function getActiveWindowId() {
+  if (!addon || !addon.getActiveWindow) return 0;
+  return addon.getActiveWindow();
+}
+
 // A single known hwnd, at the cost of one initWindow (OpenProcess + exe path)
 // instead of the whole getWindows() sweep. For pollers that already know which
 // handles they care about; returns null for a handle that is no longer a window.
@@ -29,6 +38,25 @@ function getWindowById(id) {
   if (!addon) return null;
   const w = new Window(id);
   return w.isWindow() ? w : null;
+}
+
+// Windows parks minimized windows at x = -32000. restore() un-maximizes a
+// maximized window, so it must only be called for one that is actually
+// minimized.
+const MINIMIZED_X = -30000;
+
+/**
+ * Bring a window to the foreground, un-minimizing it first if needed.
+ *
+ * Consumers used to call a `focusWindow` that this package never defined.
+ */
+function focusWindowById(id) {
+  const w = getWindowById(id);
+  if (!w) return false;
+  const bounds = w.getBounds();
+  if (bounds && bounds.x <= MINIMIZED_X) w.restore();
+  w.bringToTop();
+  return true;
 }
 
 function getWindows() {
@@ -99,10 +127,27 @@ function getWindow(rule) {
   }
 }
 
+/**
+ * Resolve a rule to a window and focus it.
+ *
+ * Consumers used to call a `focusWindow` that this package never defined.
+ */
+function focusWindow(rule) {
+  const windows = findWindows(rule);
+  if (!windows || !windows.length) {
+    console.log(`focusWindow: no window matched rule ${JSON.stringify(rule)}`);
+    return false;
+  }
+  return focusWindowById(windows[0].id);
+}
+
 export { matchRules, isWindowExcluded } from './windows-helpers.js';
 export {
   getVisibleWindowIds,
+  getActiveWindowId,
   getWindowById,
+  focusWindowById,
+  focusWindow,
   getWindows,
   getAppFromPath,
   isWindowMatchRule,
