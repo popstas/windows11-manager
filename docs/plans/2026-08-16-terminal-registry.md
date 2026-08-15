@@ -418,7 +418,7 @@ git commit -m "feat(claude-wt): профиль проекта — карта п�
     как раньше (старый конфиг).
   - `planLaunchNew({launchNew, cwd, name, profile, terminal})` — та же добавка.
 
-- [ ] **Step 1: Написать падающий тест**
+- [x] **Step 1: Написать падающий тест**
 
 В `src/claude-wt/project-helpers.test.js` дописать:
 
@@ -478,12 +478,12 @@ describe('planWtLaunch с реестром терминалов', () => {
 });
 ```
 
-- [ ] **Step 2: Убедиться, что тест падает**
+- [x] **Step 2: Убедиться, что тест падает**
 
 Run: `npx vitest run src/claude-wt/project-helpers.test.js -t "реестром терминалов"`
 Expected: FAIL — команда `undefined`, аргументы без терминального префикса.
 
-- [ ] **Step 3: Реализовать**
+- [x] **Step 3: Реализовать**
 
 В `src/claude-wt/project-helpers.js` заменить `planWtLaunch` на:
 
@@ -530,13 +530,13 @@ function planLaunchNew({ launchNew, cwd, name, profile, terminal }) {
 }
 ```
 
-- [ ] **Step 4: Убедиться, что тесты проходят**
+- [x] **Step 4: Убедиться, что тесты проходят**
 
 Run: `npm test`
 Expected: PASS — вместе со старыми тестами `planWtLaunch` и `planRestore`,
 которые `terminal` не передают и обязаны вести себя как прежде.
 
-- [ ] **Step 5: Закоммитить**
+- [x] **Step 5: Закоммитить**
 
 ```bash
 git add src/claude-wt/project-helpers.js src/claude-wt/project-helpers.test.js

@@ -100,20 +100,36 @@ function profileForTerminal(cwd, terminalName, cfg = {}) {
   return typeof cfg.profile === 'string' ? cfg.profile : '';
 }
 
-/** Build a WT spawn descriptor from a launch template. */
-function planWtLaunch({ launch, vars = {}, profile }) {
+/**
+ * Собрать описание запуска.
+ *
+ * Две дороги, и разводит их наличие `terminal`. С реестром команда
+ * складывается: терминал, его аргументы, профильные аргументы, хвост из
+ * `launch.args`. Без реестра — прежняя дорога старого конфига, где терминал и
+ * хвост лежат в `launch` одним списком, а профиль вставляет `applyWtProfile`.
+ *
+ * Подстановка идёт по собранному списку, а не по хвосту: `{profile}` стоит в
+ * профильных аргументах, `{id}`/`{cwd}`/`{name}` — в хвосте, и разделять два
+ * прохода было бы двумя местами, где легко забыть про новую подстановку.
+ */
+function planWtLaunch({ launch, vars = {}, profile, terminal }) {
   const id = vars.id ?? '';
   const safeCwd = escapeForSingleQuoted(vars.cwd ?? '');
   const safeName = escapeForSingleQuoted(vars.name ?? '');
-  const substituted = (launch?.args ?? []).map(arg =>
-    String(arg)
-      .replaceAll('{id}', id)
-      .replaceAll('{cwd}', safeCwd)
-      .replaceAll('{name}', safeName)
-  );
+  const wanted = typeof profile === 'string' ? profile : '';
+  const substitute = arg => String(arg)
+    .replaceAll('{id}', id)
+    .replaceAll('{cwd}', safeCwd)
+    .replaceAll('{name}', safeName)
+    .replaceAll('{profile}', wanted);
+  const tail = launch?.args ?? [];
+  if (!terminal?.command) {
+    return { command: launch?.command, args: applyWtProfile(tail.map(substitute), profile) };
+  }
+  const profileArgs = wanted && Array.isArray(terminal.profileArgs) ? terminal.profileArgs : [];
   return {
-    command: launch?.command,
-    args: applyWtProfile(substituted, profile),
+    command: terminal.command,
+    args: [...(terminal.args ?? []), ...profileArgs, ...tail].map(substitute),
   };
 }
 
@@ -122,8 +138,8 @@ function planWtLaunch({ launch, vars = {}, profile }) {
  * `{cwd}` and `{name}` in each arg are replaced with single-quote-safe text
  * (templates should wrap them in `'…'` themselves).
  */
-function planLaunchNew({ launchNew, cwd, name, profile }) {
-  return planWtLaunch({ launch: launchNew, vars: { cwd, name }, profile });
+function planLaunchNew({ launchNew, cwd, name, profile, terminal }) {
+  return planWtLaunch({ launch: launchNew, vars: { cwd, name }, profile, terminal });
 }
 
 export {

@@ -91,6 +91,60 @@ describe('planWtLaunch', () => {
   });
 });
 
+describe('planWtLaunch с реестром терминалов', () => {
+  const launch = { args: ['ssh', '-t', 'host', 'ccfzf --session {id}'] };
+
+  it('складывает терминал, его аргументы и хвост', () => {
+    const out = planWtLaunch({
+      launch,
+      vars: { id: 's1' },
+      terminal: { command: 'wezterm-gui.exe', args: ['start', '--'] },
+    });
+    expect(out.command).toBe('wezterm-gui.exe');
+    expect(out.args).toEqual(['start', '--', 'ssh', '-t', 'host', 'ccfzf --session s1']);
+  });
+
+  it('профильные аргументы встают между терминалом и хвостом', () => {
+    const out = planWtLaunch({
+      launch,
+      vars: { id: 's1' },
+      profile: 'Site',
+      terminal: { command: 'wt.exe', args: ['-w', '-1'], profileArgs: ['-p', '{profile}'] },
+    });
+    expect(out.args).toEqual(['-w', '-1', '-p', 'Site', 'ssh', '-t', 'host', 'ccfzf --session s1']);
+  });
+
+  it('пустой профиль профильных аргументов не даёт', () => {
+    const out = planWtLaunch({
+      launch,
+      vars: { id: 's1' },
+      profile: '',
+      terminal: { command: 'wt.exe', args: ['-w', '-1'], profileArgs: ['-p', '{profile}'] },
+    });
+    expect(out.args).toEqual(['-w', '-1', 'ssh', '-t', 'host', 'ccfzf --session s1']);
+  });
+
+  it('терминал без profileArgs профиль молча роняет, а не подставляет чужой флаг', () => {
+    const out = planWtLaunch({
+      launch,
+      vars: { id: 's1' },
+      profile: 'Site',
+      terminal: { command: 'wezterm-gui.exe', args: ['start', '--'] },
+    });
+    expect(out.args).toEqual(['start', '--', 'ssh', '-t', 'host', 'ccfzf --session s1']);
+  });
+
+  it('без terminal работает по-старому — команда из launch', () => {
+    const out = planWtLaunch({
+      launch: { command: 'wt.exe', args: ['-w', '-1', 'ssh', '{id}'] },
+      vars: { id: 's1' },
+      profile: 'Site',
+    });
+    expect(out.command).toBe('wt.exe');
+    expect(out.args).toEqual(['-w', '-1', '-p', 'Site', 'ssh', 's1']);
+  });
+});
+
 describe('planLaunchNew', () => {
   const launchNew = {
     command: 'wt.exe',
