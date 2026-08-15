@@ -25,6 +25,8 @@ const CLAUDE_WT_DEFAULTS = {
   terminal: 'wt',
   // Реестр терминалов: имя → чем открывать. Умолчания — в terminal-helpers.js.
   terminals: {},
+  // Чьи окна считать окнами терминала. Пусто — встроенный список.
+  terminalExecutables: [],
   projects: [],
   // Умолчание терминала выражено один раз, реестром (`terminal` →
   // `TERMINAL_DEFAULTS`); здесь его нет намеренно — назвавший `command` сам
@@ -53,11 +55,28 @@ function mergeClaudeWtConfig(raw) {
     },
     restore: { ...CLAUDE_WT_DEFAULTS.restore, ...(cfg.restore ?? {}) },
     snapshots: { ...CLAUDE_WT_DEFAULTS.snapshots, ...(cfg.snapshots ?? {}) },
+    terminalExecutables: Array.isArray(cfg.terminalExecutables) && cfg.terminalExecutables.length
+      ? cfg.terminalExecutables.map(String)
+      : [...TERMINAL_EXECUTABLES],
   };
 }
 
-function isTerminalPath(path) {
-  return /(^|[\\/])WindowsTerminal\.exe$/i.test(path ?? '');
+// Терминалы, чьи окна трекер опознаёт по умолчанию. Список, а не регулярка по
+// одному имени: терминалов теперь два, и оба обязаны опознаваться.
+const TERMINAL_EXECUTABLES = ['WindowsTerminal.exe', 'wezterm-gui.exe'];
+
+/**
+ * Окно терминала — по имени исполняемого файла.
+ *
+ * Список, а не регулярка по одному имени: терминалов теперь два, и оба обязаны
+ * опознаваться. Не опознанное окно трекер терминалом не считает вовсе — сессия
+ * откроется, но пропадёт из списка: ни пометки окна, ни фокуса, ни привязки.
+ * Сверяется имя целиком, поэтому `WindowsTerminalHelper.exe` мимо.
+ */
+function isTerminalPath(path, executables = TERMINAL_EXECUTABLES) {
+  const name = String(path ?? '').split(/[\\/]/).pop() ?? '';
+  if (!name) return false;
+  return executables.some(exe => exe.toLowerCase() === name.toLowerCase());
 }
 
 /**
@@ -354,6 +373,7 @@ export {
   FOLLOW_GRACE_MS,
   isStaleTick,
   mergeClaudeWtConfig,
+  TERMINAL_EXECUTABLES,
   isTerminalPath,
   desktopOnlyActions,
   desktopRelearnTarget,

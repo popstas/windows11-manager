@@ -187,6 +187,9 @@ module.exports = {
       wt: { command: 'wt.exe', args: ['-w', '-1'], profileArgs: ['-p', '{profile}'] },
       wezterm: { command: 'wezterm-gui.exe', args: ['start', '--'] },
     },
+    // Чьи окна считать окнами терминала. Пусто — WindowsTerminal.exe и
+    // wezterm-gui.exe.
+    terminalExecutables: [],
     // launch.command не задан — терминал берётся из реестра выше. Заданный
     // здесь явный command пометил бы этот конфиг старым, и реестр перестал
     // бы действовать (см. isLegacyLaunch).

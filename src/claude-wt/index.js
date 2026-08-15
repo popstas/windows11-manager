@@ -47,7 +47,7 @@ function claudeWtProjects() {
 }
 
 function isTerminalWindow(w) {
-  return isTerminalPath(w?.path);
+  return isTerminalPath(w?.path, getClaudeWtConfig().terminalExecutables);
 }
 
 // Windows the tracker follows, and handles already ruled out. Keeping both

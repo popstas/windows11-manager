@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   CLAUDE_WT_DEFAULTS,
   mergeClaudeWtConfig,
+  TERMINAL_EXECUTABLES,
   isTerminalPath,
   desktopOnlyActions,
   layoutFingerprint,
@@ -26,10 +27,15 @@ import { TERMINAL_DEFAULTS, isLegacyLaunch } from './terminal-helpers.js';
 
 describe('mergeClaudeWtConfig', () => {
   it('returns the defaults for a missing block', () => {
-    // terminals в CLAUDE_WT_DEFAULTS пуст намеренно (умолчания живут в
-    // terminal-helpers.js), а слияние всегда разворачивает его до реестра —
-    // поэтому сверяем не с самим CLAUDE_WT_DEFAULTS, а с ним же плюс реестр.
-    const expected = { ...CLAUDE_WT_DEFAULTS, terminals: TERMINAL_DEFAULTS };
+    // terminals и terminalExecutables в CLAUDE_WT_DEFAULTS пусты намеренно
+    // (умолчания живут в terminal-helpers.js и в TERMINAL_EXECUTABLES
+    // соответственно), а слияние всегда разворачивает их до полного списка —
+    // поэтому сверяем не с самим CLAUDE_WT_DEFAULTS, а с ним же плюс реестры.
+    const expected = {
+      ...CLAUDE_WT_DEFAULTS,
+      terminals: TERMINAL_DEFAULTS,
+      terminalExecutables: TERMINAL_EXECUTABLES,
+    };
     expect(mergeClaudeWtConfig(undefined)).toEqual(expected);
     expect(mergeClaudeWtConfig(null)).toEqual(expected);
   });
@@ -124,6 +130,19 @@ describe('isTerminalPath', () => {
     expect(isTerminalPath('C:\\x\\WindowsTerminalHelper.exe')).toBe(false);
     expect(isTerminalPath('')).toBe(false);
     expect(isTerminalPath(undefined)).toBe(false);
+  });
+
+  it('окно WezTerm — тоже терминал', () => {
+    expect(isTerminalPath('C:\\Program Files\\WezTerm\\wezterm-gui.exe')).toBe(true);
+  });
+
+  it('список исполняемых можно переопределить конфигом', () => {
+    expect(isTerminalPath('C:\\x\\alacritty.exe', ['alacritty.exe'])).toBe(true);
+    expect(isTerminalPath('C:\\x\\WindowsTerminal.exe', ['alacritty.exe'])).toBe(false);
+  });
+
+  it('почти совпавшее имя терминалом не считается', () => {
+    expect(isTerminalPath('C:\\x\\wezterm-gui-helper.exe')).toBe(false);
   });
 });
 

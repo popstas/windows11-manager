@@ -755,7 +755,7 @@ git commit -m "feat(claude-wt): терминал из просьбы главн�
   `terminalExecutables`.
 - Produces: `isTerminalPath(path: string, executables?: string[]): boolean`.
 
-- [ ] **Step 1: Написать падающий тест**
+- [x] **Step 1: Написать падающий тест**
 
 В `src/claude-wt/daemon-helpers.test.js` в блоке `isTerminalPath` дописать:
 
@@ -774,12 +774,12 @@ git commit -m "feat(claude-wt): терминал из просьбы главн�
   });
 ```
 
-- [ ] **Step 2: Убедиться, что тест падает**
+- [x] **Step 2: Убедиться, что тест падает**
 
 Run: `npx vitest run src/claude-wt/daemon-helpers.test.js -t isTerminalPath`
 Expected: FAIL — WezTerm не признан терминалом.
 
-- [ ] **Step 3: Реализовать**
+- [x] **Step 3: Реализовать**
 
 В `src/claude-wt/daemon-helpers.js` заменить `isTerminalPath` на:
 
@@ -820,7 +820,7 @@ const TERMINAL_EXECUTABLES = ['WindowsTerminal.exe', 'wezterm-gui.exe'];
       : [...TERMINAL_EXECUTABLES],
 ```
 
-- [ ] **Step 4: Прокинуть конфиг в опознание**
+- [x] **Step 4: Прокинуть конфиг в опознание**
 
 В `src/claude-wt/index.js`:
 
@@ -830,12 +830,12 @@ function isTerminalWindow(w) {
 }
 ```
 
-- [ ] **Step 5: Убедиться, что тесты проходят**
+- [x] **Step 5: Убедиться, что тесты проходят**
 
 Run: `npm test && npm run lint`
 Expected: PASS.
 
-- [ ] **Step 6: Показать в примере конфига и закоммитить**
+- [x] **Step 6: Показать в примере конфига и закоммитить**
 
 В `config.example.cjs` рядом с `terminals`:
 
