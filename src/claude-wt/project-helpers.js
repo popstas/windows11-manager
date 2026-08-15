@@ -55,6 +55,13 @@ function normalizeProjects(raw) {
     const entry = { name: p.name, cwd: p.cwd };
     if (typeof p.hotkey === 'string' && p.hotkey.trim()) entry.hotkey = p.hotkey.trim();
     if (typeof p.profile === 'string') entry.profile = p.profile.trim();
+    if (p.profiles && typeof p.profiles === 'object') {
+      const profiles = {};
+      for (const [term, value] of Object.entries(p.profiles)) {
+        if (typeof value === 'string' && value.trim()) profiles[term] = value.trim();
+      }
+      if (Object.keys(profiles).length) entry.profiles = profiles;
+    }
     out.push(entry);
   }
   return out;
@@ -66,6 +73,30 @@ function profileForCwd(cwd, cfg = {}) {
     ? projects.find(p => p.cwd === cwd)
     : undefined;
   if (hit) return hit.profile ?? (typeof cfg.profile === 'string' ? cfg.profile : '');
+  return typeof cfg.profile === 'string' ? cfg.profile : '';
+}
+
+/**
+ * Профиль для конкретного терминала.
+ *
+ * Профили — понятие не общее: у Windows Terminal они есть, у WezTerm нет
+ * вовсе. Поэтому карта по имени терминала, а не одно поле: одно поле пришлось
+ * бы либо подставлять всем подряд, либо угадывать, кому оно предназначалось.
+ *
+ * Старое плоское `profile` (и у проекта, и глобальное) читается как профиль
+ * `wt`: конфиги написаны до реестра, и все они про Windows Terminal. Читай мы
+ * его как «для любого терминала», первый же запуск WezTerm получил бы
+ * аргументы, которых тот не понимает.
+ */
+function profileForTerminal(cwd, terminalName, cfg = {}) {
+  const name = typeof terminalName === 'string' ? terminalName : '';
+  const projects = Array.isArray(cfg.projects) ? cfg.projects : [];
+  const hit = typeof cwd === 'string' && cwd ? projects.find(p => p.cwd === cwd) : undefined;
+  const mapped = hit?.profiles?.[name];
+  if (typeof mapped === 'string' && mapped) return mapped;
+  if (name !== 'wt') return '';
+  if (hit && typeof hit.profile === 'string' && hit.profile) return hit.profile;
+  if (hit && hit.profiles) return '';
   return typeof cfg.profile === 'string' ? cfg.profile : '';
 }
 
@@ -102,6 +133,7 @@ export {
   escapeForSingleQuoted,
   normalizeProjects,
   profileForCwd,
+  profileForTerminal,
   planWtLaunch,
   planLaunchNew,
 };

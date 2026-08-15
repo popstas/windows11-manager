@@ -8,6 +8,7 @@ import {
   planLaunchNew,
   normalizeProjects,
   profileForCwd,
+  profileForTerminal,
 } from './project-helpers.js';
 
 describe('basenameOfCwd', () => {
@@ -178,6 +179,46 @@ describe('profileForCwd', () => {
 
   it('returns empty when no project and no cfg.profile', () => {
     expect(profileForCwd('/other', { profile: '', projects: [] })).toBe('');
+  });
+});
+
+describe('profileForTerminal', () => {
+  const cfg = {
+    profile: 'Global',
+    projects: [
+      { name: 'site', cwd: 'D:\\p\\site', profiles: { wt: 'Site', iterm2: 'SiteMac' } },
+      { name: 'old', cwd: 'D:\\p\\old', profile: 'Old' },
+    ],
+  };
+
+  it('берёт профиль по имени терминала', () => {
+    expect(profileForTerminal('D:\\p\\site', 'wt', cfg)).toBe('Site');
+  });
+
+  it('у терминала без профиля в карте — пусто, а не чужой профиль', () => {
+    expect(profileForTerminal('D:\\p\\site', 'wezterm', cfg)).toBe('');
+  });
+
+  it('старое плоское поле profile читается как профиль wt', () => {
+    expect(profileForTerminal('D:\\p\\old', 'wt', cfg)).toBe('Old');
+    expect(profileForTerminal('D:\\p\\old', 'wezterm', cfg)).toBe('');
+  });
+
+  it('незнакомый каталог получает глобальный профиль только для wt', () => {
+    expect(profileForTerminal('D:\\p\\nope', 'wt', cfg)).toBe('Global');
+    expect(profileForTerminal('D:\\p\\nope', 'wezterm', cfg)).toBe('');
+  });
+});
+
+describe('normalizeProjects и карта профилей', () => {
+  it('карта profiles переживает нормализацию', () => {
+    const [p] = normalizeProjects([{ name: 'a', cwd: 'C:\\a', profiles: { wt: 'A', wezterm: 'B' } }]);
+    expect(p.profiles).toEqual({ wt: 'A', wezterm: 'B' });
+  });
+
+  it('мусор в profiles выбрасывается, а запись остаётся', () => {
+    const [p] = normalizeProjects([{ name: 'a', cwd: 'C:\\a', profiles: { wt: 5, ok: 'yes' } }]);
+    expect(p.profiles).toEqual({ ok: 'yes' });
   });
 });
 

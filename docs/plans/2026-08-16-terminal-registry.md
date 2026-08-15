@@ -278,7 +278,7 @@ git commit -m "feat(claude-wt): реестр терминалов — имя, к
 - Produces: `profileForTerminal(cwd: string, terminalName: string, cfg: object): string`
   — пустая строка значит «профильных аргументов не добавлять».
 
-- [ ] **Step 1: Написать падающий тест**
+- [x] **Step 1: Написать падающий тест**
 
 В `src/claude-wt/project-helpers.test.js` дописать:
 
@@ -326,12 +326,12 @@ describe('normalizeProjects и карта профилей', () => {
 });
 ```
 
-- [ ] **Step 2: Убедиться, что тест падает**
+- [x] **Step 2: Убедиться, что тест падает**
 
 Run: `npx vitest run src/claude-wt/project-helpers.test.js`
 Expected: FAIL — `profileForTerminal is not a function`.
 
-- [ ] **Step 3: Реализовать**
+- [x] **Step 3: Реализовать**
 
 В `src/claude-wt/project-helpers.js` в `normalizeProjects` после строки про
 `entry.profile` добавить:
@@ -376,12 +376,12 @@ function profileForTerminal(cwd, terminalName, cfg = {}) {
 
 и добавить `profileForTerminal` в список экспорта.
 
-- [ ] **Step 4: Убедиться, что тесты проходят**
+- [x] **Step 4: Убедиться, что тесты проходят**
 
 Run: `npx vitest run src/claude-wt/project-helpers.test.js`
 Expected: PASS.
 
-- [ ] **Step 5: Показать форму в примере конфига**
+- [x] **Step 5: Показать форму в примере конфига**
 
 В `config.example.cjs` у записи проекта в `claudeWt.projects` заменить
 `profile: 'Site'` на:
@@ -392,7 +392,7 @@ Expected: PASS.
         profiles: { wt: 'Site' },
 ```
 
-- [ ] **Step 6: Прогнать всё и закоммитить**
+- [x] **Step 6: Прогнать всё и закоммитить**
 
 Run: `npm test && npm run lint`
 

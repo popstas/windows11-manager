@@ -171,7 +171,12 @@ module.exports = {
     debug: false,  // log terminal titles that could not be matched to a session
     // profile: 'your_wt_profile', // optional; omit → no -p
     // projects: [
-    //   { name: 'home', cwd: '/path/to/home', hotkey: 'Ctrl+F11', profile: 'home' },
+    //   {
+    //     name: 'home', cwd: '/path/to/home', hotkey: 'Ctrl+F11',
+    //     // Профили — свои у каждого терминала: у wt они есть, у wezterm нет.
+    //     // Старое поле `profile` продолжает работать и значит профиль wt.
+    //     profiles: { wt: 'Site' },
+    //   },
     // ],
     // Терминал по умолчанию для этой машины. Просьба пикера может назвать
     // другой — тогда выигрывает она.
