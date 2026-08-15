@@ -32,6 +32,132 @@
 
 
 
+## [3.0.0](https://github.com/popstas/windows11-manager/compare/windows11-manager-v2.1.0...windows11-manager-v3.0.0) (2026-08-15)
+
+
+### Features
+
+* **claude-wt:** agent state, snapshots, project open ([c72a334](https://github.com/popstas/windows11-manager/commit/c72a334abb6287beb9142a3185fb3e0b144906ed))
+* **claude-wt:** apply profile on restore and snapshot launch ([371b601](https://github.com/popstas/windows11-manager/commit/371b601eba8afede2079339e5e629015052159cb))
+* **claude-wt:** applyWtProfile strip-and-reinject helper ([dd89f60](https://github.com/popstas/windows11-manager/commit/dd89f6062f8ab5c45799fcb2af72d1bf296cba2f))
+* **claude-wt:** claude-session-open открывает сессию по каталогу проекта ([b4dad43](https://github.com/popstas/windows11-manager/commit/b4dad43391f40c44f909c6b6b397496da7b60415))
+* **claude-wt:** cost, context и started ([4555794](https://github.com/popstas/windows11-manager/commit/4555794c8bdfb8f94c8c5b5e2cc2d372f1e9d935))
+* **claude-wt:** export claudeWtSnapshots API ([ba48083](https://github.com/popstas/windows11-manager/commit/ba48083704858f4006e037c40ace619724d5dee7))
+* **claude-wt:** expose last user prompt ([edecc36](https://github.com/popstas/windows11-manager/commit/edecc36259536627df25bf03a2d04456bb19799f))
+* **claude-wt:** markSessionUnread и подавление возвратного фокуса ([8e74be5](https://github.com/popstas/windows11-manager/commit/8e74be5a1fb103309e8936f250d16ea028858513))
+* **claude-wt:** open project by hotkey cwd ([9ee4dc7](https://github.com/popstas/windows11-manager/commit/9ee4dc7b1d8f4b4ee8f8879f1b14a3720675431b))
+* **claude-wt:** openClaudeProject умеет заводить сессию, не поднимая открытую ([5e273cb](https://github.com/popstas/windows11-manager/commit/5e273cb6ecb8f95765e68d96d7495e4278f39343))
+* **claude-wt:** POST /claude-wt/focus поднимает окно сессии по id ([3e48f70](https://github.com/popstas/windows11-manager/commit/3e48f7078b7dcaf008638d6f16f124abd4f03b41))
+* **claude-wt:** profile on launchNew and config default ([7c9facc](https://github.com/popstas/windows11-manager/commit/7c9facca9b39a1d3ca251671c2f2e8bef2fc2e17))
+* **claude-wt:** projects list and profileForCwd ([772fb9f](https://github.com/popstas/windows11-manager/commit/772fb9f38923c7a2de57891fef6cfbb6ee93338e))
+* **claude-wt:** resolve profiles per session ([1bf54c9](https://github.com/popstas/windows11-manager/commit/1bf54c9db578add2506a62374928b80990b88b8b))
+* **claude-wt:** startHttpServer наружу из пакета ([316970d](https://github.com/popstas/windows11-manager/commit/316970d268ac7d462f0f924e647c117f8a9aaaa9))
+* **claude-wt:** terminal-new — открыть сессию, не поднимая существующую ([ee5f5d7](https://github.com/popstas/windows11-manager/commit/ee5f5d735f28f2abedbf838c76445d7fc0e3fb36))
+* **claude-wt:** в файле окон едет отметка о взгляде на окно ([250d587](https://github.com/popstas/windows11-manager/commit/250d5878a938a5644ff0cf13d8b482c9d3db950f))
+* **claude-wt:** ветка и pr_url в строке сессии ([cf315bd](https://github.com/popstas/windows11-manager/commit/cf315bd695f7c40097e6f4436fe011f4e19e25ed))
+* **claude-wt:** вид уходит вслед за окном, уехавшим на чужой стол ([0f90fa1](https://github.com/popstas/windows11-manager/commit/0f90fa168f0802237d49159a076293346e574e1a))
+* **claude-wt:** демон отдаёт статистику тиков ([6da0a10](https://github.com/popstas/windows11-manager/commit/6da0a10dfae8dc3fcfe6796dd557790e791455a7))
+* **claude-wt:** демон публикует файл окон для читателей на той стороне ([d87ff15](https://github.com/popstas/windows11-manager/commit/d87ff1515fdce929fb2e14dd4e9e31df6a5653b7))
+* **claude-wt:** начало хода и вопрос агента в состоянии сессии ([9a96c95](https://github.com/popstas/windows11-manager/commit/9a96c954a118deee772076fc5b0d02910decc888))
+* **claude-wt:** одна строка сводки на всех читателей ([a6e39ee](https://github.com/popstas/windows11-manager/commit/a6e39ee5b30519eb91b5810c59a2a68429f54d6f))
+* **claude-wt:** отдавать событие и текст уведомления агента ([89cec86](https://github.com/popstas/windows11-manager/commit/89cec860a149e1c7661b04369815d78f600d7844))
+* **claude-wt:** отделить текущую сводку от последней известной ([601f343](https://github.com/popstas/windows11-manager/commit/601f343f1c2daa9fddfc7e15c56879a1158c66f1))
+* **claude-wt:** отмечать сессию просмотренной по фокусу окна ([d55e4ce](https://github.com/popstas/windows11-manager/commit/d55e4ce0f53cc62a5ff85aa0b3b28f9fe6584e9a))
+* **claude-wt:** сводка последнего ответа агента ([7eed2ec](https://github.com/popstas/windows11-manager/commit/7eed2ecab4ce826a7435885307e258390f4fcfcb))
+* **claude-wt:** снапшоты раскладов сессий ([975eadd](https://github.com/popstas/windows11-manager/commit/975eaddea122b31b13651c189102e25c72968ccb))
+* **claude-wt:** снимки раскладки в файле оконного трекера ([8ec89de](https://github.com/popstas/windows11-manager/commit/8ec89de95bb6f04301e23acf757f62af927ed6fb))
+* **claude-wt:** состояние агента в списке сессий ([1cddde0](https://github.com/popstas/windows11-manager/commit/1cddde005b2eb76262acbd45fa72126a50a62b86))
+* **claude-wt:** сторож замечает замолчавшего демона и снимает его процесс ([8ec39e1](https://github.com/popstas/windows11-manager/commit/8ec39e19ab5af723b69e8a5b1a4a7424f9a53711))
+* **claude-wt:** фоновый агент говорит за сессию ([3d79537](https://github.com/popstas/windows11-manager/commit/3d79537b9100d184212a478f2c770a5d7c5d1d21))
+* **claude-wt:** хоткеи проектов едут в файл трекера ([c638d64](https://github.com/popstas/windows11-manager/commit/c638d64e0a80d4ed716078194bbc11e776c79c1c))
+* **claude-wt:** чистые функции живости демона ([20ae730](https://github.com/popstas/windows11-manager/commit/20ae7308cb9c673a32c7912d21d631af03cb572f))
+* **claude-wt:** чистые функции пометки непрочитанным ([2b30d39](https://github.com/popstas/windows11-manager/commit/2b30d399122451a0e0ca3a4b573c672fd5217600))
+* **claude-wt:** экспорт сессий в Home Assistant переехал из windows-mqtt ([c07085d](https://github.com/popstas/windows11-manager/commit/c07085dfc5bd477b43a2daba29ac07ff886d12d5))
+* **commands:** autoplace рассказывает человеку о расставленных окнах ([5427290](https://github.com/popstas/windows11-manager/commit/5427290152706c44f48ac64e2434e07abf16a29e))
+* **commands:** карта команд с единым разбором ошибок ([db1e270](https://github.com/popstas/windows11-manager/commit/db1e270fa86ce8bf84f69ac53c4a6f171c5b8a9e))
+* **commands:** команды claude-wt переехали из windows-mqtt ([acbdc57](https://github.com/popstas/windows11-manager/commit/acbdc57de420be24919b5502802da5846ccb0af0))
+* **commands:** оконные команды переехали из windows-mqtt ([75e7241](https://github.com/popstas/windows11-manager/commit/75e7241f3aeda67d50f8f80e85a1290691829bd6))
+* **ha:** своё умолчание сортировки слотов — recent, не цена пикера ([6c76ae7](https://github.com/popstas/windows11-manager/commit/6c76ae78935fc4e491587b882a9f35722aa50278))
+* **mqtt:** окно расставляется при открытии ([f6287ec](https://github.com/popstas/windows11-manager/commit/f6287ec6f3cf3150fb278b990a80b66ee6611d21))
+* **mqtt:** свой клиент и команда mqtt вместо моста через Rust ([e2f021a](https://github.com/popstas/windows11-manager/commit/e2f021af7fdf46bafa20c1fa865f303184066ce1))
+* **mqtt:** служба заводит статистику, расстановку и сторожа демона ([fe5c073](https://github.com/popstas/windows11-manager/commit/fe5c073fd69e079539757a6bd4b4fe0af01451ee))
+* **mqtt:** статистика окон уезжает в Home Assistant раз в минуту ([b5059bc](https://github.com/popstas/windows11-manager/commit/b5059bcee3531669cdec8c6ecd722b717f34c74b))
+* **tauri:** служба MQTT поднимается заново после выхода, как и демон ([f557e9b](https://github.com/popstas/windows11-manager/commit/f557e9badaf61db2d9017643c74e0429e23b7eed))
+* **tray:** надзор за node-детьми и автостарт демона claude-wt ([63fb220](https://github.com/popstas/windows11-manager/commit/63fb2208d203860847b3ade509525a6a0db1f718))
+* **tray:** хоткей расстановки окон вынесен в настройки ([066ce67](https://github.com/popstas/windows11-manager/commit/066ce67e29cad2aba70d425caf653e767a859473))
+
+
+### Bug Fixes
+
+* **claude-wt:** bind twin titles to newest hwnd ([ad8a0b5](https://github.com/popstas/windows11-manager/commit/ad8a0b5e8fab34814a8cad96339e958f838e068a))
+* **claude-wt:** honor empty project.profile in profileForCwd ([e15c8fa](https://github.com/popstas/windows11-manager/commit/e15c8fa50700905ca22d0ac72475603022954f31))
+* **claude-wt:** launchNew поднимает сессию интерактивным шеллом ([55408bd](https://github.com/popstas/windows11-manager/commit/55408bd755d5379d63bb1ef71de98d8afc8f8c4c))
+* **claude-wt:** prefer hook for activity age ([bf82a03](https://github.com/popstas/windows11-manager/commit/bf82a035cdadabe9d8a2ef5b058faac0be41e65d))
+* **claude-wt:** strip -p only in wt option prefix ([95e38bd](https://github.com/popstas/windows11-manager/commit/95e38bdfd4f579c879885cd26078d2b5b3ac5060))
+* **claude-wt:** use optional chaining for launch.command in planWtLaunch ([c7cd2c7](https://github.com/popstas/windows11-manager/commit/c7cd2c71aa096ffaf28cb4f99f98928449ca8d62))
+* **claude-wt:** верить хукам агентов, а не флагу live в дампе ([a1445b5](https://github.com/popstas/windows11-manager/commit/a1445b5ed97fa81a216f7dd5730d623f4ea4b1b2))
+* **claude-wt:** вернуть потерянный слой view ([46c6253](https://github.com/popstas/windows11-manager/commit/46c6253a940cce9a8ab25b69e6a8a5242fec92f1))
+* **claude-wt:** восстановление сессии тоже уходит на стол вслед за окном ([10db4c6](https://github.com/popstas/windows11-manager/commit/10db4c6160133e8c2b4664d2b9c0619d167621fe))
+* **claude-wt:** дамп читается только после сброса кэша SMB ([a67e4ea](https://github.com/popstas/windows11-manager/commit/a67e4eacd8de5d2d94a4674677490e2f336d343b))
+* **claude-wt:** закрыть дыры в тестах и убрать дублирование predicate ([822e753](https://github.com/popstas/windows11-manager/commit/822e753b5e461852c55f5d331eb204c167dcfef5))
+* **claude-wt:** не верить одному mtime на сетевом диске ([8e52b42](https://github.com/popstas/windows11-manager/commit/8e52b42bafe76c6725d9fd3e496e744e3a80aea0))
+* **claude-wt:** не терять markSessionUnread под тиком в полёте ([23858ee](https://github.com/popstas/windows11-manager/commit/23858eeabc700c8e926d7d1978bc5718551ca700))
+* **claude-wt:** нулевая отметка хука — «не знаем», а не «1970 год» ([daf380f](https://github.com/popstas/windows11-manager/commit/daf380f278c2339e3581e5eeea698774e631fe23))
+* **claude-wt:** окно новой сессии поднимается само, дождавшись расстановки ([73c9255](https://github.com/popstas/windows11-manager/commit/73c92554f6e862a044fbfecc0083ccb14ad0ab79))
+* **claude-wt:** окно переходит на сессию, которую называет дамп ([92c53ce](https://github.com/popstas/windows11-manager/commit/92c53ce0f79ed7db8e57ad3b0e622514fb243b0b))
+* **claude-wt:** остановленный демон убирает за собой файл окон ([a0f7e70](https://github.com/popstas/windows11-manager/commit/a0f7e7008e8a557cfc3f78a25860bac86167e232))
+* **claude-wt:** отказ на незнакомое action слышен, докблоки честны про reuseOpen ([47d7be5](https://github.com/popstas/windows11-manager/commit/47d7be59ea8039901cfedf74325995e9730f5669))
+* **claude-wt:** перезапуск отгораживает висящий тик и не восстанавливает сессии ([0e99d88](https://github.com/popstas/windows11-manager/commit/0e99d88e64ab6e50c70f8852c15ef1007c30f56a))
+* **claude-wt:** по-записочный откат к пробе вместо групповой калитки ([fd24d1e](https://github.com/popstas/windows11-manager/commit/fd24d1efe7be038d4c4d1526c7962b0239928149))
+* **claude-wt:** стол переучивается на фокусе, а не помнится с первой привязки ([45138bd](https://github.com/popstas/windows11-manager/commit/45138bd283aad0005c2d4750fcef0930604bc65d))
+* **claude-wt:** сузить регулярку PR-ссылки до owner/repo без спецсимволов ([38e8f4a](https://github.com/popstas/windows11-manager/commit/38e8f4a94f1ecfcb999ac1cb1f208b23231b9ace))
+* **claude-wt:** убрать неиспользуемый nowSec из slotUsage ([9fc52a1](https://github.com/popstas/windows11-manager/commit/9fc52a1c99c69a5c29a80657fe3e30e9a178183c))
+* **claude-wt:** удавшееся восстановление снова видно в журнале ([01f52d7](https://github.com/popstas/windows11-manager/commit/01f52d795f3e49719642ea77f098d794de496950))
+* **claude-wt:** управляющие байты в исходнике и отставшая копия скилла ([43dc66a](https://github.com/popstas/windows11-manager/commit/43dc66afbcc96d099bbd6cc600f1954e9446b95d))
+* **claude-wt:** честный возраст в диагнозе и метка поколения тика ([9ad1a7b](https://github.com/popstas/windows11-manager/commit/9ad1a7bbec91036a794f2a713de201816a476b71))
+* **claude-wt:** экспорт в HA читает homeassistant.sessionsSort и покрывает refresh/stop/slotOff ([667b83f](https://github.com/popstas/windows11-manager/commit/667b83f638d2459976a7b0b7d4fe8eb31320cb88))
+* **commands:** parseRestorePayload принимает объект ([02e0598](https://github.com/popstas/windows11-manager/commit/02e059892d924a6dd8ecde0f562bcc14787b8bae))
+* **commands:** reload действительно перечитывает конфиг ([43afb8d](https://github.com/popstas/windows11-manager/commit/43afb8d048668a9ad9a2ba3c93b3b74dbb33a41a))
+* **commands:** битое тело команды видно в журнале ([72a7e7e](https://github.com/popstas/windows11-manager/commit/72a7e7e4b8f36f82d1a54eec399de47e333c5c27))
+* **commands:** плитка панели гасится по разобранному номеру слота ([24af7de](https://github.com/popstas/windows11-manager/commit/24af7de6bd8df56e6aeddf8cd4f8082691d90790))
+* **config:** unref таймера ватчера раскладок ([a886aa2](https://github.com/popstas/windows11-manager/commit/a886aa2db96bd74bfac6edac00980de53f092323))
+* **ha:** доступность снимается при падении и при остановке ([9f2040f](https://github.com/popstas/windows11-manager/commit/9f2040ff9d2ce697d3d0faba072695851f9994a2))
+* **ha:** номер слота в имени сущности и уборка слотов сверх текущего числа ([ad02ea3](https://github.com/popstas/windows11-manager/commit/ad02ea31740a0bf41ce486b759d003ecbade3e6d))
+* **ha:** переподключение переиздаёт конфиги Discovery ([0a5f80e](https://github.com/popstas/windows11-manager/commit/0a5f80ef1cc2dcd63c96b40ced6aa07716e2b5cd))
+* **log:** входящее и ошибки снова видны в журнале ([d457631](https://github.com/popstas/windows11-manager/commit/d457631fb0922558b977015458f1e69866159172))
+* **monitors:** учитывать поворот и DPI, не сдвигать номера ([48f9103](https://github.com/popstas/windows11-manager/commit/48f9103769c39d79d81d87423204e99ef970f700))
+* **mqtt:** активное окно без имени не публикует слово "undefined" ([8a05e0c](https://github.com/popstas/windows11-manager/commit/8a05e0c7d5a78276baaa6ce9e61bcb4e765d0d41))
+* **mqtt:** сторож зовёт человека раз на поломку, статистика не держит окна ([c589378](https://github.com/popstas/windows11-manager/commit/c589378146eda08b6d70df4bed6f1689d3544661))
+* **mqtt:** сторож не снимает pid из пролежавшего файла окон ([15a5f2d](https://github.com/popstas/windows11-manager/commit/15a5f2d2241bf2052facde0868b22bbf159b4d1b))
+* **mqtt:** уведомления уходят туда, где их слушают ([e889a5b](https://github.com/popstas/windows11-manager/commit/e889a5b75a9305e6a12f36b0ea037ed8b225abaf))
+* **mqtt:** упавшая расстановка окна больше не роняет процесс службы ([21f600a](https://github.com/popstas/windows11-manager/commit/21f600abc598d0096125475f32cf2a38e3732744))
+* **tauri:** остановка демона из трея убирает опубликованный файл окон ([25dea55](https://github.com/popstas/windows11-manager/commit/25dea557460ee1df32610a27d922af3b7db1b54d))
+* **tauri:** служба MQTT больше не поднимается вторым процессом ([31da594](https://github.com/popstas/windows11-manager/commit/31da594dd00c95eb4c7ea3691cf3dbfd6227b6ef))
+* **tray:** умолчание хоткея — Ctrl+Alt+Win+0, комбинацию с Shift занять нельзя ([b932c0e](https://github.com/popstas/windows11-manager/commit/b932c0ed0884792b731960bf8040d8fb99a3b08b))
+* **virtual-desktop:** null от VirtualDesktop11.exe больше не роняет вызов ([8842175](https://github.com/popstas/windows11-manager/commit/88421755bc1ca416b34ea5d2154e24229d64726b))
+
+
+### Performance Improvements
+
+* **claude-wt:** progressStamp только для дампов без activityAt ([4ce35ff](https://github.com/popstas/windows11-manager/commit/4ce35ff5e42b9081a7a961996d413a64994f6624))
+* **claude-wt:** отметка активности берётся из дампа ([41534c8](https://github.com/popstas/windows11-manager/commit/41534c82fbda0dba9895972ec6b243f4787f897d))
+* **claude-wt:** память на пробу за одну сборку индекса ([fa57cd9](https://github.com/popstas/windows11-manager/commit/fa57cd9e25cb6b43efac1550290cd942c5ebb490))
+* **config:** конфиг разбирается заново только после правки ([37c6a90](https://github.com/popstas/windows11-manager/commit/37c6a908b52c9c84bfd1c85b42a88eed93636a28))
+
+
+### Miscellaneous Chores
+
+* выпустить 3.0.0 ([7e1417f](https://github.com/popstas/windows11-manager/commit/7e1417f91a11c8fca4a540fc647178fb1dc4e066))
+
+
+### Code Refactoring
+
+* **claude-wt:** маршруты окон убраны из http-сервера ([76a31c8](https://github.com/popstas/windows11-manager/commit/76a31c853e65b06c2f992f401507cce7bdb4b2f6))
+* **claude-wt:** чистые хелперы слотов и нажатий переехали из windows-mqtt ([cac7579](https://github.com/popstas/windows11-manager/commit/cac7579bb3a765f2ba1858597320ab4411fe933a))
+* **http:** сервер работает поверх карты команд ([b3457cb](https://github.com/popstas/windows11-manager/commit/b3457cb562ffe8de717da93ef5c91e5b7515eaa8))
+* **tauri:** мост MQTT через Rust снесён, трей поднимает node-службу ([4dc8707](https://github.com/popstas/windows11-manager/commit/4dc8707d05c146238e3c7a48c1c8538974e9953a))
+* **tray:** убрано поле ws_port вместе со снятым ws-мостом ([ac91d84](https://github.com/popstas/windows11-manager/commit/ac91d84ae1d3df2433695625db56d600d593451c))
+
 ## [2.1.0](https://github.com/popstas/windows11-manager/compare/windows11-manager-v2.0.1...windows11-manager-v2.1.0) (2026-07-31)
 
 
