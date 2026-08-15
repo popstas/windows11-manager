@@ -55,15 +55,27 @@ function mergeClaudeWtConfig(raw) {
     },
     restore: { ...CLAUDE_WT_DEFAULTS.restore, ...(cfg.restore ?? {}) },
     snapshots: { ...CLAUDE_WT_DEFAULTS.snapshots, ...(cfg.snapshots ?? {}) },
-    terminalExecutables: Array.isArray(cfg.terminalExecutables) && cfg.terminalExecutables.length
-      ? cfg.terminalExecutables.map(String)
-      : [...TERMINAL_EXECUTABLES],
+    terminalExecutables: normalizeTerminalExecutables(cfg.terminalExecutables),
   };
 }
 
 // Терминалы, чьи окна трекер опознаёт по умолчанию. Список, а не регулярка по
 // одному имени: терминалов теперь два, и оба обязаны опознаваться.
 const TERMINAL_EXECUTABLES = ['WindowsTerminal.exe', 'wezterm-gui.exe'];
+
+/**
+ * Список исполняемых терминала из конфига — тем же приёмом, что у соседнего
+ * normalizeTerminals: разбор поэлементный, а не проверка длины целиком.
+ * Мусорная запись (не строка или пустая после `trim`) отбрасывается сама, не
+ * выключая остальные, — иначе одна опечатка в конфиге гасила бы узнавание
+ * обоих встроенных терминалов разом. Пустой список после отсева — то же, что
+ * пустой массив или не-массив: откат на встроенный.
+ */
+function normalizeTerminalExecutables(raw) {
+  if (!Array.isArray(raw)) return [...TERMINAL_EXECUTABLES];
+  const out = raw.filter(v => typeof v === 'string' && v.trim()).map(v => v.trim());
+  return out.length ? out : [...TERMINAL_EXECUTABLES];
+}
 
 /**
  * Окно терминала — по имени исполняемого файла.

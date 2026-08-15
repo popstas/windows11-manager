@@ -92,6 +92,26 @@ describe('mergeClaudeWtConfig', () => {
   });
 });
 
+describe('terminalExecutables в mergeClaudeWtConfig', () => {
+  it('мусор в списке отбрасывается поэлементно, годные имена выживают', () => {
+    // Ровно та брешь, из-за которой одна опечатка в конфиге гасила узнавание
+    // обоих встроенных терминалов: проверка была по length списка целиком,
+    // а не по каждому элементу.
+    const cfg = mergeClaudeWtConfig({ terminalExecutables: [null, 'alacritty.exe', 123, {}, '  '] });
+    expect(cfg.terminalExecutables).toEqual(['alacritty.exe']);
+  });
+
+  it('список из одного мусора откатывается на встроенный', () => {
+    const cfg = mergeClaudeWtConfig({ terminalExecutables: [null, 123, {}] });
+    expect(cfg.terminalExecutables).toEqual(TERMINAL_EXECUTABLES);
+  });
+
+  it('обрезает пробелы вокруг годного имени', () => {
+    const cfg = mergeClaudeWtConfig({ terminalExecutables: [' alacritty.exe '] });
+    expect(cfg.terminalExecutables).toEqual(['alacritty.exe']);
+  });
+});
+
 describe('умолчания реестра терминалов', () => {
   it('пустой конфиг даёт оба встроенных терминала и дефолт wt', () => {
     const cfg = mergeClaudeWtConfig({});
@@ -143,6 +163,10 @@ describe('isTerminalPath', () => {
 
   it('почти совпавшее имя терминалом не считается', () => {
     expect(isTerminalPath('C:\\x\\wezterm-gui-helper.exe')).toBe(false);
+  });
+
+  it('регистр имени и смешанные разделители пути роли не играют', () => {
+    expect(isTerminalPath('c:/Program Files\\WezTerm/WEZTERM-GUI.EXE')).toBe(true);
   });
 });
 
