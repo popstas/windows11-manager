@@ -182,9 +182,11 @@ module.exports = {
       wt: { command: 'wt.exe', args: ['-w', '-1'], profileArgs: ['-p', '{profile}'] },
       wezterm: { command: 'wezterm-gui.exe', args: ['start', '--'] },
     },
+    // launch.command не задан — терминал берётся из реестра выше. Заданный
+    // здесь явный command пометил бы этот конфиг старым, и реестр перестал
+    // бы действовать (см. isLegacyLaunch).
     launch: {
-      command: 'wt.exe',
-      args: ['-w', '-1', 'ssh', '-A', 'popstas@pc-virt.popstas.pro',
+      args: ['ssh', '-A', 'popstas@pc-virt.popstas.pro',
              '-t', 'ccfzf --session {id} --kiosk'],
     },
     // Fresh Claude in a project folder (project hotkeys). {cwd} and {name}
@@ -195,8 +197,7 @@ module.exports = {
     // cwd/name are positional args: quotes nested inside the inner script do
     // not survive Windows Terminal's command line on the way to ssh.
     launchNew: {
-      command: 'wt.exe',
-      args: ['-w', '-1', 'ssh', '-A', 'popstas@pc-virt.popstas.pro',
+      args: ['ssh', '-A', 'popstas@pc-virt.popstas.pro',
              '-t', `exec $SHELL -ic 'cd -- "$1" && exec claude -n "$2"' claude-wt '{cwd}' '{name}'`],
     },
     restore: { auto: false, windowTimeoutMs: 30000, launchDelayMs: 2000, settleMs: 500 },

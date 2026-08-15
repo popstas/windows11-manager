@@ -26,9 +26,13 @@ const CLAUDE_WT_DEFAULTS = {
   // Реестр терминалов: имя → чем открывать. Умолчания — в terminal-helpers.js.
   terminals: {},
   projects: [],
-  launch: { command: 'wt.exe', args: [] },
+  // Умолчание терминала выражено один раз, реестром (`terminal` →
+  // `TERMINAL_DEFAULTS`); здесь его нет намеренно — назвавший `command` сам
+  // конфиг тем самым помечает себя старым (см. isLegacyLaunch), и реестр в
+  // нём перестаёт действовать.
+  launch: { args: [] },
   // Fresh session in a project folder (project hotkeys). Placeholders: {cwd}, {name}.
-  launchNew: { command: 'wt.exe', args: [] },
+  launchNew: { args: [] },
   restore: { auto: false, windowTimeoutMs: 30000, launchDelayMs: 2000, settleMs: 500 },
   snapshots: { enabled: true, path: '', debounceMs: 60000, keep: 20 },
 };

@@ -22,7 +22,7 @@ import {
   relearnedDesktop,
   FOLLOW_GRACE_MS,
 } from './daemon-helpers.js';
-import { TERMINAL_DEFAULTS } from './terminal-helpers.js';
+import { TERMINAL_DEFAULTS, isLegacyLaunch } from './terminal-helpers.js';
 
 describe('mergeClaudeWtConfig', () => {
   it('returns the defaults for a missing block', () => {
@@ -58,7 +58,10 @@ describe('mergeClaudeWtConfig', () => {
       launch: { args: ['-w', '-1'] },
       restore: { windowTimeoutMs: 5000 },
     });
-    expect(cfg.launch).toEqual({ command: 'wt.exe', args: ['-w', '-1'] });
+    // command в умолчаниях launch больше нет: терминал по умолчанию задаёт
+    // реестр (terminal → TERMINAL_DEFAULTS), а появившийся здесь command
+    // как раз и должен помечать конфиг старым (isLegacyLaunch).
+    expect(cfg.launch).toEqual({ args: ['-w', '-1'] });
     expect(cfg.restore).toEqual({
       auto: false, windowTimeoutMs: 5000, launchDelayMs: 2000, settleMs: 500,
     });
@@ -69,7 +72,6 @@ describe('mergeClaudeWtConfig', () => {
       launchNew: { args: ['ssh', '-t', "cd '{cwd}' && claude -n '{name}'"] },
     });
     expect(cfg.launchNew).toEqual({
-      command: 'wt.exe',
       args: ['ssh', '-t', "cd '{cwd}' && claude -n '{name}'"],
     });
   });
@@ -89,6 +91,25 @@ describe('умолчания реестра терминалов', () => {
     const cfg = mergeClaudeWtConfig({});
     expect(cfg.terminal).toBe('wt');
     expect(Object.keys(cfg.terminals).sort()).toEqual(['wezterm', 'wt']);
+  });
+
+  // Сторож круга правок: isLegacyLaunch проверяется не на чистом объекте, а
+  // на результате настоящего слияния — именно оно и было мёртвой веткой,
+  // пока CLAUDE_WT_DEFAULTS.launch нёс command: 'wt.exe' по умолчанию.
+  it('конфиг новой формы после слияния не считается старым', () => {
+    const cfg = mergeClaudeWtConfig({
+      terminal: 'wezterm',
+      terminals: { wezterm: { command: 'wezterm-gui.exe', args: ['start', '--'] } },
+      launch: { args: ['ssh', '-t', 'ccfzf --session {id} --kiosk'] },
+    });
+    expect(isLegacyLaunch(cfg)).toBe(false);
+  });
+
+  it('конфиг, назвавший launch.command явно, после слияния считается старым', () => {
+    const cfg = mergeClaudeWtConfig({
+      launch: { command: 'wt.exe', args: ['-w', '-1', 'ssh', '-t', 'ccfzf --session {id} --kiosk'] },
+    });
+    expect(isLegacyLaunch(cfg)).toBe(true);
   });
 });
 
