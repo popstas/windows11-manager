@@ -2,6 +2,7 @@
 
 import { normalizeProjects } from './project-helpers.js';
 import { upsertSlot } from './state-helpers.js';
+import { normalizeTerminals } from './terminal-helpers.js';
 
 const CLAUDE_WT_DEFAULTS = {
   enabled: true,
@@ -20,6 +21,10 @@ const CLAUDE_WT_DEFAULTS = {
   desktop: true,
   debug: false,
   profile: '',
+  // Какой терминал открывать, когда просьба его не назвала.
+  terminal: 'wt',
+  // Реестр терминалов: имя → чем открывать. Умолчания — в terminal-helpers.js.
+  terminals: {},
   projects: [],
   launch: { command: 'wt.exe', args: [] },
   // Fresh session in a project folder (project hotkeys). Placeholders: {cwd}, {name}.
@@ -34,6 +39,7 @@ function mergeClaudeWtConfig(raw) {
   return {
     ...CLAUDE_WT_DEFAULTS,
     ...cfg,
+    terminals: normalizeTerminals(cfg.terminals),
     projects: normalizeProjects(cfg.projects ?? CLAUDE_WT_DEFAULTS.projects),
     launch: { ...CLAUDE_WT_DEFAULTS.launch, args: [...CLAUDE_WT_DEFAULTS.launch.args], ...(cfg.launch ?? {}) },
     launchNew: {

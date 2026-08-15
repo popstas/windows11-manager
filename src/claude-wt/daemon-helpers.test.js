@@ -22,11 +22,16 @@ import {
   relearnedDesktop,
   FOLLOW_GRACE_MS,
 } from './daemon-helpers.js';
+import { TERMINAL_DEFAULTS } from './terminal-helpers.js';
 
 describe('mergeClaudeWtConfig', () => {
   it('returns the defaults for a missing block', () => {
-    expect(mergeClaudeWtConfig(undefined)).toEqual(CLAUDE_WT_DEFAULTS);
-    expect(mergeClaudeWtConfig(null)).toEqual(CLAUDE_WT_DEFAULTS);
+    // terminals в CLAUDE_WT_DEFAULTS пуст намеренно (умолчания живут в
+    // terminal-helpers.js), а слияние всегда разворачивает его до реестра —
+    // поэтому сверяем не с самим CLAUDE_WT_DEFAULTS, а с ним же плюс реестр.
+    const expected = { ...CLAUDE_WT_DEFAULTS, terminals: TERMINAL_DEFAULTS };
+    expect(mergeClaudeWtConfig(undefined)).toEqual(expected);
+    expect(mergeClaudeWtConfig(null)).toEqual(expected);
   });
 
   it('overrides only the keys that were given', () => {
@@ -76,6 +81,14 @@ describe('mergeClaudeWtConfig', () => {
     expect(CLAUDE_WT_DEFAULTS.launch.args).toEqual([]);
     expect(CLAUDE_WT_DEFAULTS.launchNew.args).toEqual([]);
     expect(CLAUDE_WT_DEFAULTS.projects).toEqual([]);
+  });
+});
+
+describe('умолчания реестра терминалов', () => {
+  it('пустой конфиг даёт оба встроенных терминала и дефолт wt', () => {
+    const cfg = mergeClaudeWtConfig({});
+    expect(cfg.terminal).toBe('wt');
+    expect(Object.keys(cfg.terminals).sort()).toEqual(['wezterm', 'wt']);
   });
 });
 

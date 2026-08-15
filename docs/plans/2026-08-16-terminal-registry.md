@@ -53,7 +53,7 @@ profileArgs}`». Команда собирается сложением: тер�
   - `resolveTerminal(asked: string, cfg: object): {name: string, entry: object|null, fallback: boolean}`
   - `isLegacyLaunch(cfg: object): boolean`
 
-- [ ] **Step 1: Написать падающий тест**
+- [x] **Step 1: Написать падающий тест**
 
 Создать `src/claude-wt/terminal-helpers.test.js`:
 
@@ -119,12 +119,12 @@ describe('isLegacyLaunch', () => {
 });
 ```
 
-- [ ] **Step 2: Убедиться, что тест падает**
+- [x] **Step 2: Убедиться, что тест падает**
 
 Run: `npx vitest run src/claude-wt/terminal-helpers.test.js`
 Expected: FAIL — `Failed to resolve import "./terminal-helpers.js"`.
 
-- [ ] **Step 3: Написать помощников**
+- [x] **Step 3: Написать помощников**
 
 Создать `src/claude-wt/terminal-helpers.js`:
 
@@ -196,12 +196,12 @@ function isLegacyLaunch(cfg = {}) {
 export { TERMINAL_DEFAULTS, normalizeTerminals, resolveTerminal, isLegacyLaunch };
 ```
 
-- [ ] **Step 4: Убедиться, что тест проходит**
+- [x] **Step 4: Убедиться, что тест проходит**
 
 Run: `npx vitest run src/claude-wt/terminal-helpers.test.js`
 Expected: PASS, 9 тестов.
 
-- [ ] **Step 5: Завести ключи конфига**
+- [x] **Step 5: Завести ключи конфига**
 
 В `src/claude-wt/daemon-helpers.js` добавить импорт
 `import { normalizeTerminals } from './terminal-helpers.js';`, в
@@ -220,7 +220,7 @@ Expected: PASS, 9 тестов.
     terminals: normalizeTerminals(cfg.terminals),
 ```
 
-- [ ] **Step 6: Сторож умолчаний**
+- [x] **Step 6: Сторож умолчаний**
 
 В `src/claude-wt/daemon-helpers.test.js` дописать:
 
@@ -237,7 +237,7 @@ describe('умолчания реестра терминалов', () => {
 (`mergeClaudeWtConfig` уже импортируется в этом файле; если нет — добавить в
 существующий импорт.)
 
-- [ ] **Step 7: Показать форму в примере конфига**
+- [x] **Step 7: Показать форму в примере конфига**
 
 В `config.example.cjs` рядом с `claudeWt.launch` дописать:
 
@@ -253,7 +253,7 @@ describe('умолчания реестра терминалов', () => {
     },
 ```
 
-- [ ] **Step 8: Прогнать всё и закоммитить**
+- [x] **Step 8: Прогнать всё и закоммитить**
 
 Run: `npm test && npm run lint`
 Expected: PASS.

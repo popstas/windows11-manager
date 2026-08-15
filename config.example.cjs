@@ -173,6 +173,15 @@ module.exports = {
     // projects: [
     //   { name: 'home', cwd: '/path/to/home', hotkey: 'Ctrl+F11', profile: 'home' },
     // ],
+    // Терминал по умолчанию для этой машины. Просьба пикера может назвать
+    // другой — тогда выигрывает она.
+    terminal: 'wt',
+    // Реестр терминалов: то, что стоит перед ssh-хвостом из launch.args.
+    // Пустой — берутся встроенные (wt и wezterm).
+    terminals: {
+      wt: { command: 'wt.exe', args: ['-w', '-1'], profileArgs: ['-p', '{profile}'] },
+      wezterm: { command: 'wezterm-gui.exe', args: ['start', '--'] },
+    },
     launch: {
       command: 'wt.exe',
       args: ['-w', '-1', 'ssh', '-A', 'popstas@pc-virt.popstas.pro',
