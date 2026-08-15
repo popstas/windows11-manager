@@ -53,16 +53,20 @@ async function waitForNewWindow(knownIds, timeoutMs, pollMs = 500) {
  * Bring the last layout back, one window at a time. Sequential on purpose: two
  * windows popping up at once cannot be told apart, and identifying them by
  * title is not an option either — the title has not settled yet at that point.
+ *
+ * `terminal` — имя из живой просьбы (Enter в пикере на мёртвой сессии); без
+ * него, как при восстановлении на старте, `resolveTerminal` берёт дефолт
+ * машины — то же самое, что явно передать пустую строку.
  */
-async function restoreClaudeSessions({ force = false, sessionIds } = {}) {
+async function restoreClaudeSessions({ force = false, sessionIds, terminal } = {}) {
   const cfg = getClaudeWtConfig();
   const state = readState(cfg.statePath);
   const { unknown } = resolveRestoreIds({ state, sessionIds });
   for (const id of unknown) console.error(`[claude-wt] no remembered slot for session ${id}`);
-  const chosen = isLegacyLaunch(cfg) ? { name: 'wt', entry: null } : resolveTerminal('', cfg);
+  const chosen = isLegacyLaunch(cfg) ? { name: 'wt', entry: null } : resolveTerminal(terminal, cfg);
   const command = chosen.entry?.command ?? cfg.launch.command;
   if (!command) {
-    console.error('[claude-wt] нечем открывать: ни claudeWt.terminals, ни claudeWt.launch.command');
+    console.error('[claude-wt] nothing to launch with: neither claudeWt.terminals nor claudeWt.launch.command is set');
     return { restored: [], skipped: [] };
   }
   const resolveProfile = cwd => profileForTerminal(cwd, chosen.name, cfg);
@@ -179,7 +183,7 @@ async function restoreSnapshot({ id, sessionIds } = {}) {
   const chosen = isLegacyLaunch(cfg) ? { name: 'wt', entry: null } : resolveTerminal('', cfg);
   const command = chosen.entry?.command ?? cfg.launch.command;
   if (!command) {
-    console.error('[claude-wt] нечем открывать: ни claudeWt.terminals, ни claudeWt.launch.command');
+    console.error('[claude-wt] nothing to launch with: neither claudeWt.terminals nor claudeWt.launch.command is set');
     return { restored, skipped: snapshot.sessions.map(s => s.id) };
   }
   const state = readState(cfg.statePath);

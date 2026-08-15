@@ -289,4 +289,20 @@ describe('claude-session-open: имя терминала', () => {
     const [opts] = d.winMan.openClaudeProject.mock.calls[0];
     expect('terminal' in opts).toBe(false);
   });
+
+  it('terminal доезжает и до восстановления мёртвой сессии — та же живая дорога Enter\'а', async () => {
+    // Сессия трекеру известна, окна у неё нет — chooseAction отдаёт restore, и
+    // без проброса дальше человек, выбравший WezTerm, получил бы wt молча.
+    const d = deps({ winMan: { getWindowById: vi.fn().mockReturnValue(null) } });
+    await claudeCommands(d)['claude-session-open']({
+      id: 'abc', action: 'terminal', terminal: 'wezterm',
+    });
+    expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledWith({ sessionIds: ['abc'], terminal: 'wezterm' });
+  });
+
+  it('без terminal восстановление зовётся как раньше — дефолт машины решает менеджер', async () => {
+    const d = deps({ winMan: { getWindowById: vi.fn().mockReturnValue(null) } });
+    await claudeCommands(d)['claude-session-open']({ id: 'abc', action: 'terminal' });
+    expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledWith({ sessionIds: ['abc'] });
+  });
 });

@@ -48,9 +48,14 @@ function claudeCommands({ winMan, log, notify, slots }) {
     return session ? { session } : { error: `unknown session ${id}` };
   }
 
-  async function restoreOne(id) {
+  async function restoreOne(id, terminal) {
     try {
-      const { restored, skipped } = await winMan.restoreClaudeSessions({ sessionIds: [id] });
+      const opts = { sessionIds: [id] };
+      // Ключа нет, когда пикер имя не назвал: дефолт машины решает сам
+      // restoreClaudeSessions, а не пустая строка здесь — тот же приём, что у
+      // openProject.
+      if (terminal) opts.terminal = terminal;
+      const { restored, skipped } = await winMan.restoreClaudeSessions(opts);
       log(`claude-wt restored ${restored.length}, skipped ${skipped.length}`);
       if (!restored.length) notify(`claude-wt: не удалось поднять сессию ${id}`);
     } catch (e) {
@@ -64,10 +69,14 @@ function claudeCommands({ winMan, log, notify, slots }) {
    *
    * Переход на её рабочий стол идёт первым: фокус на окне с чужого стола
    * Windows отдаёт молча и без результата.
+   *
+   * `terminal` доходит только досюда с дорогой session-open: у claude-focus
+   * его в просьбе не бывает, и вызов оттуда просто не передаёт третий
+   * аргумент.
    */
-  async function focusOrRestore(id, session) {
+  async function focusOrRestore(id, session, terminal) {
     if (chooseAction(session, (windowId) => !!winMan.getWindowById(windowId)) === 'restore') {
-      await restoreOne(id);
+      await restoreOne(id, terminal);
       return;
     }
     const current = await winMan.virtualDesktop.GetWindowDesktopNumber(session.windowId);
@@ -241,7 +250,7 @@ function claudeCommands({ winMan, log, notify, slots }) {
       }
       const found = id ? findSession(id) : null;
       if (found?.session) {
-        await focusOrRestore(id, found.session);
+        await focusOrRestore(id, found.session, wantedTerminal);
         return;
       }
       if (dir) {

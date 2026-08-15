@@ -262,6 +262,23 @@ describe('profileForTerminal', () => {
     expect(profileForTerminal('D:\\p\\nope', 'wt', cfg)).toBe('Global');
     expect(profileForTerminal('D:\\p\\nope', 'wezterm', cfg)).toBe('');
   });
+
+  it('явно пустой плоский profile — отказ проекта, а не сигнал взять глобальный', () => {
+    // Тот же случай, что у profileForCwd («honors an explicitly empty project
+    // profile»): profileForCwd('/p/silent', cfg) даёт '', а profileForTerminal
+    // до этого фикса — 'popstas', потому что пустая строка проваливалась мимо
+    // проверки на непустоту прямиком к глобальному конфигу.
+    const silentCfg = { profile: 'popstas', projects: [{ cwd: '/p/silent', profile: '' }] };
+    expect(profileForTerminal('/p/silent', 'wt', silentCfg)).toBe('');
+  });
+
+  it('явно пустая запись в карте profiles — тоже отказ, даже при заданном плоском profile', () => {
+    const mapCfg = {
+      profile: 'Global',
+      projects: [{ cwd: 'D:\\p\\x', profile: 'Flat', profiles: { wt: '' } }],
+    };
+    expect(profileForTerminal('D:\\p\\x', 'wt', mapCfg)).toBe('');
+  });
 });
 
 describe('normalizeProjects и карта профилей', () => {

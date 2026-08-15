@@ -87,15 +87,23 @@ function profileForCwd(cwd, cfg = {}) {
  * `wt`: конфиги написаны до реестра, и все они про Windows Terminal. Читай мы
  * его как «для любого терминала», первый же запуск WezTerm получил бы
  * аргументы, которых тот не понимает.
+ *
+ * Решает «назван ли ключ», а не «пусто ли значение»: `profiles: {wt: ''}` и
+ * плоское `profile: ''` — это отказ проекта от профиля, сказанный явно, а не
+ * «профиль не назначен». Судить по непустоте значения значило бы путать эти
+ * два случая — и падать сквозь явный отказ к глобальному `cfg.profile`,
+ * который проект как раз и отключил.
  */
 function profileForTerminal(cwd, terminalName, cfg = {}) {
   const name = typeof terminalName === 'string' ? terminalName : '';
   const projects = Array.isArray(cfg.projects) ? cfg.projects : [];
   const hit = typeof cwd === 'string' && cwd ? projects.find(p => p.cwd === cwd) : undefined;
-  const mapped = hit?.profiles?.[name];
-  if (typeof mapped === 'string' && mapped) return mapped;
+  if (hit?.profiles && name in hit.profiles) {
+    const mapped = hit.profiles[name];
+    return typeof mapped === 'string' ? mapped : '';
+  }
   if (name !== 'wt') return '';
-  if (hit && typeof hit.profile === 'string' && hit.profile) return hit.profile;
+  if (hit && typeof hit.profile === 'string') return hit.profile;
   if (hit && hit.profiles) return '';
   return typeof cfg.profile === 'string' ? cfg.profile : '';
 }

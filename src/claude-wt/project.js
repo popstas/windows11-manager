@@ -165,7 +165,7 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
     terminal: chosen.entry,
   });
   if (!command) {
-    return { ok: false, reason: 'claudeWt: терминал не назван ни просьбой, ни конфигом' };
+    return { ok: false, reason: 'claudeWt: no terminal named by the request or the config' };
   }
   try {
     spawn(command, args, { detached: true, stdio: 'ignore' }).unref();
