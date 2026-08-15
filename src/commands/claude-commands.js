@@ -91,12 +91,15 @@ function claudeCommands({ winMan, log, notify, slots }) {
    * из каталога — ровно так же его считает сам `openClaudeProject`, и так же
    * называет новую сессию ccfzf.
    */
-  async function openProject(cwd, name, { reuseOpen = true } = {}) {
+  async function openProject(cwd, name, { reuseOpen = true, terminal = '' } = {}) {
     const opts = { cwd, name: name || basenameOfCwd(cwd) };
     // Ключа `reuseOpen: true` в обычной просьбе нет: у `openClaudeProject` это
     // и так умолчание, а лишний ключ пришлось бы дописать в каждый
-    // существующий тест, ничего этим не проверив.
+    // существующий тест, ничего этим не проверив. Та же причина — у `terminal`
+    // ниже: пустая строка значит «пикер имя не назвал», и дефолт машины решает
+    // сам реестр терминалов, а не пустой ключ здесь.
     if (!reuseOpen) opts.reuseOpen = false;
+    if (terminal) opts.terminal = terminal;
     let res;
     try {
       res = await winMan.openClaudeProject(opts);
@@ -205,7 +208,7 @@ function claudeCommands({ winMan, log, notify, slots }) {
      *     Молчание здесь было бы неотличимо от успеха.
      */
     async 'claude-session-open'(payload) {
-      const { id, action, cwd, name } = parseIdPayload(payload);
+      const { id, action, cwd, name, terminal } = parseIdPayload(payload);
       if (!action) return;
       if (action !== 'terminal' && action !== 'terminal-new') {
         // Незнакомое действие не делает хотя бы ничего и жалуется — тем же
@@ -218,6 +221,10 @@ function claudeCommands({ winMan, log, notify, slots }) {
       }
       const dir = typeof cwd === 'string' ? cwd.trim() : '';
       const asked = typeof name === 'string' ? name.trim() : '';
+      // Имя терминала из просьбы. Пикер называет то, что выбрано у него;
+      // пусто — берётся дефолт машины. Проверять имя здесь нечем и незачем:
+      // реестр знает менеджер, и он же скажет в лог, если имя чужое.
+      const wantedTerminal = typeof terminal === 'string' ? terminal.trim() : '';
       // «Заведи ещё одну» — просьба про каталог и только про него. Сессию не
       // ищем даже при заданном id: нашлась бы та самая, рядом с которой просят
       // открыть новую, и вместо второго терминала человек получил бы подъём
@@ -229,7 +236,7 @@ function claudeCommands({ winMan, log, notify, slots }) {
           notify(`claude-wt: ${reason}`);
           return;
         }
-        await openProject(dir, asked, { reuseOpen: false });
+        await openProject(dir, asked, { reuseOpen: false, terminal: wantedTerminal });
         return;
       }
       const found = id ? findSession(id) : null;
@@ -238,7 +245,7 @@ function claudeCommands({ winMan, log, notify, slots }) {
         return;
       }
       if (dir) {
-        await openProject(dir, asked);
+        await openProject(dir, asked, { terminal: wantedTerminal });
         return;
       }
       const reason = found?.error ?? 'session-open: нужен id известной сессии или cwd проекта';

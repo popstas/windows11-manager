@@ -563,7 +563,7 @@ git commit -m "feat(claude-wt): команда собирается из рее�
   один объект-аргумент, как сейчас, плюс необязательный ключ `terminal`
   (имя из просьбы).
 
-- [ ] **Step 1: Написать падающий тест**
+- [x] **Step 1: Написать падающий тест**
 
 В `src/commands/claude-commands.test.js` дописать. Зависимости собираются
 готовой `deps()` из шапки файла, команды — `claudeCommands(d)`; проверяется
@@ -594,12 +594,12 @@ describe('claude-session-open: имя терминала', () => {
 Пустой список сессий здесь обязателен: с сессией по умолчанию просьба ушла бы
 в ветку подъёма окна и до `openClaudeProject` не дошла.
 
-- [ ] **Step 2: Убедиться, что тест падает**
+- [x] **Step 2: Убедиться, что тест падает**
 
 Run: `npx vitest run src/commands/claude-commands.test.js -t "имя терминала"`
 Expected: FAIL — `opts.terminal` не определён.
 
-- [ ] **Step 3: Разобрать поле в обработчике**
+- [x] **Step 3: Разобрать поле в обработчике**
 
 В `src/commands/claude-commands.js` в `claude-session-open`:
 
@@ -637,7 +637,7 @@ Expected: FAIL — `opts.terminal` не определён.
     if (terminal) opts.terminal = terminal;
 ```
 
-- [ ] **Step 4: Выбрать терминал при запуске**
+- [x] **Step 4: Выбрать терминал при запуске**
 
 В `src/claude-wt/project.js` в `openClaudeProject` заменить блок сборки
 команды на:
@@ -677,7 +677,7 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
 Импорты дописать: `isLegacyLaunch`, `resolveTerminal` из
 `./terminal-helpers.js`, `profileForTerminal` из `./project-helpers.js`.
 
-- [ ] **Step 5: Восстановление берёт дефолт машины**
+- [x] **Step 5: Восстановление берёт дефолт машины**
 
 В `src/claude-wt/restore.js` обе проверки `if (!cfg.launch.command)` заменить на
 проверку, что терминал разрешим:
@@ -711,7 +711,7 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
       });
 ```
 
-- [ ] **Step 6: Сторож восстановления**
+- [x] **Step 6: Сторож восстановления**
 
 В `src/claude-wt/restore-helpers.test.js` дописать:
 
@@ -728,7 +728,7 @@ it('план восстановления берёт команду из рее�
 });
 ```
 
-- [ ] **Step 7: Прогнать всё и закоммитить**
+- [x] **Step 7: Прогнать всё и закоммитить**
 
 Run: `npm test && npm run lint`
 Expected: PASS.

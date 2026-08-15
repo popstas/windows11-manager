@@ -271,3 +271,22 @@ describe('claude-session-open', () => {
     expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
   });
 });
+
+describe('claude-session-open: имя терминала', () => {
+  it('terminal из просьбы доезжает до openClaudeProject', async () => {
+    const d = deps({ winMan: { claudeWtSessions: vi.fn().mockReturnValue({ ok: true, sessions: [] }) } });
+    await claudeCommands(d)['claude-session-open']({
+      action: 'terminal', cwd: 'D:\\p\\site', terminal: 'wezterm',
+    });
+    expect(d.winMan.openClaudeProject).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: 'D:\\p\\site', terminal: 'wezterm' }),
+    );
+  });
+
+  it('без поля terminal ключа в просьбе нет вовсе', async () => {
+    const d = deps({ winMan: { claudeWtSessions: vi.fn().mockReturnValue({ ok: true, sessions: [] }) } });
+    await claudeCommands(d)['claude-session-open']({ action: 'terminal', cwd: 'D:\\p\\site' });
+    const [opts] = d.winMan.openClaudeProject.mock.calls[0];
+    expect('terminal' in opts).toBe(false);
+  });
+});

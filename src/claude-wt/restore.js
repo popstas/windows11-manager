@@ -13,7 +13,8 @@ import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFollowDesktop } from './restore-helpers.js';
 import { planSnapshotRestore, findSnapshot } from './snapshot-helpers.js';
 import { listSnapshots } from './snapshotter.js';
-import { profileForCwd } from './project-helpers.js';
+import { profileForTerminal } from './project-helpers.js';
+import { isLegacyLaunch, resolveTerminal } from './terminal-helpers.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -58,17 +59,19 @@ async function restoreClaudeSessions({ force = false, sessionIds } = {}) {
   const state = readState(cfg.statePath);
   const { unknown } = resolveRestoreIds({ state, sessionIds });
   for (const id of unknown) console.error(`[claude-wt] no remembered slot for session ${id}`);
-  const resolveProfile = cwd => profileForCwd(cwd, cfg);
-  const fullPlan = planRestore({ state, launch: cfg.launch, sessionIds, resolveProfile });
+  const chosen = isLegacyLaunch(cfg) ? { name: 'wt', entry: null } : resolveTerminal('', cfg);
+  const command = chosen.entry?.command ?? cfg.launch.command;
+  if (!command) {
+    console.error('[claude-wt] нечем открывать: ни claudeWt.terminals, ни claudeWt.launch.command');
+    return { restored: [], skipped: [] };
+  }
+  const resolveProfile = cwd => profileForTerminal(cwd, chosen.name, cfg);
+  const fullPlan = planRestore({ state, launch: cfg.launch, sessionIds, resolveProfile, terminal: chosen.entry });
   const restored = [];
   const skipped = [];
   if (!fullPlan.length) {
     console.log('[claude-wt] nothing to restore');
     return { restored, skipped };
-  }
-  if (!cfg.launch.command) {
-    console.error('[claude-wt] claudeWt.launch.command is not set in config, nothing to run');
-    return { restored, skipped: fullPlan.map(item => item.sessionId) };
   }
   const { alreadyOpen, missing } = partitionPlan(fullPlan, openSessionIds(cfg, state));
   if (alreadyOpen.length && !force) {
@@ -173,18 +176,21 @@ async function restoreSnapshot({ id, sessionIds } = {}) {
     console.error(id && id !== 'last' ? `[claude-wt] no snapshot ${id}` : '[claude-wt] no snapshots yet');
     return { restored, skipped };
   }
-  if (!cfg.launch.command) {
-    console.error('[claude-wt] claudeWt.launch.command is not set in config, nothing to run');
+  const chosen = isLegacyLaunch(cfg) ? { name: 'wt', entry: null } : resolveTerminal('', cfg);
+  const command = chosen.entry?.command ?? cfg.launch.command;
+  if (!command) {
+    console.error('[claude-wt] нечем открывать: ни claudeWt.terminals, ни claudeWt.launch.command');
     return { restored, skipped: snapshot.sessions.map(s => s.id) };
   }
   const state = readState(cfg.statePath);
-  const resolveProfile = cwd => profileForCwd(cwd, cfg);
+  const resolveProfile = cwd => profileForTerminal(cwd, chosen.name, cfg);
   const plan = planSnapshotRestore({
     snapshot,
     openSessionIds: openSessionIds(cfg, state),
     sessionIds,
     launch: cfg.launch,
     resolveProfile,
+    terminal: chosen.entry,
   });
   if (!plan.length) {
     console.log(`[claude-wt] snapshot ${snapshot.id}: every session is already open, nothing to restore`);

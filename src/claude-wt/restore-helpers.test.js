@@ -109,6 +109,17 @@ describe('planRestore', () => {
       '-w', '-1', 'ssh',
     ]);
   });
+
+  it('план восстановления берёт команду из реестра, а не из launch', () => {
+    const state = { lastLayout: ['s1'], slots: { s1: { titles: ['t'], bounds: {}, cwd: 'C:\\a' } } };
+    const [item] = planRestore({
+      state,
+      launch: { args: ['ssh', 'ccfzf --session {id}'] },
+      terminal: { command: 'wezterm-gui.exe', args: ['start', '--'] },
+    });
+    expect(item.command).toBe('wezterm-gui.exe');
+    expect(item.args).toEqual(['start', '--', 'ssh', 'ccfzf --session s1']);
+  });
 });
 
 describe('partitionPlan', () => {

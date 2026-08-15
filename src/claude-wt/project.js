@@ -4,7 +4,8 @@ import { virtualDesktop } from '../virtual-desktop.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { claudeWtSessions } from './view.js';
 import { stripTitleDecoration } from './title-helpers.js';
-import { pickOpenProjectSession, planLaunchNew, profileForCwd, sessionNameFor } from './project-helpers.js';
+import { pickOpenProjectSession, planLaunchNew, profileForTerminal, sessionNameFor } from './project-helpers.js';
+import { isLegacyLaunch, resolveTerminal } from './terminal-helpers.js';
 
 async function focusTerminalWindow(windowId) {
   try {
@@ -105,10 +106,10 @@ async function focusSpawnedWindow(title, deps = {}) {
  * или свёрнутым. Найденное окно (обе ветки `focus*`) поднимается на месте:
  * там ждать нечего, окно уже стоит там, где стояло.
  *
- * @param {{ cwd: string, name: string, profile?: string, reuseOpen?: boolean }} opts
+ * @param {{ cwd: string, name: string, profile?: string, reuseOpen?: boolean, terminal?: string }} opts
  * @returns {Promise<{ ok: boolean, action?: string, reason?: string, sessionId?: string, sessionName?: string }>}
  */
-async function openClaudeProject({ cwd, name, profile, reuseOpen = true } = {}) {
+async function openClaudeProject({ cwd, name, profile, reuseOpen = true, terminal } = {}) {
   if (typeof cwd !== 'string' || !cwd || typeof name !== 'string' || !name) {
     return { ok: false, reason: 'cwd and name are required' };
   }
@@ -144,16 +145,28 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true } = {}) 
   }
 
   const cfg = getClaudeWtConfig();
-  if (!cfg.launchNew?.command) {
+  const legacy = isLegacyLaunch(cfg);
+  if (legacy && !cfg.launchNew?.command) {
     return { ok: false, reason: 'claudeWt.launchNew.command is not set in config' };
   }
-  const effectiveProfile = profile ?? profileForCwd(cwd, cfg);
+  const chosen = legacy ? { name: 'wt', entry: null, fallback: false } : resolveTerminal(terminal, cfg);
+  if (chosen.fallback && terminal) {
+    console.error(`[claude-wt] terminal ${terminal} is not in claudeWt.terminals, using ${chosen.name}`);
+  }
+  if (legacy && terminal) {
+    console.error('[claude-wt] claudeWt.launch.command is set: config is legacy, terminal choice is ignored');
+  }
+  const effectiveProfile = profile ?? profileForTerminal(cwd, chosen.name, cfg);
   const { command, args } = planLaunchNew({
     launchNew: cfg.launchNew,
     cwd,
     name: sessionName,
     profile: effectiveProfile,
+    terminal: chosen.entry,
   });
+  if (!command) {
+    return { ok: false, reason: 'claudeWt: терминал не назван ни просьбой, ни конфигом' };
+  }
   try {
     spawn(command, args, { detached: true, stdio: 'ignore' }).unref();
   } catch (e) {
