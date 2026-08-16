@@ -3,6 +3,7 @@ mod logging;
 mod updater;
 
 use children::{next_restart_attempt, pump_output, restart_delay_secs, ChildKind};
+use chrono::{Local, NaiveDate, NaiveDateTime, TimeZone};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
@@ -94,9 +95,78 @@ fn normalize_hotkey(raw: &str) -> String {
         .join("+")
 }
 
+/// Время сборки этого бинаря, если оно в него вшито.
+///
+/// `None` у релизной сборки: её называет версия, а штамп там лишний. Ноль в
+/// штампе значит именно это — см. `build.rs`.
+fn build_time() -> Option<NaiveDateTime> {
+    let secs: i64 = env!("WM_BUILD_UNIX").parse().ok()?;
+    if secs == 0 {
+        return None;
+    }
+    Some(Local.timestamp_opt(secs, 0).single()?.naive_local())
+}
+
+/// Подпись неактивного пункта меню: какая сборка сейчас запущена.
+///
+/// Нужна она после выкатки: `deploy-pc.sh` обновляет менеджер на месте, версия
+/// у всех сборок между релизами одна, и «то ли перезапустилось» иначе не
+/// проверить ничем.
+///
+/// Дата опускается, когда сборка сегодняшняя, — чаще всего так и есть, а
+/// повторять сегодняшнее число в трее незачем. «Сегодня» считается от запуска
+/// менеджера, а не от открытия меню: меню строится один раз при старте, и у
+/// процесса, прожившего в трее сутки, подпись устареет — покажет время без даты
+/// у вчерашней сборки. Цена известна и принята: менеджер, проживший сутки,
+/// перезапускали не сегодня, и вопрос «то ли собралось» к нему не стоит.
+fn version_item_label(version: &str, built: Option<NaiveDateTime>, today: NaiveDate) -> String {
+    let Some(built) = built else {
+        return format!("Current: v{version}");
+    };
+    if built.date() == today {
+        format!("Current: v{version} · {}", built.format("%H:%M"))
+    } else {
+        format!("Current: v{version} · {}", built.format("%Y-%m-%d %H:%M"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Дату у сегодняшней сборки не пишем: она повторяла бы сегодняшнее число.
+    #[test]
+    fn today_build_shows_only_the_time() {
+        let built = NaiveDate::from_ymd_opt(2026, 8, 16)
+            .unwrap()
+            .and_hms_opt(5, 29, 0)
+            .unwrap();
+        let label = version_item_label("2.1.0", Some(built), built.date());
+        assert_eq!(label, "Current: v2.1.0 · 05:29", "подпись: {label}");
+    }
+
+    /// А у вчерашней — пишем: без неё «05:29» читалось бы как сегодняшнее время,
+    /// и выкатка выглядела бы удавшейся, когда перезапустилось прежнее.
+    #[test]
+    fn older_build_shows_the_date_too() {
+        let built = NaiveDate::from_ymd_opt(2026, 8, 15)
+            .unwrap()
+            .and_hms_opt(23, 5, 0)
+            .unwrap();
+        let today = NaiveDate::from_ymd_opt(2026, 8, 16).unwrap();
+        let label = version_item_label("2.1.0", Some(built), today);
+        assert_eq!(label, "Current: v2.1.0 · 2026-08-15 23:05", "подпись: {label}");
+    }
+
+    /// Релизную сборку называет версия, и подпись обязана остаться прежней —
+    /// той самой, что стояла в трее до появления штампа.
+    #[test]
+    fn release_build_keeps_the_old_label() {
+        assert_eq!(
+            version_item_label("2.1.0", None, NaiveDate::from_ymd_opt(2026, 8, 16).unwrap()),
+            "Current: v2.1.0"
+        );
+    }
 
     #[test]
     fn settings_default_values() {
@@ -1132,7 +1202,17 @@ pub fn run() {
 
             // Build tray menu
             let current_version = app.package_info().version.to_string();
-            let version_info_i = MenuItem::with_id(app, "version_info", format!("Current: v{}", current_version), false, None::<&str>)?;
+            let version_info_i = MenuItem::with_id(
+                app,
+                "version_info",
+                version_item_label(
+                    &current_version,
+                    build_time(),
+                    Local::now().date_naive(),
+                ),
+                false,
+                None::<&str>,
+            )?;
             let download_update_i = MenuItem::with_id(app, "download_update", "Check for updates...", false, None::<&str>)?;
             let sep_update = PredefinedMenuItem::separator(app)?;
             let place_i = MenuItem::with_id(app, "place", "Place Windows", true, None::<&str>)?;

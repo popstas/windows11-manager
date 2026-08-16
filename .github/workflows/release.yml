@@ -32,6 +32,11 @@ jobs:
 
       - name: Build Tauri app
         working-directory: tauri-app
+        # WM_RELEASE убирает из пункта трея штамп времени сборки: выпущенную
+        # версию называет её номер, а штамп нужен там, где номер не меняется, —
+        # на выкатке из ветки. См. tauri-app/src-tauri/build.rs.
+        env:
+          WM_RELEASE: '1'
         run: npx tauri build
 
       # - name: Publish to npm
