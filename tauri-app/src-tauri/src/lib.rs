@@ -119,14 +119,18 @@ fn build_time() -> Option<NaiveDateTime> {
 /// процесса, прожившего в трее сутки, подпись устареет — покажет время без даты
 /// у вчерашней сборки. Цена известна и принята: менеджер, проживший сутки,
 /// перезапускали не сегодня, и вопрос «то ли собралось» к нему не стоит.
+/// Слова `Current:` в подписи нет намеренно: пункт неактивен и стоит первым,
+/// другой версии рядом не показано, и различать ему нечего. Вид один на три
+/// репозитория — тот же, что у пикера и мак-менеджера, — чтобы прочитанное в
+/// одном трее читалось и в остальных.
 fn version_item_label(version: &str, built: Option<NaiveDateTime>, today: NaiveDate) -> String {
     let Some(built) = built else {
-        return format!("Current: v{version}");
+        return format!("v{version}");
     };
     if built.date() == today {
-        format!("Current: v{version} · {}", built.format("%H:%M"))
+        format!("v{version} · {}", built.format("%H:%M"))
     } else {
-        format!("Current: v{version} · {}", built.format("%Y-%m-%d %H:%M"))
+        format!("v{version} · {}", built.format("%Y-%m-%d %H:%M"))
     }
 }
 
@@ -142,7 +146,7 @@ mod tests {
             .and_hms_opt(5, 29, 0)
             .unwrap();
         let label = version_item_label("2.1.0", Some(built), built.date());
-        assert_eq!(label, "Current: v2.1.0 · 05:29", "подпись: {label}");
+        assert_eq!(label, "v2.1.0 · 05:29", "подпись: {label}");
     }
 
     /// А у вчерашней — пишем: без неё «05:29» читалось бы как сегодняшнее время,
@@ -155,16 +159,15 @@ mod tests {
             .unwrap();
         let today = NaiveDate::from_ymd_opt(2026, 8, 16).unwrap();
         let label = version_item_label("2.1.0", Some(built), today);
-        assert_eq!(label, "Current: v2.1.0 · 2026-08-15 23:05", "подпись: {label}");
+        assert_eq!(label, "v2.1.0 · 2026-08-15 23:05", "подпись: {label}");
     }
 
-    /// Релизную сборку называет версия, и подпись обязана остаться прежней —
-    /// той самой, что стояла в трее до появления штампа.
+    /// Релизную сборку называет версия, и штампа ей не достаётся вовсе.
     #[test]
-    fn release_build_keeps_the_old_label() {
+    fn release_build_shows_the_version_alone() {
         assert_eq!(
             version_item_label("2.1.0", None, NaiveDate::from_ymd_opt(2026, 8, 16).unwrap()),
-            "Current: v2.1.0"
+            "v2.1.0"
         );
     }
 
