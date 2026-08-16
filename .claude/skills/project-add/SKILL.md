@@ -69,16 +69,16 @@ description: Добавить проект в claudeWt.projects конфига w
 7. **Проверить, что профиль подхватился:**
 
    ```bash
-   node -e "Promise.all([import('file:///D:/projects/js/windows11-manager/src/claude-wt/project-helpers.js'),import('file:///D:/projects/js/windows11-manager/src/claude-wt/index.js')]).then(([h,i])=>console.log(JSON.stringify(h.profileForCwd('<cwd>', i.getClaudeWtConfig()))))"
+   node -e "Promise.all([import('file:///D:/projects/js/windows11-manager/src/claude-wt/project-helpers.js'),import('file:///D:/projects/js/windows11-manager/src/claude-wt/index.js')]).then(([h,i])=>console.log(JSON.stringify(h.profileForTerminal('<cwd>', 'wt', i.getClaudeWtConfig()))))"
    ```
 
    Должно напечатать `"home-project"` или `"work-project"`. Пустая строка или `"popstas"` — значит `cwd` не совпал.
 
-   Две особенности, обе проверены и обе неочевидны: `profileForCwd` наружу из пакета не экспортируется, поэтому импорт идёт прямо из `project-helpers.js`; и абсолютный путь Windows в динамическом `import()` обязан быть `file:///`-URL, иначе node падает с `ERR_UNSUPPORTED_ESM_URL_SCHEME`.
+   Три особенности, все проверены и все неочевидны: `profileForTerminal` наружу из пакета не экспортируется, поэтому импорт идёт прямо из `project-helpers.js`; абсолютный путь Windows в динамическом `import()` обязан быть `file:///`-URL, иначе node падает с `ERR_UNSUPPORTED_ESM_URL_SCHEME`; и второй аргумент — имя терминала, `'wt'` здесь неслучайно: у записей этого скилла профиль лежит в плоском поле `profile`, а оно читается как профиль именно терминала `wt` (см. докстроку `profileForTerminal`).
 
 ## Почему `cwd` должен совпадать точно
 
-`profileForCwd()` в `windows11-manager/src/claude-wt/project-helpers.js` ищет `projects.find(p => p.cwd === cwd)` — строгое равенство, без нормализации и без префиксного совпадения. Лишний слеш, другой регистр или `~` вместо `/home/popstas` — и проект молча получит профиль по умолчанию (`claudeWt.profile`, сейчас `popstas`).
+`profileForTerminal()` в `windows11-manager/src/claude-wt/project-helpers.js` ищет `projects.find(p => p.cwd === cwd)` — строгое равенство, без нормализации и без префиксного совпадения. Лишний слеш, другой регистр или `~` вместо `/home/popstas` — и проект молча получит профиль по умолчанию (`claudeWt.profile`, сейчас `popstas`).
 
 ## Границы
 
