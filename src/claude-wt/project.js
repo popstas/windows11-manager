@@ -5,7 +5,7 @@ import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { claudeWtSessions } from './view.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { pickOpenProjectSession, planLaunchNew, profileForTerminal, sessionNameFor } from './project-helpers.js';
-import { isLegacyLaunch, resolveTerminal } from './terminal-helpers.js';
+import { chooseTerminal } from './terminal-helpers.js';
 
 async function focusTerminalWindow(windowId) {
   try {
@@ -145,17 +145,12 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
   }
 
   const cfg = getClaudeWtConfig();
-  const legacy = isLegacyLaunch(cfg);
-  if (legacy && !cfg.launchNew?.command) {
-    return { ok: false, reason: 'claudeWt.launchNew.command is not set in config' };
-  }
-  const chosen = legacy ? { name: 'wt', entry: null, fallback: false } : resolveTerminal(terminal, cfg);
-  if (chosen.fallback && terminal) {
-    console.error(`[claude-wt] terminal ${terminal} is not in claudeWt.terminals, using ${chosen.name}`);
-  }
-  if (legacy && terminal) {
-    console.error('[claude-wt] claudeWt.launch.command is set: config is legacy, terminal choice is ignored');
-  }
+  // Судим по launchNew, а не по launch: отсюда и собирается команда ниже, и
+  // старость чужого блока (`launch`, крэш-восстановление) её не касается —
+  // полумигрированный конфиг иначе давал либо удвоенные аргументы, либо
+  // ложный отказ (см. isLegacyLaunch).
+  const { chosen, message } = chooseTerminal(terminal, cfg, 'launchNew');
+  if (message) console.error(message);
   const effectiveProfile = profile ?? profileForTerminal(cwd, chosen.name, cfg);
   const { command, args } = planLaunchNew({
     launchNew: cfg.launchNew,

@@ -57,23 +57,18 @@ function normalizeProjects(raw) {
     if (typeof p.profile === 'string') entry.profile = p.profile.trim();
     if (p.profiles && typeof p.profiles === 'object') {
       const profiles = {};
+      // Годна строка сама по себе, а не непустая после trim: `{wt: ''}` —
+      // явный отказ проекта от профиля wt, тот же смысл, что у плоского
+      // `profile: ''`, и отбрасывать его как мусор нельзя — вся карта из
+      // единственной такой записи исчезала бы вместе с самим отказом.
       for (const [term, value] of Object.entries(p.profiles)) {
-        if (typeof value === 'string' && value.trim()) profiles[term] = value.trim();
+        if (typeof value === 'string') profiles[term] = value.trim();
       }
       if (Object.keys(profiles).length) entry.profiles = profiles;
     }
     out.push(entry);
   }
   return out;
-}
-
-function profileForCwd(cwd, cfg = {}) {
-  const projects = Array.isArray(cfg.projects) ? cfg.projects : [];
-  const hit = typeof cwd === 'string' && cwd
-    ? projects.find(p => p.cwd === cwd)
-    : undefined;
-  if (hit) return hit.profile ?? (typeof cfg.profile === 'string' ? cfg.profile : '');
-  return typeof cfg.profile === 'string' ? cfg.profile : '';
 }
 
 /**
@@ -156,7 +151,6 @@ export {
   pickOpenProjectSession,
   escapeForSingleQuoted,
   normalizeProjects,
-  profileForCwd,
   profileForTerminal,
   planWtLaunch,
   planLaunchNew,

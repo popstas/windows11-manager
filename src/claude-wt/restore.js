@@ -14,7 +14,7 @@ import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds
 import { planSnapshotRestore, findSnapshot } from './snapshot-helpers.js';
 import { listSnapshots } from './snapshotter.js';
 import { profileForTerminal } from './project-helpers.js';
-import { isLegacyLaunch, resolveTerminal } from './terminal-helpers.js';
+import { chooseTerminal } from './terminal-helpers.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -63,7 +63,8 @@ async function restoreClaudeSessions({ force = false, sessionIds, terminal } = {
   const state = readState(cfg.statePath);
   const { unknown } = resolveRestoreIds({ state, sessionIds });
   for (const id of unknown) console.error(`[claude-wt] no remembered slot for session ${id}`);
-  const chosen = isLegacyLaunch(cfg) ? { name: 'wt', entry: null } : resolveTerminal(terminal, cfg);
+  const { chosen, message } = chooseTerminal(terminal, cfg, 'launch');
+  if (message) console.error(message);
   const command = chosen.entry?.command ?? cfg.launch.command;
   if (!command) {
     console.error('[claude-wt] nothing to launch with: neither claudeWt.terminals nor claudeWt.launch.command is set');
@@ -180,7 +181,8 @@ async function restoreSnapshot({ id, sessionIds } = {}) {
     console.error(id && id !== 'last' ? `[claude-wt] no snapshot ${id}` : '[claude-wt] no snapshots yet');
     return { restored, skipped };
   }
-  const chosen = isLegacyLaunch(cfg) ? { name: 'wt', entry: null } : resolveTerminal('', cfg);
+  const { chosen, message } = chooseTerminal('', cfg, 'launch');
+  if (message) console.error(message);
   const command = chosen.entry?.command ?? cfg.launch.command;
   if (!command) {
     console.error('[claude-wt] nothing to launch with: neither claudeWt.terminals nor claudeWt.launch.command is set');

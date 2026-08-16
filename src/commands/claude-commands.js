@@ -89,7 +89,7 @@ function claudeCommands({ winMan, log, notify, slots }) {
    * Открыть проект терминалом — тем же путём, что и `claude-wt open-project`.
    *
    * Ради этого вся просьба и заведена: каталог проекта переводит в профиль
-   * Windows Terminal только эта машина (`claudeWt.projects` → `profileForCwd`),
+   * Windows Terminal только эта машина (`claudeWt.projects` → `profileForTerminal`),
    * и собранная в пикере команда `wt.exe` профиль теряет. `openClaudeProject`
    * сначала ищет уже открытую сессию этого каталога и поднимает её окно, и
    * только если такой нет — заводит новую: второй терминал на тот же проект

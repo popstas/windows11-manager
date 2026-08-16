@@ -7,7 +7,6 @@ import {
   planWtLaunch,
   planLaunchNew,
   normalizeProjects,
-  profileForCwd,
   profileForTerminal,
 } from './project-helpers.js';
 
@@ -205,37 +204,6 @@ describe('normalizeProjects', () => {
   });
 });
 
-describe('profileForCwd', () => {
-  const cfg = {
-    profile: 'popstas',
-    projects: [
-      { name: 'home', cwd: '/p/home', profile: 'home' },
-      { name: 'ez', cwd: '/p/ExpertizeMe' },
-      { name: 'silent', cwd: '/p/silent', profile: '' },
-    ],
-  };
-
-  it('uses project profile on exact cwd match', () => {
-    expect(profileForCwd('/p/home', cfg)).toBe('home');
-  });
-
-  it('falls back to cfg.profile when project has no profile', () => {
-    expect(profileForCwd('/p/ExpertizeMe', cfg)).toBe('popstas');
-  });
-
-  it('honors an explicitly empty project profile', () => {
-    expect(profileForCwd('/p/silent', cfg)).toBe('');
-  });
-
-  it('falls back to cfg.profile when cwd is unknown', () => {
-    expect(profileForCwd('/other', cfg)).toBe('popstas');
-  });
-
-  it('returns empty when no project and no cfg.profile', () => {
-    expect(profileForCwd('/other', { profile: '', projects: [] })).toBe('');
-  });
-});
-
 describe('profileForTerminal', () => {
   const cfg = {
     profile: 'Global',
@@ -264,20 +232,33 @@ describe('profileForTerminal', () => {
   });
 
   it('явно пустой плоский profile — отказ проекта, а не сигнал взять глобальный', () => {
-    // Тот же случай, что у profileForCwd («honors an explicitly empty project
-    // profile»): profileForCwd('/p/silent', cfg) даёт '', а profileForTerminal
-    // до этого фикса — 'popstas', потому что пустая строка проваливалась мимо
-    // проверки на непустоту прямиком к глобальному конфигу.
+    // До этого фикса profileForTerminal давал 'popstas', потому что пустая
+    // строка проваливалась мимо проверки на непустоту прямиком к глобальному
+    // конфигу.
     const silentCfg = { profile: 'popstas', projects: [{ cwd: '/p/silent', profile: '' }] };
     expect(profileForTerminal('/p/silent', 'wt', silentCfg)).toBe('');
   });
 
   it('явно пустая запись в карте profiles — тоже отказ, даже при заданном плоском profile', () => {
+    // Через normalizeProjects, а не сырым объектом: непройденный нормализацией
+    // конфиг в проде не бывает, а зелёный тест на нём проверял бы не то
+    // поведение.
     const mapCfg = {
       profile: 'Global',
-      projects: [{ cwd: 'D:\\p\\x', profile: 'Flat', profiles: { wt: '' } }],
+      projects: normalizeProjects([{ name: 'x', cwd: 'D:\\p\\x', profile: 'Flat', profiles: { wt: '' } }]),
     };
     expect(profileForTerminal('D:\\p\\x', 'wt', mapCfg)).toBe('');
+  });
+
+  it('явно пустая запись без плоского profile — тоже отказ, а не глобальный профиль', () => {
+    // Второй перекошенный случай из того же ревью: без плоского profile
+    // карта из одной пустой записи выбрасывалась normalizeProjects целиком,
+    // и отказ терялся вовсе — profileForTerminal падал к cfg.profile.
+    const mapCfg = {
+      profile: 'Global',
+      projects: normalizeProjects([{ name: 'y', cwd: 'D:\\p\\y', profiles: { wt: '' } }]),
+    };
+    expect(profileForTerminal('D:\\p\\y', 'wt', mapCfg)).toBe('');
   });
 });
 
@@ -290,6 +271,14 @@ describe('normalizeProjects и карта профилей', () => {
   it('мусор в profiles выбрасывается, а запись остаётся', () => {
     const [p] = normalizeProjects([{ name: 'a', cwd: 'C:\\a', profiles: { wt: 5, ok: 'yes' } }]);
     expect(p.profiles).toEqual({ ok: 'yes' });
+  });
+
+  it('явно пустая запись в карте — тоже отказ, а не повод выбросить всю карту', () => {
+    // Регрессия ревью: normalizeProjects судила по непустоте значения после
+    // trim, и карта из одной пустой записи пропадала целиком — {wt: ''}
+    // превращался в {} вместе с самим explicit-отказом.
+    const [p] = normalizeProjects([{ name: 'a', cwd: 'C:\\a', profiles: { wt: '' } }]);
+    expect(p.profiles).toEqual({ wt: '' });
   });
 });
 

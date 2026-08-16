@@ -57,9 +57,42 @@ function resolveTerminal(asked, cfg = {}) {
   return { name: name ?? '', entry: entry ?? null, fallback: true };
 }
 
-/** Старый конфиг: терминал ещё лежит внутри `launch`, реестр не действует. */
-function isLegacyLaunch(cfg = {}) {
-  return Boolean(cfg.launch && typeof cfg.launch.command === 'string' && cfg.launch.command.trim());
+/**
+ * Старый конфиг: терминал ещё лежит внутри блока запуска, реестр для него не
+ * действует.
+ *
+ * `block` называет, какой блок сейчас собирается («launch» у restore,
+ * «launchNew» у project) — судить надо по нему, а не всегда по `launch`:
+ * полумигрированный конфиг может держать старую форму в одном блоке и новую
+ * в другом, и то, что решил один блок, второго не касается. Без имени блока
+ * поведение прежнее — вызовы, ещё не знающие о развилке, не должны сломаться.
+ */
+function isLegacyLaunch(cfg = {}, block) {
+  const target = cfg[block ?? 'launch'];
+  return Boolean(target && typeof target.command === 'string' && target.command.trim());
 }
 
-export { TERMINAL_DEFAULTS, normalizeTerminals, resolveTerminal, isLegacyLaunch };
+/**
+ * Разрешить терминал и сразу решить, что сказать об этом в лог — если есть
+ * что сказать. Сама не пишет: помощник в I/O не ходит, строку печатает
+ * зовущий тем же способом, каким печатает соседние строки.
+ *
+ * `launchBlock` — тот же блок, что и у `isLegacyLaunch`: старость судится по
+ * тому шаблону, который зовущий сейчас собирает.
+ */
+function chooseTerminal(asked, cfg = {}, launchBlock) {
+  const wanted = typeof asked === 'string' ? asked.trim() : '';
+  if (isLegacyLaunch(cfg, launchBlock)) {
+    const message = wanted
+      ? `[claude-wt] claudeWt.${launchBlock}.command is set: config is legacy, terminal choice is ignored`
+      : null;
+    return { chosen: { name: 'wt', entry: null, fallback: false }, message };
+  }
+  const chosen = resolveTerminal(asked, cfg);
+  const message = chosen.fallback && wanted
+    ? `[claude-wt] terminal ${wanted} is not in claudeWt.terminals, using ${chosen.name}`
+    : null;
+  return { chosen, message };
+}
+
+export { TERMINAL_DEFAULTS, normalizeTerminals, resolveTerminal, isLegacyLaunch, chooseTerminal };
