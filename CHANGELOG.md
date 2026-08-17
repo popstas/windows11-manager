@@ -32,6 +32,14 @@
 
 
 
+## [4.0.1](https://github.com/popstas/windows11-manager/compare/windows11-manager-v4.0.0...windows11-manager-v4.0.1) (2026-08-17)
+
+
+### Bug Fixes
+
+* **ci:** CLAUDE.md записан обычным файлом, а не симлинком ([f32f433](https://github.com/popstas/windows11-manager/commit/f32f433aca289c3908fb820d3cf8ddf3fe174f44))
+* **ci:** CLAUDE.md записан обычным файлом, а не симлинком ([e7d428d](https://github.com/popstas/windows11-manager/commit/e7d428df183376687070205642237d160065ec9d))
+
 ## [4.0.0](https://github.com/popstas/windows11-manager/compare/windows11-manager-v3.1.0...windows11-manager-v4.0.0) (2026-08-17)
 
 
