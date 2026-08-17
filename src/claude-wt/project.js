@@ -4,8 +4,9 @@ import { virtualDesktop } from '../virtual-desktop.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { claudeWtSessions } from './view.js';
 import { stripTitleDecoration } from './title-helpers.js';
-import { pickOpenProjectSession, planLaunchNew, profileForTerminal, sessionNameFor } from './project-helpers.js';
+import { pickOpenProjectSession, planLaunchNew, planWtLaunch, profileForTerminal, sessionNameFor } from './project-helpers.js';
 import { chooseTerminal } from './terminal-helpers.js';
+import { waitForNewWindow } from './restore.js';
 
 async function focusTerminalWindow(windowId) {
   try {
@@ -20,6 +21,10 @@ async function focusTerminalWindow(windowId) {
   return focusWindowById(windowId);
 }
 
+function terminalWindows() {
+  return getWindows().filter(isTerminalWindow);
+}
+
 /**
  * Open WT window whose decoration-stripped title equals `title`.
  * Covers the gap before the ccfzf dump catches up and the daemon binds a slot.
@@ -27,7 +32,7 @@ async function focusTerminalWindow(windowId) {
 function findOpenTerminalByTitle(title) {
   const want = stripTitleDecoration(title);
   if (!want) return null;
-  for (const w of getWindows().filter(isTerminalWindow)) {
+  for (const w of terminalWindows()) {
     if (stripTitleDecoration(w.getTitle()) === want) return w;
   }
   return null;
@@ -87,6 +92,96 @@ async function focusSpawnedWindow(title, deps = {}) {
   if (!w) return false;
   await wait(settleMs);
   return focus(w.id);
+}
+
+/**
+ * Поднять окно, которого не было до запуска.
+ *
+ * Отличается от `focusSpawnedWindow` тем, чего у зовущего нет: заголовка.
+ * Просьба открыть сессию несёт только `id` и каталог, а заголовок ставит уже
+ * сам `claude` на той стороне ssh. Зато запуск здесь ровно один, и «окно, чьего
+ * hwnd не было среди терминалов минуту назад» означает наше окно однозначно —
+ * тем же признаком ловит окна `launchPlan` при восстановлении.
+ *
+ * Пауза перед фокусом — та же и по той же причине, что в `focusSpawnedWindow`:
+ * за неё успевают автопостановщик и демон, а фокус, взятый раньше них, у
+ * человека отберут.
+ */
+async function focusNewTerminalWindow(knownIds, deps = {}) {
+  const {
+    waitForWindow = waitForNewWindow,
+    focus = focusTerminalWindow,
+    wait = sleep,
+    waitMs = WINDOW_WAIT_MS,
+    settleMs = PLACEMENT_SETTLE_MS,
+  } = deps;
+  const win = await waitForWindow(knownIds, waitMs);
+  if (!win) return false;
+  await wait(settleMs);
+  return focus(win.id);
+}
+
+/**
+ * Поднять **эту** сессию по её id — ту самую, а не новую в её каталоге.
+ *
+ * Нужна там, где `restoreClaudeSessions` бессильна: та поднимает сессию по
+ * слоту (`state.slots`), то есть только ту, чьё окно эта машина когда-то
+ * видела. Список пикера приезжает от ccfzf со ssh-хоста и знает сессии, чьи
+ * окна стоят на другой машине или закрыты вовсе; попросить открыть такую
+ * здесь — обычное дело, а слота у неё нет и не было. Раньше просьба падала в
+ * ветку «известен каталог» и человек получал пустую `claude -n` вместо своей
+ * сессии, причём молча: у публикации в MQTT ответа нет.
+ *
+ * Резюмировать есть чем: `claudeWt.launch.args` — тот же шаблон
+ * `ccfzf --session {id} --kiosk`, которым восстановление возвращает сессию
+ * после падения машины. Профиль терминала даёт каталог (`profileForTerminal`),
+ * и он приезжает в теле просьбы — собранная в пикере команда `wt.exe` профиля
+ * не знает.
+ *
+ * Геометрии здесь нет и взяться ей неоткуда: слот — это память о прежнем месте
+ * окна, а его-то и нет. Окно встаёт туда, куда его поставит терминал; дальше
+ * его подхватят автопостановщик и демон, который тут же заведёт слот — и
+ * следующий подъём этой сессии пойдёт уже прежней дорогой.
+ *
+ * Зависимости — вторым аргументом: без них проверять пришлось бы настоящим
+ * запуском терминала.
+ */
+async function resumeClaudeSession({ id, cwd = '', terminal } = {}, deps = {}) {
+  const {
+    cfg = getClaudeWtConfig(),
+    spawnProcess = spawn,
+    listWindows = terminalWindows,
+    focusNew = focusNewTerminalWindow,
+  } = deps;
+  const sessionId = typeof id === 'string' ? id.trim() : '';
+  if (!sessionId) return { ok: false, reason: 'id is required' };
+  // Блок `launch`, а не `launchNew`: здесь собирается возобновление сессии, и
+  // старость конфига судится по тому блоку, из которого берётся шаблон.
+  const { chosen, message } = chooseTerminal(terminal, cfg, 'launch');
+  if (message) console.error(message);
+  const { command, args } = planWtLaunch({
+    launch: cfg.launch,
+    vars: { id: sessionId },
+    profile: profileForTerminal(cwd, chosen.name, cfg),
+    terminal: chosen.entry,
+  });
+  if (!command) {
+    return { ok: false, reason: 'claudeWt: no terminal named by the request or the config' };
+  }
+  // Список окон снимается до запуска: после него новое окно уже не отличить.
+  const known = new Set(listWindows().map(w => w.id));
+  try {
+    spawnProcess(command, args, { detached: true, stdio: 'ignore' }).unref();
+  } catch (e) {
+    return { ok: false, action: 'spawn', reason: e.message };
+  }
+  // Хвостом, как у `openClaudeProject`, и `.catch()` по той же причине:
+  // необработанное отклонение роняет процесс, в котором живут экспорт в Home
+  // Assistant и сторож демона.
+  focusNew(known, deps).catch((e) => {
+    console.error(`[claude-wt] failed to focus ${sessionId}: ${e.message}`);
+  });
+  return { ok: true, action: 'resume', sessionId };
 }
 
 /**
@@ -177,4 +272,4 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
   return { ok: true, action: 'spawn', cwd, name: sessionName, sessionName };
 }
 
-export { openClaudeProject, focusSpawnedWindow };
+export { openClaudeProject, resumeClaudeSession, focusSpawnedWindow, focusNewTerminalWindow };

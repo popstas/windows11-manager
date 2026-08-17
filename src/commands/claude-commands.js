@@ -45,7 +45,11 @@ function claudeCommands({ winMan, log, notify, slots }) {
     }
     if (!res.ok) return { error: res.reason };
     const session = res.sessions.find((s) => s.id === id);
-    return session ? { session } : { error: `unknown session ${id}` };
+    // `unknown` отделяет «слота под этот id нет» от «список не прочитался
+    // вовсе»: первое для session-open — обычное дело (сессия с чужой машины),
+    // второе — поломка, о которой надо сказать. Без флага их пришлось бы
+    // различать по тексту сообщения.
+    return session ? { session } : { error: `unknown session ${id}`, unknown: true };
   }
 
   async function restoreOne(id, terminal) {
@@ -124,6 +128,40 @@ function claudeCommands({ winMan, log, notify, slots }) {
       return;
     }
     log(`claude-wt session-open ${cwd}: ${res.action}`);
+  }
+
+  /**
+   * Поднять ту самую сессию по id — дорога для сессий, которых эта машина не
+   * помнит слотом.
+   *
+   * Отличается от `focusOrRestore` тем, что не требует слота: тот поднимает
+   * окно или восстанавливает его на прежнее место, а здесь ни окна, ни места
+   * нет — сессия живёт (или жила) на другой машине. Отчитывается тем же
+   * набором строк, что `openProject`: у публикации в MQTT ответа нет, и
+   * единственный способ узнать исход — журнал и уведомление.
+   */
+  async function resumeSession(id, cwd, terminal) {
+    // Пустых ключей в просьбе нет по тому же правилу, что у `openProject`:
+    // отсутствие каталога и отсутствие имени терминала — это ответы («профиль
+    // брать неоткуда», «дефолт машины»), а не пустые строки.
+    const opts = { id };
+    if (cwd) opts.cwd = cwd;
+    if (terminal) opts.terminal = terminal;
+    let res;
+    try {
+      res = await winMan.resumeClaudeSession(opts);
+    } catch (e) {
+      log(`claude-wt session-open ${id}: ${e.message}`, 'error');
+      notify(`claude-wt: ${e.message}`);
+      return;
+    }
+    if (!res?.ok) {
+      const reason = res?.reason ?? 'не удалось поднять сессию';
+      log(`claude-wt session-open ${id}: ${reason}`, 'warn');
+      notify(`claude-wt: ${reason}`);
+      return;
+    }
+    log(`claude-wt session-open ${id}: ${res.action}`);
   }
 
   async function focus(payload) {
@@ -212,8 +250,16 @@ function claudeCommands({ winMan, log, notify, slots }) {
      *     возвращает **ту же** сессию (`claude --resume {id}`) на её прежнее
      *     место и с тем же профилем — терминал по каталогу дал бы вместо неё
      *     пустую новую;
-     *  2. сессии в слотах нет, но известен каталог — открываем проект;
-     *  3. нет ни того, ни другого — говорим об этом в журнал и человеку.
+     *  2. слота под этот id нет, но id назван — возобновляем сессию по нему
+     *     (`resumeClaudeSession`). Слота нет у сессии, чьё окно стоит на другой
+     *     машине или закрыто вовсе, а такую как раз и просят открыть здесь;
+     *     каталог в этой ветке нужен только ради профиля терминала. Раньше эта
+     *     просьба падала в ветку ниже и человек получал пустую `claude -n`
+     *     вместо своей сессии — молча, потому что ответа у публикации нет;
+     *  3. id не назван, но известен каталог — открываем проект. Откат на
+     *     каталог остался только здесь: при названном id он означал бы «вместо
+     *     твоей сессии вот тебе новая»;
+     *  4. нет ни того, ни другого — говорим об этом в журнал и человеку.
      *     Молчание здесь было бы неотличимо от успеха.
      */
     async 'claude-session-open'(payload) {
@@ -253,11 +299,19 @@ function claudeCommands({ winMan, log, notify, slots }) {
         await focusOrRestore(id, found.session, wantedTerminal);
         return;
       }
+      // Список сессий не прочитался — это поломка, а не «сессии тут нет»;
+      // сказать о ней надо, но не встать: поднять сессию по id можно и без
+      // списка, шаблон возобновления лежит в конфиге.
+      if (found && !found.unknown) log(`claude-wt session-open: ${found.error}`, 'warn');
+      if (id) {
+        await resumeSession(id, dir, wantedTerminal);
+        return;
+      }
       if (dir) {
         await openProject(dir, asked, { terminal: wantedTerminal });
         return;
       }
-      const reason = found?.error ?? 'session-open: нужен id известной сессии или cwd проекта';
+      const reason = 'session-open: нужен id сессии или cwd проекта';
       log(`claude-wt session-open: ${reason}`, 'warn');
       notify(`claude-wt: ${reason}`);
     },
