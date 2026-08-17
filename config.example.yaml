@@ -1,0 +1,223 @@
+# Config file search order:
+# 1. %APPDATA%/windows-mqtt/windows11-manager.config.yaml
+# 2. %APPDATA%/windows11-manager/config.yaml
+# 3. ~/.config/windows11-manager.config.yaml (user home config)
+# 4. ./windows11-manager.config.yaml (current working directory)
+# 5. <repo>/config.yaml (project root fallback)
+#
+# Note: VirtualDesktop11.exe is always resolved from the project root (where
+# the app/source lives), not from config. No virtualDesktopPath option.
+#
+# `x-anchors` — служебный ключ: он живёт только затем, чтобы объявить якоря, и
+# в конфиг, который читает менеджер, не попадает.
+
+x-anchors:
+  # you can define popular placement templates
+  mon1RightHalf: &mon1RightHalf
+    fancyZones:
+      monitor: 1
+      position: 2
+    # x: 'mon1.right'
+    # y: 'mon1.top'
+    # width: 'mon1.halfWidth'
+    # height: 'mon1.height'
+
+debug: false
+
+windows:
+  # place at desktop and position by window title
+  - <<: *mon1RightHalf
+    titleMatch: '^home - '
+    desktop: 1
+
+  # place desktop
+  - titleMatch: npm
+    desktop: 1
+
+  # place all "gmail" windows (by title) except thunderbird (by path)
+  - titleMatch: gmail
+    exclude:
+      pathMatch: thunderbird
+    desktop: 2
+
+  # place and pin window, not apply other rules (single mode)
+  - titleMatch: 'Mozilla Thunderbird$'
+    fancyZones:
+      monitor: 2
+      position: 4
+    pin: true
+    single: true
+
+  # set window coordinates by path
+  - pathMatch: putty.exe
+    x: 1675
+    y: 575
+
+fancyZones:
+  enabled: true
+  path: C:/Users/popstas/AppData/Local/Microsoft/PowerToys/FancyZones  # TODO: detect
+
+monitorsGaps:
+  # Example: reserve 10px at the bottom of monitor 2 for the taskbar
+  2: { position: bottom, gap: 10 }
+
+# Per-monitor pixel insets (e.g. -5 to -10px left/right for bezel correction)
+monitorsOffset: {}
+  # 2: { left: 5, right: 10 }
+
+wallpapers:
+  0: d:/images/wallpapers/desktops/1.png
+  1: d:/images/wallpapers/desktops/2.png
+  2: d:/images/wallpapers/desktops/3.png
+
+mqtt:
+  host: mqtt://mqtt.popstas.ru
+  port: 1883
+  username: popstas
+  password: password
+  topic: home/room/pc/windows
+
+# Переехало из windows-mqtt (config.yml, секция `windows:`): там эти ключи
+# читал модуль `windows`, а его выключает `windows.enabled: false`. Читает их
+# теперь долгоживущая служба `node src/index.js mqtt`. Этот файл сама служба
+# не читает — только образец; ключи ниже, вплоть до `homeassistant`, нужно
+# руками перенести в живой `%APPDATA%\windows-mqtt\windows11-manager.config.yaml`
+# (см. поиск конфига в шапке файла), иначе все они молчат.
+
+# Расставлять окно сразу при его появлении (`placeWindowOnOpen()`): опрос
+# видимых hwnd раз в 1500 мс, дорогой getWindows() — только на новый hwnd.
+placeWindowOnOpen: true
+# Публиковать «Placed windows: N» в топик уведомлений после autoplace.
+notifyPlaced: true
+# Статистика окон в Home Assistant раз в минуту.
+publishStats: true
+# Топик статистики. По умолчанию `${base}/stats`, где base — W11M_MQTT_BASE;
+# на этой машине он задан отдельно и под базой окон не лежит.
+publishStatsTopic: state/pc/windows
+
+# Панель openHASP: сколько строк-слотов claude-wt отдавать в Home Assistant
+# и как часто (session slots, экспорт из createHaExport() в
+# src/claude-wt/ha/export.js). Тоже жило в windows-mqtt (config.yml,
+# `modules.windows.homeassistant`) и тоже не переехало само: без этого
+# блока createHaExport() берёт умолчание в 10 слотов, а кнопок на плате
+# девять — лишняя сущность появится и никогда не найдёт себе кнопки.
+homeassistant:
+  slots: 9
+  # Опрос окон (claudeWtSessions() → getWindows()) недёшев, а панель не
+  # требует секундной точности — интервал сделан редким нарочно. В секундах.
+  interval: 15
+  # Только живые сессии: строк на панели единицы, и каждая, занятая давно
+  # закрытой сессией, вытесняет работающую. Закрытые остаются в пикере —
+  # там места хватает, и восстановить их можно только оттуда.
+  openOnly: true
+  # Порядок слотов на панели: cost | oldest | newest | recent | name.
+  # Настройка своя, от пикера не зависит; по умолчанию `recent` — в девять
+  # слотов должно попасть то, где работа идёт сейчас, а не самое дорогое.
+  # sessionsSort: recent
+
+store:
+  path: ./data/windows-store.json
+
+  # apps which can be stored
+  matchList:
+    - browser.exe
+    - chrome.exe
+    - code.exe
+    - firefox.exe
+    - scalc.exe  # libre office
+    - thunderbird.exe
+    - toggldesktop.exe
+    - slack.exe
+    - telegram.exe
+    - whatsapp.exe
+
+# remember and restore the Windows Terminal window position per Claude Code session
+claudeWt:
+  enabled: true
+  interval: 1000
+  stableTicks: 2
+  sessionsFile: 'V:\.ccfzf.sessions.json'
+  statePath: 'C:\Users\popstas\AppData\Local\windows11-manager\claude-wt.json'
+  # Published for readers on the agent's side: which session has a window
+  # open right now, on which desktop, on which host. ccfzf picks it up to
+  # mark its session list; ccfzf-picker then knows whether that window is on
+  # the machine in front of the human, and which pid to hand the foreground
+  # to. Goes on the share, because the reader lives on the other machine.
+  # Empty (the default) — do not write it at all.
+  windowsFile: 'V:\.ccfzf.sessions.claude-wt.json'
+  desktop: true  # return the window to its virtual desktop too
+  debug: false   # log terminal titles that could not be matched to a session
+  # profile: your_wt_profile  # optional; omit → no -p
+  # projects:
+  #   - name: home
+  #     cwd: /path/to/home
+  #     hotkey: Ctrl+F11
+  #     # Профили — свои у каждого терминала: у wt они есть, у wezterm нет.
+  #     # Старое поле `profile` продолжает работать и значит профиль wt.
+  #     profiles: { wt: Site }
+  # Терминал по умолчанию для этой машины. Просьба пикера может назвать
+  # другой — тогда выигрывает она.
+  terminal: wt
+  # Реестр терминалов: то, что стоит перед ssh-хвостом из launch.args.
+  # Пустой — берутся встроенные (wt и wezterm).
+  terminals:
+    wt: { command: wt.exe, args: ['-w', '-1'], profileArgs: ['-p', '{profile}'] }
+    wezterm: { command: wezterm-gui.exe, args: ['start', '--'] }
+  # Чьи окна считать окнами терминала. Пусто — WindowsTerminal.exe и
+  # wezterm-gui.exe.
+  terminalExecutables: []
+  # launch.command не задан — терминал берётся из реестра выше. Заданный
+  # здесь явный command пометил бы этот конфиг старым, и реестр перестал
+  # бы действовать (см. isLegacyLaunch).
+  launch:
+    args: ['ssh', '-A', 'popstas@pc-virt.popstas.pro', '-t', 'ccfzf --session {id} --kiosk']
+  # Fresh Claude in a project folder (project hotkeys). {cwd} and {name}
+  # are substituted; wrap them in single quotes in the remote command.
+  # Run through an *interactive* shell with the cd inside it: `ssh host cmd`
+  # is non-interactive (zsh reads only .zshenv), so rc-file exports and
+  # chpwd hooks — OTEL_RESOURCE_ATTRIBUTES project= among them — never ran.
+  # cwd/name are positional args: quotes nested inside the inner script do
+  # not survive Windows Terminal's command line on the way to ssh.
+  launchNew:
+    args:
+      - ssh
+      - -A
+      - popstas@pc-virt.popstas.pro
+      - -t
+      - >-
+        exec $SHELL -ic 'cd -- "$1" && exec claude -n "$2"' claude-wt '{cwd}' '{name}'
+  restore: { auto: false, windowTimeoutMs: 30000, launchDelayMs: 2000, settleMs: 500 }
+
+# backup positions for FancyZones
+positionsMap:
+  - from: { monitor: 1, position: 9 }
+    to: { monitor: 1, position: 3 }
+  - from: { monitor: 3, position: 1 }
+    to: { monitor: 2, position: 1 }
+  - from: { monitor: 3, position: 2 }
+    to: { monitor: 2, position: 2 }
+  - from: { monitor: 3, position: 3 }
+    to: { monitor: 2, position: 3 }
+
+# deprecated config options
+panelWidth: 60
+panelHeight: 40
+monitors:  # часто слетает
+  1: 0
+  2: 1
+  3: 2
+monitorsSize:
+  # name is optional, force pin monitor to it's index
+  1: { width: 3440, height: 1440, name: IVM7613 }
+  2: { width: 1440, height: 2560, name: DPL0000 }
+  3: { width: 2560, height: 1080, name: GSM76FA }
+presets:
+  - name: home
+    monitors:
+      1: { width: 3440, height: 1440 }
+      2: { width: 1440, height: 2560 }
+      3: { width: 2560, height: 1080 }
+  - name: office
+    monitors:
+      1: { width: 1920, height: 1080 }
+      2: { width: 1920, height: 1080 }

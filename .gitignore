@@ -1,4 +1,11 @@
 node_modules/
+# Живой конфиг: в нём mqtt.password. README и AGENTS.md велят копировать сюда
+# config.example.yaml, а <репозиторий>/config.yaml и ./windows11-manager.config.yaml —
+# кандидаты поиска (см. src/config-helpers.js), так что оба имени встречаются реально.
+/config.yaml
+/windows11-manager.config.yaml
+# Старые имена JS-конфига: файлы мёртвые, но у всех ещё лежат локально —
+# всплывать в `git status` им незачем.
 config.cjs
 /config.js
 dist/

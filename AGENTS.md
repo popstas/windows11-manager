@@ -14,7 +14,7 @@ This repository contains a Node.js tool for managing window placement on Windows
 - **src/claude-wt/** -- window position memory for Claude Code sessions: remembers where the Windows Terminal window of each session sat and puts it back on re-entry, and can restore the whole layout after a crash. See `docs/specs/2026-07-31-claude-wt-design.md`.
 - **src/helpers/** -- helper types (TypeScript) used by the main code.
 - **examples/** -- small scripts showing how to call the library (e.g. `placeWindows.js`, `swapWindows.js`).
-- **config.example.js** -- copy this file to `config.js` and customise rules for your environment. Without `config.js` the CLI will fail.
+- **config.example.yaml** -- copy this file to `config.yaml` and customise rules for your environment. Without a config file the CLI will fail.
 - **vendor/** -- patched copy of [node-window-manager](https://github.com/sentialx/node-window-manager) used by the project.
 - **VirtualDesktop11.exe** -- third party utility required for switching desktops and pinning windows. Only works on Windows.
 - **tauri-app/** -- Tauri v2 system tray app that wraps the CLI (place windows, store, restore, autoplacer, MQTT). Runs node commands via the `tauri-plugin-shell` shell plugin. All tray menu logic is in `tauri-app/src-tauri/src/lib.rs`.
@@ -24,7 +24,7 @@ This repository contains a Node.js tool for managing window placement on Windows
 - Pure helper extraction: I/O-heavy modules (placement, windows, store, fancyzones, monitors) extract pure logic into `*-helpers.js` files for unit testing. Tests import from helpers to avoid loading node-window-manager
 - Tauri v2 app (`tauri-app/src-tauri/src/lib.rs`) wraps the CLI via `tauri-plugin-shell`
 - `run_node_command()` helper in lib.rs for spawning node commands with logging
-- Config: copy `config.example.js` to `config.js`; settings in Tauri stored via `tauri-plugin-store`
+- Config: copy `config.example.yaml` to `config.yaml` (YAML data, no code); settings in Tauri stored via `tauri-plugin-store`
 
 ## Conventions
 - Tray menu items call node CLI commands via shell plugin, not direct FFI
@@ -60,12 +60,13 @@ The code in `calcFancyZonePos` divides ALL values (monitor coords + zone coords)
 ### Debugging placement
 - `node src/index.js place` — run placement, logs show `from` → `to` for each window
 - `debug: true` in config enables verbose logging to `data/windows11-manager.log`
-- Config loaded from: `~/.config/windows11-manager.config.js` (takes priority) or `config.cjs`
+- Config loaded from, first hit wins: `%APPDATA%\windows-mqtt\windows11-manager.config.yaml`, `%APPDATA%\windows11-manager\config.yaml`, `~/.config/windows11-manager.config.yaml`, `./windows11-manager.config.yaml`, `<repo>/config.yaml`
+- `node src/index.js config-dump [path] [--json]` prints the parsed config, `config-verify <a> <b>` lists the paths where two configs differ (exit 1 on a difference)
 
 ## Key lib exports (src/lib/)
 
 - `src/store.js` exports: `storeWindows`, `restoreWindows`, `openWindows`, `openPaths`, `openStore`, `clearWindows`
-- `src/config.js` exports: `getConfig`, `reloadConfigs`, `watchAppliedLayouts`
+- `src/config.js` exports: `getConfig`, `reloadConfigs`, `watchAppliedLayouts`, `loadConfigFile`, `resolveConfigPath`, `candidates`
 - `src/placement.js` exports: `placeWindows`, `placeWindowByConfig`
 - `src/claude-wt/index.js` exports: `startClaudeWt`, `stopClaudeWt`, `claudeWtStatus`, `getClaudeWtConfig`
 - `src/claude-wt/restore.js` exports: `restoreClaudeSessions`, `maybeRestoreOnStart`
@@ -101,7 +102,7 @@ Window titles are compared in decoration-stripped form (`title-helpers.js`): Cla
 ## Getting started
 
 1. Run `npm install` to install dependencies.
-2. Copy `config.example.js` to `config.js` and adjust the window rules and paths.
+2. Copy `config.example.yaml` to `config.yaml` and adjust the window rules and paths.
 3. Use `node src <command>` or `npm start -- <command>`.
 4. Look into the `examples` directory for additional usage samples.
 
@@ -110,7 +111,7 @@ Run `npm test` to execute the vitest test suite. Tests cover pure helper functio
 ## Next steps
 
 - Study the modules in `src/lib/` -- all main features are implemented there.
-- Explore `config.example.js` to learn how rules are defined and how FancyZones monitors are referenced.
+- Explore `config.example.yaml` to learn how rules are defined and how FancyZones monitors are referenced.
 - Review `examples/*.js` for practical code snippets.
 
 <!-- claudeclaw:managed:start -->
