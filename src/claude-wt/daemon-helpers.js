@@ -2,6 +2,7 @@
 
 import { normalizeProjects } from './project-helpers.js';
 import { upsertSlot } from './state-helpers.js';
+import { normalizeTerminals } from './terminal-helpers.js';
 
 const CLAUDE_WT_DEFAULTS = {
   enabled: true,
@@ -20,10 +21,20 @@ const CLAUDE_WT_DEFAULTS = {
   desktop: true,
   debug: false,
   profile: '',
+  // Какой терминал открывать, когда просьба его не назвала.
+  terminal: 'wt',
+  // Реестр терминалов: имя → чем открывать. Умолчания — в terminal-helpers.js.
+  terminals: {},
+  // Чьи окна считать окнами терминала. Пусто — встроенный список.
+  terminalExecutables: [],
   projects: [],
-  launch: { command: 'wt.exe', args: [] },
+  // Умолчание терминала выражено один раз, реестром (`terminal` →
+  // `TERMINAL_DEFAULTS`); здесь его нет намеренно — назвавший `command` сам
+  // конфиг тем самым помечает себя старым (см. isLegacyLaunch), и реестр в
+  // нём перестаёт действовать.
+  launch: { args: [] },
   // Fresh session in a project folder (project hotkeys). Placeholders: {cwd}, {name}.
-  launchNew: { command: 'wt.exe', args: [] },
+  launchNew: { args: [] },
   restore: { auto: false, windowTimeoutMs: 30000, launchDelayMs: 2000, settleMs: 500 },
   snapshots: { enabled: true, path: '', debounceMs: 60000, keep: 20 },
 };
@@ -34,6 +45,7 @@ function mergeClaudeWtConfig(raw) {
   return {
     ...CLAUDE_WT_DEFAULTS,
     ...cfg,
+    terminals: normalizeTerminals(cfg.terminals),
     projects: normalizeProjects(cfg.projects ?? CLAUDE_WT_DEFAULTS.projects),
     launch: { ...CLAUDE_WT_DEFAULTS.launch, args: [...CLAUDE_WT_DEFAULTS.launch.args], ...(cfg.launch ?? {}) },
     launchNew: {
@@ -43,11 +55,61 @@ function mergeClaudeWtConfig(raw) {
     },
     restore: { ...CLAUDE_WT_DEFAULTS.restore, ...(cfg.restore ?? {}) },
     snapshots: { ...CLAUDE_WT_DEFAULTS.snapshots, ...(cfg.snapshots ?? {}) },
+    terminalExecutables: normalizeTerminalExecutables(cfg.terminalExecutables),
   };
 }
 
-function isTerminalPath(path) {
-  return /(^|[\\/])WindowsTerminal\.exe$/i.test(path ?? '');
+// Терминалы, чьи окна трекер опознаёт по умолчанию. Список, а не регулярка по
+// одному имени: терминалов теперь два, и оба обязаны опознаваться.
+const TERMINAL_EXECUTABLES = ['WindowsTerminal.exe', 'wezterm-gui.exe'];
+
+/**
+ * Список исполняемых терминала из конфига — тем же приёмом, что у соседнего
+ * normalizeTerminals: разбор поэлементный, а не проверка длины целиком.
+ * Мусорная запись (не строка или пустая после `trim`) отбрасывается сама, не
+ * выключая остальные, — иначе одна опечатка в конфиге гасила бы узнавание
+ * обоих встроенных терминалов разом. Пустой список после отсева — то же, что
+ * пустой массив или не-массив: откат на встроенный.
+ */
+function normalizeTerminalExecutables(raw) {
+  if (!Array.isArray(raw)) return [...TERMINAL_EXECUTABLES];
+  const out = raw.filter(v => typeof v === 'string' && v.trim()).map(v => v.trim());
+  return out.length ? out : [...TERMINAL_EXECUTABLES];
+}
+
+/**
+ * Окно терминала — по имени исполняемого файла.
+ *
+ * Список, а не регулярка по одному имени: терминалов теперь два, и оба обязаны
+ * опознаваться. Не опознанное окно трекер терминалом не считает вовсе — сессия
+ * откроется, но пропадёт из списка: ни пометки окна, ни фокуса, ни привязки.
+ * Сверяется имя целиком, поэтому `WindowsTerminalHelper.exe` мимо.
+ */
+function isTerminalPath(path, executables = TERMINAL_EXECUTABLES) {
+  const name = String(path ?? '').split(/[\\/]/).pop() ?? '';
+  if (!name) return false;
+  return executables.some(exe => exe.toLowerCase() === name.toLowerCase());
+}
+
+/**
+ * Как зовут терминал этого окна — имя файла, без каталога.
+ *
+ * Уезжает в опубликованный файл окон (`buildWindowsFile`), а оттуда читателю:
+ * пикер различает по нему терминалы в строке поимённо. Одной пометки «окно
+ * есть» на это не хватает — на этой машине рядом живут Windows Terminal и
+ * WezTerm, и вопрос человека к строке как раз «какой из них».
+ *
+ * Путь целиком не едет намеренно: он называет каталог установки этой машины —
+ * читателю бесполезный, а в чужом списке лишний. Регистр не трогается: имя
+ * файла — то, что написал установщик, и приведи мы его к нижнему, читатель
+ * показал бы `windowsterminal.exe`.
+ *
+ * Разбор пути тот же, что у `isTerminalPath` рядом, и это не совпадение: оба
+ * отвечают на вопрос про имя файла, а не опознанное там окно сюда и не
+ * попадёт.
+ */
+function terminalAppName(path) {
+  return String(path ?? '').split(/[\\/]/).pop() ?? '';
 }
 
 /**
@@ -344,7 +406,9 @@ export {
   FOLLOW_GRACE_MS,
   isStaleTick,
   mergeClaudeWtConfig,
+  TERMINAL_EXECUTABLES,
   isTerminalPath,
+  terminalAppName,
   desktopOnlyActions,
   desktopRelearnTarget,
   desktopFollowTarget,

@@ -158,7 +158,7 @@ function snapshotsFingerprint(snapshots) {
  * Координаты берутся из снимка, а не из текущих слотов, — в этом весь смысл
  * хранить копию.
  */
-function planSnapshotRestore({ snapshot, openSessionIds, sessionIds, launch, resolveProfile }) {
+function planSnapshotRestore({ snapshot, openSessionIds, sessionIds, launch, resolveProfile, terminal }) {
   const open = openSessionIds ?? new Set();
   const wanted = sessionIds?.length ? new Set(sessionIds) : null;
   const resolve = typeof resolveProfile === 'function' ? resolveProfile : () => '';
@@ -170,6 +170,7 @@ function planSnapshotRestore({ snapshot, openSessionIds, sessionIds, launch, res
         launch,
         vars: { id: s.id },
         profile: resolve(s.cwd ?? ''),
+        terminal,
       });
       return {
         sessionId: s.id,

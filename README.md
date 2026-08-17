@@ -84,6 +84,17 @@ distinct dependencies, with different consequences if missing:
 Both are configurable — the launch command is entirely in the config, so a different
 picker or a local (non-ssh) setup only changes `claudeWt.launch`.
 
+Which terminal runs that command is a separate question from what the command is.
+`claudeWt.terminals` is a registry, name → `{command, args, profileArgs}`; `wt` and
+`wezterm` ship built in and can be overridden or added to. `claudeWt.terminal` names
+the machine's default, but a request from ccfzf-picker can name a different terminal —
+its `terminal` field wins, and an unrecognised name falls back to the default with a
+line in stderr. Per-project profiles follow the same idea: `projects[].profiles` maps
+terminal name to profile (`{wt: 'Site'}`), and the old flat `profile` field still works,
+read as the `wt` profile. A config that still sets `launch.command`/`launchNew.command`
+directly is legacy for that block specifically — the registry stays off there, and the
+other block can be migrated independently.
+
 ### Restore
 
 Restore relaunches the remembered sessions one at a time, waits for each window to

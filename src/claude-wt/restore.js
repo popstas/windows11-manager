@@ -13,7 +13,8 @@ import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFollowDesktop } from './restore-helpers.js';
 import { planSnapshotRestore, findSnapshot } from './snapshot-helpers.js';
 import { listSnapshots } from './snapshotter.js';
-import { profileForCwd } from './project-helpers.js';
+import { profileForTerminal } from './project-helpers.js';
+import { chooseTerminal } from './terminal-helpers.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -52,23 +53,30 @@ async function waitForNewWindow(knownIds, timeoutMs, pollMs = 500) {
  * Bring the last layout back, one window at a time. Sequential on purpose: two
  * windows popping up at once cannot be told apart, and identifying them by
  * title is not an option either — the title has not settled yet at that point.
+ *
+ * `terminal` — имя из живой просьбы (Enter в пикере на мёртвой сессии); без
+ * него, как при восстановлении на старте, `resolveTerminal` берёт дефолт
+ * машины — то же самое, что явно передать пустую строку.
  */
-async function restoreClaudeSessions({ force = false, sessionIds } = {}) {
+async function restoreClaudeSessions({ force = false, sessionIds, terminal } = {}) {
   const cfg = getClaudeWtConfig();
   const state = readState(cfg.statePath);
   const { unknown } = resolveRestoreIds({ state, sessionIds });
   for (const id of unknown) console.error(`[claude-wt] no remembered slot for session ${id}`);
-  const resolveProfile = cwd => profileForCwd(cwd, cfg);
-  const fullPlan = planRestore({ state, launch: cfg.launch, sessionIds, resolveProfile });
+  const { chosen, message } = chooseTerminal(terminal, cfg, 'launch');
+  if (message) console.error(message);
+  const command = chosen.entry?.command ?? cfg.launch.command;
+  if (!command) {
+    console.error('[claude-wt] nothing to launch with: neither claudeWt.terminals nor claudeWt.launch.command is set');
+    return { restored: [], skipped: [] };
+  }
+  const resolveProfile = cwd => profileForTerminal(cwd, chosen.name, cfg);
+  const fullPlan = planRestore({ state, launch: cfg.launch, sessionIds, resolveProfile, terminal: chosen.entry });
   const restored = [];
   const skipped = [];
   if (!fullPlan.length) {
     console.log('[claude-wt] nothing to restore');
     return { restored, skipped };
-  }
-  if (!cfg.launch.command) {
-    console.error('[claude-wt] claudeWt.launch.command is not set in config, nothing to run');
-    return { restored, skipped: fullPlan.map(item => item.sessionId) };
   }
   const { alreadyOpen, missing } = partitionPlan(fullPlan, openSessionIds(cfg, state));
   if (alreadyOpen.length && !force) {
@@ -173,18 +181,22 @@ async function restoreSnapshot({ id, sessionIds } = {}) {
     console.error(id && id !== 'last' ? `[claude-wt] no snapshot ${id}` : '[claude-wt] no snapshots yet');
     return { restored, skipped };
   }
-  if (!cfg.launch.command) {
-    console.error('[claude-wt] claudeWt.launch.command is not set in config, nothing to run');
+  const { chosen, message } = chooseTerminal('', cfg, 'launch');
+  if (message) console.error(message);
+  const command = chosen.entry?.command ?? cfg.launch.command;
+  if (!command) {
+    console.error('[claude-wt] nothing to launch with: neither claudeWt.terminals nor claudeWt.launch.command is set');
     return { restored, skipped: snapshot.sessions.map(s => s.id) };
   }
   const state = readState(cfg.statePath);
-  const resolveProfile = cwd => profileForCwd(cwd, cfg);
+  const resolveProfile = cwd => profileForTerminal(cwd, chosen.name, cfg);
   const plan = planSnapshotRestore({
     snapshot,
     openSessionIds: openSessionIds(cfg, state),
     sessionIds,
     launch: cfg.launch,
     resolveProfile,
+    terminal: chosen.entry,
   });
   if (!plan.length) {
     console.log(`[claude-wt] snapshot ${snapshot.id}: every session is already open, nothing to restore`);

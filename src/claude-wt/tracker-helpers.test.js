@@ -24,6 +24,20 @@ describe('trackTitle', () => {
     expect(third.stableTitle).toBe('ccfzf');   // прежний стабильный держится, пока новый не устоялся
   });
 
+  // Поймано на живой машине: снимок терминал называл, а файл окон отдавал
+  // пустую строку — имя терялось ровно здесь, в белом списке полей. Читатель
+  // при этом молчит: пустое поле для него то же, что незнакомый терминал.
+  it('carries the terminal name through to the published window', () => {
+    const t = trackTitle(undefined, win({ app: 'WindowsTerminal.exe' }), 1);
+    expect(t.app).toBe('WindowsTerminal.exe');
+  });
+
+  it('keeps the previous terminal name when the tick did not name one', () => {
+    const before = trackTitle(undefined, win({ app: 'wezterm-gui.exe' }), 1);
+    expect(trackTitle(before, win(), 1).app).toBe('wezterm-gui.exe');
+    expect(trackTitle(undefined, win(), 1).app).toBe('');
+  });
+
   it('carries over sessionId and pendingMove', () => {
     const before = { ...trackTitle(undefined, win(), 1), sessionId: 'a1', pendingMove: { since: 5 } };
     const after = trackTitle(before, win(), 1);

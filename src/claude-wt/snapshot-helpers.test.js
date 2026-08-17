@@ -249,6 +249,20 @@ describe('planSnapshotRestore', () => {
     expect(plan.map(p => p.sessionId)).toEqual(['b']);
   });
 
+  it('план восстановления снимка берёт команду из реестра, а не из launch', () => {
+    // Близнец теста planRestore в restore-helpers.test.js: без этого проброса
+    // restoreSnapshot остался бы на старой дороге, разойдясь с
+    // restoreClaudeSessions, которая уже умеет реестр.
+    const [item] = planSnapshotRestore({
+      snapshot,
+      openSessionIds: new Set(['b', 'c']),
+      launch: { args: ['ssh', 'ccfzf --session {id}'] },
+      terminal: { command: 'wezterm-gui.exe', args: ['start', '--'] },
+    });
+    expect(item.command).toBe('wezterm-gui.exe');
+    expect(item.args).toEqual(['start', '--', 'ssh', 'ccfzf --session a']);
+  });
+
   it('survives an empty snapshot', () => {
     expect(planSnapshotRestore({ snapshot: null, openSessionIds: new Set(), launch })).toEqual([]);
   });

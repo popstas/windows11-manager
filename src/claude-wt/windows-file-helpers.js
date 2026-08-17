@@ -42,6 +42,14 @@ function buildWindowsFile({ windows, slots, host, pid, nowMs, snapshots, project
       desktop: Number.isFinite(slot?.desktop) ? slot.desktop : null,
       lastSeen: Number.isFinite(slot?.lastSeen) ? slot.lastSeen : 0,
       focusedAt: Number.isFinite(slot?.focusedAt) ? slot.focusedAt : 0,
+      // Как зовут терминал. Читатель различает по нему строки поимённо: на
+      // этой машине рядом живут Windows Terminal и WezTerm, а пометка «окно
+      // есть» у них одна и та же. Берётся из окна тика, а не из слота: слот
+      // переживает закрытие окна, и терминал в нём назывался бы у сессии,
+      // которой на экране нет. Пустая строка вместо пропуска — читателю
+      // дешевле, чем проверка на отсутствие ключа, и это то же правило, по
+      // которому рядом лежат нули.
+      app: typeof w.app === 'string' ? w.app : '',
     };
   }
   // Секунды, а не миллисекунды: рядом лежит `lastSeen` в секундах, и читатель —

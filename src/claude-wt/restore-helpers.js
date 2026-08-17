@@ -37,7 +37,7 @@ function resolveRestoreIds({ state, sessionIds }) {
   };
 }
 
-function planRestore({ state, launch, sessionIds, resolveProfile }) {
+function planRestore({ state, launch, sessionIds, resolveProfile, terminal }) {
   const resolve = typeof resolveProfile === 'function' ? resolveProfile : () => '';
   return (resolveRestoreIds({ state, sessionIds }).ids)
     .map(sessionId => ({ sessionId, slot: state.slots?.[sessionId] }))
@@ -47,6 +47,7 @@ function planRestore({ state, launch, sessionIds, resolveProfile }) {
         launch,
         vars: { id: sessionId },
         profile: resolve(slot.cwd ?? ''),
+        terminal,
       });
       return {
         sessionId,

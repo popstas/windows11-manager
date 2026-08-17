@@ -55,34 +55,84 @@ function normalizeProjects(raw) {
     const entry = { name: p.name, cwd: p.cwd };
     if (typeof p.hotkey === 'string' && p.hotkey.trim()) entry.hotkey = p.hotkey.trim();
     if (typeof p.profile === 'string') entry.profile = p.profile.trim();
+    if (p.profiles && typeof p.profiles === 'object') {
+      const profiles = {};
+      // Годна строка сама по себе, а не непустая после trim: `{wt: ''}` —
+      // явный отказ проекта от профиля wt, тот же смысл, что у плоского
+      // `profile: ''`, и отбрасывать его как мусор нельзя — вся карта из
+      // единственной такой записи исчезала бы вместе с самим отказом.
+      for (const [term, value] of Object.entries(p.profiles)) {
+        if (typeof value === 'string') profiles[term] = value.trim();
+      }
+      if (Object.keys(profiles).length) entry.profiles = profiles;
+    }
     out.push(entry);
   }
   return out;
 }
 
-function profileForCwd(cwd, cfg = {}) {
+/**
+ * Профиль для конкретного терминала.
+ *
+ * Профили — понятие не общее: у Windows Terminal они есть, у WezTerm нет
+ * вовсе. Поэтому карта по имени терминала, а не одно поле: одно поле пришлось
+ * бы либо подставлять всем подряд, либо угадывать, кому оно предназначалось.
+ *
+ * Старое плоское `profile` (и у проекта, и глобальное) читается как профиль
+ * `wt`: конфиги написаны до реестра, и все они про Windows Terminal. Читай мы
+ * его как «для любого терминала», первый же запуск WezTerm получил бы
+ * аргументы, которых тот не понимает.
+ *
+ * Решает «назван ли ключ», а не «пусто ли значение»: `profiles: {wt: ''}` и
+ * плоское `profile: ''` — это отказ проекта от профиля, сказанный явно, а не
+ * «профиль не назначен». Судить по непустоте значения значило бы путать эти
+ * два случая — и падать сквозь явный отказ к глобальному `cfg.profile`,
+ * который проект как раз и отключил.
+ */
+function profileForTerminal(cwd, terminalName, cfg = {}) {
+  const name = typeof terminalName === 'string' ? terminalName : '';
   const projects = Array.isArray(cfg.projects) ? cfg.projects : [];
-  const hit = typeof cwd === 'string' && cwd
-    ? projects.find(p => p.cwd === cwd)
-    : undefined;
-  if (hit) return hit.profile ?? (typeof cfg.profile === 'string' ? cfg.profile : '');
+  const hit = typeof cwd === 'string' && cwd ? projects.find(p => p.cwd === cwd) : undefined;
+  if (hit?.profiles && name in hit.profiles) {
+    const mapped = hit.profiles[name];
+    return typeof mapped === 'string' ? mapped : '';
+  }
+  if (name !== 'wt') return '';
+  if (hit && typeof hit.profile === 'string') return hit.profile;
+  if (hit && hit.profiles) return '';
   return typeof cfg.profile === 'string' ? cfg.profile : '';
 }
 
-/** Build a WT spawn descriptor from a launch template. */
-function planWtLaunch({ launch, vars = {}, profile }) {
+/**
+ * Собрать описание запуска.
+ *
+ * Две дороги, и разводит их наличие `terminal`. С реестром команда
+ * складывается: терминал, его аргументы, профильные аргументы, хвост из
+ * `launch.args`. Без реестра — прежняя дорога старого конфига, где терминал и
+ * хвост лежат в `launch` одним списком, а профиль вставляет `applyWtProfile`.
+ *
+ * Подстановка идёт по собранному списку, а не по хвосту: `{profile}` стоит в
+ * профильных аргументах, `{id}`/`{cwd}`/`{name}` — в хвосте, и разделять два
+ * прохода было бы двумя местами, где легко забыть про новую подстановку.
+ */
+function planWtLaunch({ launch, vars = {}, profile, terminal }) {
   const id = vars.id ?? '';
   const safeCwd = escapeForSingleQuoted(vars.cwd ?? '');
   const safeName = escapeForSingleQuoted(vars.name ?? '');
-  const substituted = (launch?.args ?? []).map(arg =>
-    String(arg)
-      .replaceAll('{id}', id)
-      .replaceAll('{cwd}', safeCwd)
-      .replaceAll('{name}', safeName)
-  );
+  const wanted = typeof profile === 'string' ? profile : '';
+  const substitute = arg => String(arg)
+    .replaceAll('{id}', id)
+    .replaceAll('{cwd}', safeCwd)
+    .replaceAll('{name}', safeName)
+    .replaceAll('{profile}', wanted);
+  const tail = launch?.args ?? [];
+  if (!terminal?.command) {
+    return { command: launch?.command, args: applyWtProfile(tail.map(substitute), profile) };
+  }
+  const profileArgs = wanted && Array.isArray(terminal.profileArgs) ? terminal.profileArgs : [];
   return {
-    command: launch?.command,
-    args: applyWtProfile(substituted, profile),
+    command: terminal.command,
+    args: [...(terminal.args ?? []), ...profileArgs, ...tail].map(substitute),
   };
 }
 
@@ -91,8 +141,8 @@ function planWtLaunch({ launch, vars = {}, profile }) {
  * `{cwd}` and `{name}` in each arg are replaced with single-quote-safe text
  * (templates should wrap them in `'…'` themselves).
  */
-function planLaunchNew({ launchNew, cwd, name, profile }) {
-  return planWtLaunch({ launch: launchNew, vars: { cwd, name }, profile });
+function planLaunchNew({ launchNew, cwd, name, profile, terminal }) {
+  return planWtLaunch({ launch: launchNew, vars: { cwd, name }, profile, terminal });
 }
 
 export {
@@ -101,7 +151,7 @@ export {
   pickOpenProjectSession,
   escapeForSingleQuoted,
   normalizeProjects,
-  profileForCwd,
+  profileForTerminal,
   planWtLaunch,
   planLaunchNew,
 };

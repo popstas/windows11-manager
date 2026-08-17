@@ -13,6 +13,7 @@ function deps(overrides = {}) {
       restoreSnapshot: vi.fn().mockResolvedValue({ restored: ['abc'], skipped: [] }),
       restoreClaudeSessions: vi.fn().mockResolvedValue({ restored: ['abc'], skipped: [] }),
       openClaudeProject: vi.fn().mockResolvedValue({ ok: true, action: 'focus' }),
+      resumeClaudeSession: vi.fn().mockResolvedValue({ ok: true, action: 'resume', sessionId: 'zzz' }),
       virtualDesktop: {
         GetWindowDesktopNumber: vi.fn().mockResolvedValue(1),
         GoToDesktopNumber: vi.fn().mockResolvedValue(undefined),
@@ -164,15 +165,58 @@ describe('claude-session-open', () => {
     expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
   });
 
-  it('незнакомую трекеру сессию открывает по каталогу проекта', async () => {
-    // Ради этого случая просьба и заведена: список пикера приезжает от ccfzf
-    // с ssh-хоста и знает сессии, которых на Windows не открывали ни разу.
+  it('сессию без слота поднимает по id, а не заводит чистую в её каталоге', async () => {
+    // Живой случай 2026-08-17: окно сессии стоит на мак мини, слота на Windows
+    // у неё нет и не было. Каталог тут известен, и раньше просьба уходила в
+    // `openClaudeProject` — человек получал пустую `claude -n` вместо своей
+    // сессии, причём молча: ответа у публикации в MQTT нет.
     const d = deps();
     await claudeCommands(d)['claude-session-open'](PROJECT);
-    expect(d.winMan.openClaudeProject).toHaveBeenCalledWith({
-      cwd: '/p/site', name: 'site',
-    });
+    expect(d.winMan.resumeClaudeSession).toHaveBeenCalledWith({ id: 'zzz', cwd: '/p/site' });
+    expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
     expect(d.notify).not.toHaveBeenCalled();
+  });
+
+  it('сессию без слота поднимает и вовсе без каталога — id хватает', async () => {
+    // Каталог в этой ветке нужен только ради профиля терминала: шаблон
+    // возобновления (`ccfzf --session {id}`) знает конфиг, а не просьба.
+    const d = deps();
+    await claudeCommands(d)['claude-session-open']({ id: 'zzz', action: 'terminal' });
+    expect(d.winMan.resumeClaudeSession).toHaveBeenCalledWith({ id: 'zzz' });
+    expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
+  });
+
+  it('отказ возобновления доходит до человека', async () => {
+    const d = deps({
+      winMan: {
+        resumeClaudeSession: vi.fn().mockResolvedValue({ ok: false, reason: 'claudeWt.launch.args is empty' }),
+      },
+    });
+    await claudeCommands(d)['claude-session-open'](PROJECT);
+    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('launch.args'));
+  });
+
+  it('упавшее возобновление тоже слышно, а не только в журнале', async () => {
+    const d = deps({
+      winMan: {
+        resumeClaudeSession: vi.fn().mockRejectedValue(new Error('wt.exe not found')),
+      },
+    });
+    await claudeCommands(d)['claude-session-open'](PROJECT);
+    expect(d.log).toHaveBeenCalledWith(expect.stringContaining('wt.exe not found'), 'error');
+    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('wt.exe not found'));
+  });
+
+  it('нечитаемый список сессий не мешает поднять сессию по id', async () => {
+    // Список — это про слоты; шаблон возобновления лежит в конфиге и от списка
+    // не зависит. Но о поломке надо сказать: молча она неотличима от «сессии
+    // тут нет», а это обычное дело.
+    const d = deps({
+      winMan: { claudeWtSessions: vi.fn().mockReturnValue({ ok: false, reason: 'statePath is not set' }) },
+    });
+    await claudeCommands(d)['claude-session-open'](PROJECT);
+    expect(d.log).toHaveBeenCalledWith(expect.stringContaining('statePath is not set'), 'warn');
+    expect(d.winMan.resumeClaudeSession).toHaveBeenCalledWith({ id: 'zzz', cwd: '/p/site' });
   });
 
   it('открывает проект и без id — по одному каталогу', async () => {
@@ -225,18 +269,21 @@ describe('claude-session-open', () => {
   });
 
   it('имя из тела просьбы побеждает имя каталога', async () => {
+    // Без id: имя осмысленно только там, где заводится новая сессия, а
+    // возобновление называет её id.
     const d = deps();
-    await claudeCommands(d)['claude-session-open']({ ...PROJECT, name: 'мой сайт' });
+    await claudeCommands(d)['claude-session-open']({ action: 'terminal', cwd: '/p/site', name: 'мой сайт' });
     expect(d.winMan.openClaudeProject).toHaveBeenCalledWith({
       cwd: '/p/site', name: 'мой сайт',
     });
   });
 
-  it('ни знакомого id, ни каталога — сообщает человеку, а не молчит', async () => {
+  it('ни id, ни каталога — сообщает человеку, а не молчит', async () => {
     const d = deps();
-    await claudeCommands(d)['claude-session-open']({ id: 'zzz', action: 'terminal' });
-    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('zzz'));
+    await claudeCommands(d)['claude-session-open']({ action: 'terminal' });
+    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('id'));
     expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
+    expect(d.winMan.resumeClaudeSession).not.toHaveBeenCalled();
     expect(d.winMan.focusWindowById).not.toHaveBeenCalled();
   });
 
@@ -252,7 +299,7 @@ describe('claude-session-open', () => {
         openClaudeProject: vi.fn().mockResolvedValue({ ok: false, reason: 'claudeWt.launchNew.command is not set in config' }),
       },
     });
-    await claudeCommands(d)['claude-session-open'](PROJECT);
+    await claudeCommands(d)['claude-session-open']({ action: 'terminal', cwd: '/p/site' });
     expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('launchNew'));
   });
 
@@ -269,5 +316,50 @@ describe('claude-session-open', () => {
     await claudeCommands(d)['claude-session-open']({ id: 'abc' });
     expect(d.winMan.focusWindowById).not.toHaveBeenCalled();
     expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
+  });
+});
+
+describe('claude-session-open: имя терминала', () => {
+  it('terminal из просьбы доезжает до openClaudeProject', async () => {
+    const d = deps({ winMan: { claudeWtSessions: vi.fn().mockReturnValue({ ok: true, sessions: [] }) } });
+    await claudeCommands(d)['claude-session-open']({
+      action: 'terminal', cwd: 'D:\\p\\site', terminal: 'wezterm',
+    });
+    expect(d.winMan.openClaudeProject).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: 'D:\\p\\site', terminal: 'wezterm' }),
+    );
+  });
+
+  it('без поля terminal ключа в просьбе нет вовсе', async () => {
+    const d = deps({ winMan: { claudeWtSessions: vi.fn().mockReturnValue({ ok: true, sessions: [] }) } });
+    await claudeCommands(d)['claude-session-open']({ action: 'terminal', cwd: 'D:\\p\\site' });
+    const [opts] = d.winMan.openClaudeProject.mock.calls[0];
+    expect('terminal' in opts).toBe(false);
+  });
+
+  it('terminal доезжает и до восстановления мёртвой сессии — та же живая дорога Enter\'а', async () => {
+    // Сессия трекеру известна, окна у неё нет — chooseAction отдаёт restore, и
+    // без проброса дальше человек, выбравший WezTerm, получил бы wt молча.
+    const d = deps({ winMan: { getWindowById: vi.fn().mockReturnValue(null) } });
+    await claudeCommands(d)['claude-session-open']({
+      id: 'abc', action: 'terminal', terminal: 'wezterm',
+    });
+    expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledWith({ sessionIds: ['abc'], terminal: 'wezterm' });
+  });
+
+  it('terminal доезжает и до возобновления сессии без слота', async () => {
+    const d = deps();
+    await claudeCommands(d)['claude-session-open']({
+      id: 'zzz', action: 'terminal', cwd: 'D:\\p\\site', terminal: 'wezterm',
+    });
+    expect(d.winMan.resumeClaudeSession).toHaveBeenCalledWith({
+      id: 'zzz', cwd: 'D:\\p\\site', terminal: 'wezterm',
+    });
+  });
+
+  it('без terminal восстановление зовётся как раньше — дефолт машины решает менеджер', async () => {
+    const d = deps({ winMan: { getWindowById: vi.fn().mockReturnValue(null) } });
+    await claudeCommands(d)['claude-session-open']({ id: 'abc', action: 'terminal' });
+    expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledWith({ sessionIds: ['abc'] });
   });
 });

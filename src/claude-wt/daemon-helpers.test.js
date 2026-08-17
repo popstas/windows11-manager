@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   CLAUDE_WT_DEFAULTS,
   mergeClaudeWtConfig,
+  TERMINAL_EXECUTABLES,
   isTerminalPath,
+  terminalAppName,
   desktopOnlyActions,
   layoutFingerprint,
   focusedSessionIds,
@@ -22,11 +24,21 @@ import {
   relearnedDesktop,
   FOLLOW_GRACE_MS,
 } from './daemon-helpers.js';
+import { TERMINAL_DEFAULTS, isLegacyLaunch } from './terminal-helpers.js';
 
 describe('mergeClaudeWtConfig', () => {
   it('returns the defaults for a missing block', () => {
-    expect(mergeClaudeWtConfig(undefined)).toEqual(CLAUDE_WT_DEFAULTS);
-    expect(mergeClaudeWtConfig(null)).toEqual(CLAUDE_WT_DEFAULTS);
+    // terminals и terminalExecutables в CLAUDE_WT_DEFAULTS пусты намеренно
+    // (умолчания живут в terminal-helpers.js и в TERMINAL_EXECUTABLES
+    // соответственно), а слияние всегда разворачивает их до полного списка —
+    // поэтому сверяем не с самим CLAUDE_WT_DEFAULTS, а с ним же плюс реестры.
+    const expected = {
+      ...CLAUDE_WT_DEFAULTS,
+      terminals: TERMINAL_DEFAULTS,
+      terminalExecutables: TERMINAL_EXECUTABLES,
+    };
+    expect(mergeClaudeWtConfig(undefined)).toEqual(expected);
+    expect(mergeClaudeWtConfig(null)).toEqual(expected);
   });
 
   it('overrides only the keys that were given', () => {
@@ -53,7 +65,10 @@ describe('mergeClaudeWtConfig', () => {
       launch: { args: ['-w', '-1'] },
       restore: { windowTimeoutMs: 5000 },
     });
-    expect(cfg.launch).toEqual({ command: 'wt.exe', args: ['-w', '-1'] });
+    // command в умолчаниях launch больше нет: терминал по умолчанию задаёт
+    // реестр (terminal → TERMINAL_DEFAULTS), а появившийся здесь command
+    // как раз и должен помечать конфиг старым (isLegacyLaunch).
+    expect(cfg.launch).toEqual({ args: ['-w', '-1'] });
     expect(cfg.restore).toEqual({
       auto: false, windowTimeoutMs: 5000, launchDelayMs: 2000, settleMs: 500,
     });
@@ -64,7 +79,6 @@ describe('mergeClaudeWtConfig', () => {
       launchNew: { args: ['ssh', '-t', "cd '{cwd}' && claude -n '{name}'"] },
     });
     expect(cfg.launchNew).toEqual({
-      command: 'wt.exe',
       args: ['ssh', '-t', "cd '{cwd}' && claude -n '{name}'"],
     });
   });
@@ -79,6 +93,71 @@ describe('mergeClaudeWtConfig', () => {
   });
 });
 
+describe('terminalExecutables в mergeClaudeWtConfig', () => {
+  it('мусор в списке отбрасывается поэлементно, годные имена выживают', () => {
+    // Ровно та брешь, из-за которой одна опечатка в конфиге гасила узнавание
+    // обоих встроенных терминалов: проверка была по length списка целиком,
+    // а не по каждому элементу.
+    const cfg = mergeClaudeWtConfig({ terminalExecutables: [null, 'alacritty.exe', 123, {}, '  '] });
+    expect(cfg.terminalExecutables).toEqual(['alacritty.exe']);
+  });
+
+  it('список из одного мусора откатывается на встроенный', () => {
+    const cfg = mergeClaudeWtConfig({ terminalExecutables: [null, 123, {}] });
+    expect(cfg.terminalExecutables).toEqual(TERMINAL_EXECUTABLES);
+  });
+
+  it('обрезает пробелы вокруг годного имени', () => {
+    const cfg = mergeClaudeWtConfig({ terminalExecutables: [' alacritty.exe '] });
+    expect(cfg.terminalExecutables).toEqual(['alacritty.exe']);
+  });
+});
+
+describe('умолчания реестра терминалов', () => {
+  it('пустой конфиг даёт оба встроенных терминала и дефолт wt', () => {
+    const cfg = mergeClaudeWtConfig({});
+    expect(cfg.terminal).toBe('wt');
+    expect(Object.keys(cfg.terminals).sort()).toEqual(['wezterm', 'wt']);
+  });
+
+  // Сторож круга правок: isLegacyLaunch проверяется не на чистом объекте, а
+  // на результате настоящего слияния — именно оно и было мёртвой веткой,
+  // пока CLAUDE_WT_DEFAULTS.launch нёс command: 'wt.exe' по умолчанию.
+  it('конфиг новой формы после слияния не считается старым', () => {
+    const cfg = mergeClaudeWtConfig({
+      terminal: 'wezterm',
+      terminals: { wezterm: { command: 'wezterm-gui.exe', args: ['start', '--'] } },
+      launch: { args: ['ssh', '-t', 'ccfzf --session {id} --kiosk'] },
+    });
+    expect(isLegacyLaunch(cfg)).toBe(false);
+  });
+
+  it('конфиг, назвавший launch.command явно, после слияния считается старым', () => {
+    const cfg = mergeClaudeWtConfig({
+      launch: { command: 'wt.exe', args: ['-w', '-1', 'ssh', '-t', 'ccfzf --session {id} --kiosk'] },
+    });
+    expect(isLegacyLaunch(cfg)).toBe(true);
+  });
+});
+
+describe('terminalAppName', () => {
+  // Имя уезжает читателю в файле окон: пикер по нему различает терминалы в
+  // строке поимённо, а путь установки этой машины ему бесполезен.
+  it('оставляет имя файла и выбрасывает каталог, хоть с / хоть с \\', () => {
+    expect(terminalAppName('C:\\Program Files\\WezTerm\\wezterm-gui.exe')).toBe('wezterm-gui.exe');
+    expect(terminalAppName('c:/x/WindowsTerminal.exe')).toBe('WindowsTerminal.exe');
+  });
+
+  it('регистр не трогает — имя пишет установщик, а не мы', () => {
+    expect(terminalAppName('C:\\x\\WindowsTerminal.exe')).toBe('WindowsTerminal.exe');
+  });
+
+  it('пустой путь стоит пустой строки, а не падения', () => {
+    expect(terminalAppName('')).toBe('');
+    expect(terminalAppName(undefined)).toBe('');
+  });
+});
+
 describe('isTerminalPath', () => {
   it('matches Windows Terminal', () => {
     expect(isTerminalPath('C:\\Program Files\\WindowsApps\\wt\\WindowsTerminal.exe')).toBe(true);
@@ -90,6 +169,23 @@ describe('isTerminalPath', () => {
     expect(isTerminalPath('C:\\x\\WindowsTerminalHelper.exe')).toBe(false);
     expect(isTerminalPath('')).toBe(false);
     expect(isTerminalPath(undefined)).toBe(false);
+  });
+
+  it('окно WezTerm — тоже терминал', () => {
+    expect(isTerminalPath('C:\\Program Files\\WezTerm\\wezterm-gui.exe')).toBe(true);
+  });
+
+  it('список исполняемых можно переопределить конфигом', () => {
+    expect(isTerminalPath('C:\\x\\alacritty.exe', ['alacritty.exe'])).toBe(true);
+    expect(isTerminalPath('C:\\x\\WindowsTerminal.exe', ['alacritty.exe'])).toBe(false);
+  });
+
+  it('почти совпавшее имя терминалом не считается', () => {
+    expect(isTerminalPath('C:\\x\\wezterm-gui-helper.exe')).toBe(false);
+  });
+
+  it('регистр имени и смешанные разделители пути роли не играют', () => {
+    expect(isTerminalPath('c:/Program Files\\WezTerm/WEZTERM-GUI.EXE')).toBe(true);
   });
 });
 
