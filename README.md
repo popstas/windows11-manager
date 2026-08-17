@@ -24,8 +24,49 @@ I use it with:
 
 
 ## Install
-- Copy [config.example.js](config.example.js) to config.js
+- Copy [config.example.yaml](config.example.yaml) to `config.yaml`
 - See [examples](examples)
+
+## Config
+
+The config is a YAML file — `.yaml`, never `.yml`. It is data only: no code runs from
+it. Searched in five places, first hit wins:
+
+1. `%APPDATA%\windows-mqtt\windows11-manager.config.yaml`
+2. `%APPDATA%\windows11-manager\config.yaml`
+3. `~/.config/windows11-manager.config.yaml`
+4. `./windows11-manager.config.yaml` (current working directory)
+5. `<repo>/config.yaml` (project root fallback)
+
+Repeated fragments — placement templates and the like — go under the top-level
+`x-anchors` key as YAML anchors and are pulled in with the merge key `<<`. The key is
+stripped after parsing, so nothing under it reaches the manager: it exists only to
+carry the anchors. Declaring them there rather than on the first rule that needs them
+keeps the rules independent — otherwise the first rule is also the definition and
+cannot be moved or deleted without silently breaking its neighbours.
+
+```yaml
+x-anchors:
+  mon1RightThird: &mon1RightThird
+    fancyZones: { monitor: 1, position: 3 }
+
+windows:
+  - <<: *mon1RightThird
+    titleMatch: Telegram
+```
+
+Two commands help while writing or moving a config:
+
+```bash
+node src/index.js config-dump [path] [--json]   # print the parsed config (anchors resolved)
+node src/index.js config-verify <a> <b>         # compare two configs, list the differing paths
+```
+
+`config-dump` without a path dumps whichever config the search order picked — the
+answer to "which file is actually being read, and what did it turn into".
+`config-verify` takes a `.yaml` config or a `.json` snapshot on either side and prints
+each mismatch as a path; it exits with code 1 when anything differs, so a rewritten
+config can be proved equivalent to the old one before it is deployed.
 
 ## Claude Windows Terminals sessions restore
 
@@ -117,7 +158,7 @@ The same restore is reachable from `src/lib` (`restoreClaudeSessions()`), over H
 
 ### Config
 
-See the `claudeWt` block in [config.example.cjs](config.example.cjs). `statePath` is
+See the `claudeWt` block in [config.example.yaml](config.example.yaml). `statePath` is
 required — the daemon refuses to start without it. Crash restore is manual by default:
 on start the daemon reports that sessions were open before the reboot but launches
 nothing unless `claudeWt.restore.auto` is set, because bringing up a handful of ssh
