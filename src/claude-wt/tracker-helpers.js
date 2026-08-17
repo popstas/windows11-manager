@@ -20,6 +20,12 @@ function trackTitle(before, win, stableTicks) {
     sessionId: before?.sessionId ?? null,
     bounds: win.bounds,
     pendingMove: before?.pendingMove ?? null,
+    // Имя терминала едет дальше вместе с окном: `publishWindows` берёт его из
+    // `nextWindows`, а те собираются здесь. Без этой строки поле терялось
+    // ровно тут — снимок его называл, файл отдавал пустую строку, и читатель
+    // молча оставлял прежний глиф. Ловится такое только на живой машине:
+    // пустое поле от «терминал незнакомый» не отличить.
+    app: win.app ?? before?.app ?? '',
   };
 }
 
