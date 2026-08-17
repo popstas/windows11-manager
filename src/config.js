@@ -2,10 +2,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
+import { configCandidates, formatMissingConfig, parseConfigText, shouldReload } from './config-helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const require = createRequire(import.meta.url);
 
 // OS settings base dir: %APPDATA% on Windows, ~/Library/Application Support on
 // macOS, $XDG_CONFIG_HOME (or ~/.config) on Linux.
@@ -19,95 +18,67 @@ function appDataDir() {
   return process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
 }
 
+function candidates() {
+  return configCandidates({
+    appDataDir: appDataDir(),
+    homedir: os.homedir(),
+    cwd: process.cwd(),
+    repoDir: path.resolve(__dirname, '..'),
+  });
+}
+
+/** Первый существующий кандидат; пусто — конфига нет нигде. */
 function resolveConfigPath() {
-  const candidates = [
-    path.join(appDataDir(), 'windows-mqtt', 'windows11-manager.config.js'),
-    path.join(appDataDir(), 'windows11-manager', 'config.js'),
-    path.join(os.homedir(), '.config', 'windows11-manager.config.js'),
-    path.join(process.cwd(), 'windows11-manager.config.js'),
-    path.resolve(__dirname, '../config.cjs'),
-  ];
-  for (const candidate of candidates) {
+  for (const candidate of candidates()) {
     if (fs.existsSync(candidate)) return candidate;
   }
-  return path.resolve(__dirname, '../config.cjs');
+  return '';
+}
+
+/** Прочитать названный файл. Без `_configPath`: его добавляет только getConfig. */
+function loadConfigFile(filePath) {
+  return parseConfigText(fs.readFileSync(filePath, 'utf8'), filePath);
 }
 
 let configPath = resolveConfigPath();
 
-// Разобранный модуль конфига. Раньше getConfig() сбрасывал кэш require на
-// каждый вызов, то есть заново читал и компилировал файл — а зовут его из
-// горячих циклов: тик демона claude-wt ходит сюда раз в секунду. Замерено на
-// живом конфиге (16 КБ): 7200 вызовов подряд — 234 МБ RSS и 189 МБ heapTotal,
-// 0.32 мс на вызов; с кэшем по mtime — 49 МБ и 9 МБ, 0.13 мс. Основной вес —
-// не сами объекты, а скомпилированный код, который оседает в code space и
-// тянет за собой всю кучу: демон за четыре часа набирал 300 МБ.
-//
-// Перечитывание осталось: конфиг правят на живой машине и ждут, что изменения
-// подхватятся без перезапуска. Сторожем работает mtime — файл локальный
-// (%APPDATA%), statSync на нём стоит микросекунды. Оговорка про SMB
-// (см. sessions.js) сюда не относится: там сетевой диск, здесь свой.
-let cachedModule = null;
-let cachedModulePath = '';
-let cachedModuleMtimeMs = null;
-// structuredClone бросает DataCloneError на функциях. В конфигах их сейчас нет,
-// но появиться могут, и тогда возвращаемся к прежнему поведению навсегда, а не
-// платим исключением на каждый вызов.
-let cloneable = true;
+// Разобранный конфиг живёт до смены mtime — почему, см. shouldReload().
+let cached = null;
+let cachedPath = '';
+let cachedMtimeMs = null;
 
-function configMtimeMs() {
+function configMtimeMs(filePath) {
   try {
-    return fs.statSync(configPath).mtimeMs;
+    return fs.statSync(filePath).mtimeMs;
   } catch {
-    // Файла нет — пусть require упадёт ровно так же, как падал раньше.
     return null;
   }
 }
 
-/** Свежий require мимо кэша: и первое чтение, и откат для неклонируемого конфига. */
-function requireConfigModule() {
-  delete require.cache[require.resolve(configPath)];
-  const loaded = require(configPath);
-  // require(esm) returns a frozen namespace: unwrap default so _configPath can
-  // be attached regardless of the config's module format
-  return loaded && loaded.default ? loaded.default : loaded;
-}
-
 function getConfig() {
-  if (!cloneable) {
-    // Свежий граф объектов на каждый вызов — как было до кэша.
-    const config = { ...requireConfigModule() };
-    config._configPath = configPath;
-    return config;
+  if (!configPath) throw new Error(formatMissingConfig(candidates()));
+  const mtimeMs = configMtimeMs(configPath);
+  if (shouldReload({ cachedPath, cachedMtimeMs, filePath: configPath, mtimeMs })) {
+    cached = loadConfigFile(configPath);
+    cachedPath = configPath;
+    cachedMtimeMs = mtimeMs;
   }
-  const mtimeMs = configMtimeMs();
-  if (!cachedModule || cachedModulePath !== configPath || mtimeMs === null
-      || cachedModuleMtimeMs !== mtimeMs) {
-    cachedModule = requireConfigModule();
-    cachedModulePath = configPath;
-    cachedModuleMtimeMs = mtimeMs;
-  }
-  let config;
-  try {
-    // Копия обязана быть глубокой: вызывающие пишут прямо в объекты конфига —
-    // placement.js ставит rule.pos правилам из config.windows, findWindows()
-    // дописывает им titleMatch. Со свежим require каждый вызов получал свой
-    // граф, и пометки умирали вместе с ним; общий кэшированный объект копил бы
-    // их между вызовами.
-    config = structuredClone(cachedModule);
-  } catch (e) {
-    console.error(`Config is not cloneable, falling back to re-require: ${e.message}`);
-    cloneable = false;
-    cachedModule = null;
-    config = { ...requireConfigModule() };
-  }
+  // Копия обязана быть глубокой: вызывающие пишут прямо в объекты конфига —
+  // placement.js ставит rule.pos правилам из config.windows, findWindows()
+  // дописывает им titleMatch. Общий кэшированный объект копил бы эти пометки
+  // между вызовами. Отката на «неклонируемый конфиг» больше нет: функций в
+  // YAML не бывает, и structuredClone на этих данных не спотыкается.
+  const config = structuredClone(cached);
   config._configPath = configPath;
   return config;
 }
 
 function reloadConfigs() {
   // Явный сброс: «перечитать» должно означать перечитать, а не «сверить mtime».
-  cachedModule = null;
+  cached = null;
+  cachedPath = '';
+  // Файл могли положить в другое место (или впервые) уже после старта процесса.
+  configPath = resolveConfigPath();
   const config = getConfig();
   if (config.debug) console.log('Configuration reloaded');
   return config;
@@ -144,4 +115,4 @@ function watchAppliedLayouts() {
   timer.unref();
 }
 
-export { getConfig, reloadConfigs, watchAppliedLayouts };
+export { getConfig, reloadConfigs, watchAppliedLayouts, loadConfigFile, resolveConfigPath };
