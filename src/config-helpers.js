@@ -1,5 +1,6 @@
 /** Чистые помощники конфига: разбор, поиск файла, сравнение. Без I/O. */
 
+import path from 'node:path';
 import { parse } from 'yaml';
 
 /**
@@ -46,4 +47,40 @@ function parseConfigText(text, filePath = '') {
   return config;
 }
 
-export { ANCHORS_KEY, parseConfigText };
+/**
+ * Пять мест, где ищется конфиг, в порядке приоритета. Список тот же, что был у
+ * JS-конфига, — меняется только расширение.
+ */
+function configCandidates({ appDataDir, homedir, cwd, repoDir }) {
+  return [
+    path.join(appDataDir, 'windows-mqtt', 'windows11-manager.config.yaml'),
+    path.join(appDataDir, 'windows11-manager', 'config.yaml'),
+    path.join(homedir, '.config', 'windows11-manager.config.yaml'),
+    path.join(cwd, 'windows11-manager.config.yaml'),
+    path.join(repoDir, 'config.yaml'),
+  ];
+}
+
+/**
+ * Пора ли перечитывать файл.
+ *
+ * Кэш нужен не из аккуратности: `getConfig()` зовут из тика демона claude-wt
+ * раз в секунду, и без кэша это 234 МБ RSS против 49 МБ (замерено на живом
+ * конфиге). Сторож — mtime: конфиг правят на живой машине и ждут, что правка
+ * подхватится без перезапуска.
+ *
+ * Неизвестный mtime считается поводом перечитать: `statSync` не ответил, а
+ * молчаливая выдача старого конфига хуже лишнего чтения локального файла.
+ */
+function shouldReload({ cachedPath, cachedMtimeMs, filePath, mtimeMs }) {
+  if (!cachedPath || cachedPath !== filePath) return true;
+  if (mtimeMs === null || mtimeMs === undefined) return true;
+  return cachedMtimeMs !== mtimeMs;
+}
+
+/** Отказ, который называет, где искали: иначе «конфиг не найден» нечем чинить. */
+function formatMissingConfig(candidates) {
+  return ['Конфиг не найден. Просмотрены:', ...candidates.map(c => `  ${c}`)].join('\n');
+}
+
+export { ANCHORS_KEY, parseConfigText, configCandidates, shouldReload, formatMissingConfig };
