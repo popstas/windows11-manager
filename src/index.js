@@ -287,7 +287,16 @@ async function start() {
     .option('--json', 'вывести JSON вместо YAML')
     .action(async (file, options) => {
       const { dumpConfig } = await import('./commands/config-commands.js');
-      console.log(dumpConfig(file, { json: options.json }));
+      // Диагностическая команда обязана объяснять отказ словами: сырой стек
+      // ловит тот, у кого выкатка уже выглядит сломанной.
+      let out;
+      try {
+        out = dumpConfig(file, { json: options.json });
+      } catch (e) {
+        console.error(e.message);
+        process.exit(1);
+      }
+      console.log(out);
       process.exit(0);
     });
 
@@ -298,9 +307,15 @@ async function start() {
     .argument('<b>', 'второй файл')
     .action(async (a, b) => {
       const { verifyConfigs } = await import('./commands/config-commands.js');
-      const { ok, lines } = verifyConfigs(a, b);
-      for (const line of lines) console.log(line);
-      process.exit(ok ? 0 : 1);
+      let result;
+      try {
+        result = verifyConfigs(a, b);
+      } catch (e) {
+        console.error(e.message);
+        process.exit(1);
+      }
+      for (const line of result.lines) console.log(line);
+      process.exit(result.ok ? 0 : 1);
     });
 
   program.allowExcessArguments();

@@ -18,6 +18,7 @@ function appDataDir() {
   return process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
 }
 
+/** Места поиска для этой машины. Экспортируется ради отказа, который их перечисляет. */
 function candidates() {
   return configCandidates({
     appDataDir: appDataDir(),
@@ -58,7 +59,10 @@ function configMtimeMs(filePath) {
 function getConfig() {
   if (!configPath) throw new Error(formatMissingConfig(candidates()));
   const mtimeMs = configMtimeMs(configPath);
-  if (shouldReload({ cachedPath, cachedMtimeMs, filePath: configPath, mtimeMs })) {
+  // `!cached` — не перестраховка: shouldReload() сверяет путь и mtime и ничего не
+  // знает про то, наполнен ли кэш. Сбросьте однажды только `cached`, не тронув
+  // `cachedPath`, — и ниже будет structuredClone(null) с TypeError на присвоении.
+  if (!cached || shouldReload({ cachedPath, cachedMtimeMs, filePath: configPath, mtimeMs })) {
     cached = loadConfigFile(configPath);
     cachedPath = configPath;
     cachedMtimeMs = mtimeMs;
@@ -95,24 +99,41 @@ function watchAppliedLayouts() {
   // без явного process.exit() (`place`) не завершались: работа сделана за
   // 300 мс, а процесс висел часами по 60 МБ, просыпаясь раз в минуту. Трей
   // ждёт такого ребёнка через .output(), так что копился ещё и он.
+  // Отказ конфига переживается, а не уносит процесс: ватчер поднимается для
+  // любой команды, включая долгоживущую службу `mqtt`, и одна опечатка в YAML
+  // на живой машине убивала её через минуту. Home Assistant этого не замечает:
+  // availability: offline публикует только штатный stop(), а `online` retained.
+  const onConfigFailure = (e) => {
+    console.error(`[config] ватчер applied-layouts не смог прочитать конфиг: ${e.message}`);
+  };
   const timer = setInterval(() => {
-    const config = getConfig();
-    if (!config.fancyZones?.path) return;
-    const file = `${config.fancyZones.path}/applied-layouts.json`;
-    fs.stat(file, (err, stats) => {
-      if (err) return;
-      const mtime = stats.mtimeMs;
-      if (!lastAppliedLayoutsMtime) {
-        lastAppliedLayoutsMtime = mtime;
-        return;
-      }
-      if (mtime !== lastAppliedLayoutsMtime) {
-        lastAppliedLayoutsMtime = mtime;
-        reloadConfigs();
-      }
-    });
+    try {
+      const config = getConfig();
+      if (!config.fancyZones?.path) return;
+      const file = `${config.fancyZones.path}/applied-layouts.json`;
+      fs.stat(file, (err, stats) => {
+        if (err) return;
+        const mtime = stats.mtimeMs;
+        if (!lastAppliedLayoutsMtime) {
+          lastAppliedLayoutsMtime = mtime;
+          return;
+        }
+        if (mtime !== lastAppliedLayoutsMtime) {
+          lastAppliedLayoutsMtime = mtime;
+          // Тот же охранник и здесь: этот вызов уже в обратном вызове fs.stat,
+          // и его исключение до catch снаружи не долетит.
+          try {
+            reloadConfigs();
+          } catch (e) {
+            onConfigFailure(e);
+          }
+        }
+      });
+    } catch (e) {
+      onConfigFailure(e);
+    }
   }, 60000);
   timer.unref();
 }
 
-export { getConfig, reloadConfigs, watchAppliedLayouts, loadConfigFile, resolveConfigPath };
+export { getConfig, reloadConfigs, watchAppliedLayouts, loadConfigFile, resolveConfigPath, candidates };
