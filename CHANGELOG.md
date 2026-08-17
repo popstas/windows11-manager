@@ -32,6 +32,36 @@
 
 
 
+## [3.1.0](https://github.com/popstas/windows11-manager/compare/windows11-manager-v3.0.0...windows11-manager-v3.1.0) (2026-08-17)
+
+
+### Features
+
+* **claude-wt:** команда собирается из реестра терминалов сложением ([3a7cff7](https://github.com/popstas/windows11-manager/commit/3a7cff7e8a348ffd062e4b3e3c7a3dc84d21d3c3))
+* **claude-wt:** окном терминала считается и WezTerm ([a83b052](https://github.com/popstas/windows11-manager/commit/a83b052ccf941032819c1255fcbbb37d0de53559))
+* **claude-wt:** профиль проекта — карта по имени терминала ([0449e83](https://github.com/popstas/windows11-manager/commit/0449e8300437e7b1869e681c6937dad7398e32ad))
+* **claude-wt:** реестр терминалов — имя, команда и профильные аргументы ([aae3ea7](https://github.com/popstas/windows11-manager/commit/aae3ea7bdc66977e3589fa489822efa014426b72))
+* **claude-wt:** реестр терминалов и подъём сессии без слота ([d64b191](https://github.com/popstas/windows11-manager/commit/d64b1916141dde4617e6d4b541b9defd8b0f0d4c))
+* **claude-wt:** терминал из просьбы главнее дефолта машины ([4078ca7](https://github.com/popstas/windows11-manager/commit/4078ca7ad105a9dc339f577c1abf1a22110b7a2a))
+* **claude-wt:** файл окон называет терминал каждого окна ([d92aeae](https://github.com/popstas/windows11-manager/commit/d92aeaedff9e05d2a114357c91760d862eeb9de3))
+* **tray:** пункт меню называет время сборки ([f1f6e56](https://github.com/popstas/windows11-manager/commit/f1f6e56e401eb7490367893c4246f60a2ab06646))
+
+
+### Bug Fixes
+
+* **claude-wt:** имя терминала не терялось по дороге к файлу окон ([87161df](https://github.com/popstas/windows11-manager/commit/87161dfafde73d6a88b981400260813c4e24397f))
+* **claude-wt:** испорченные terminalExecutables не гасят встроенный список ([965694a](https://github.com/popstas/windows11-manager/commit/965694ab7ef50362996ae36195d3306bcc63f826))
+* **claude-wt:** развилка терминала — общий помощник, лог отката, честная старость блока ([4e12f07](https://github.com/popstas/windows11-manager/commit/4e12f0703339e870fddb2d7e56a5af2f808ee326))
+* **claude-wt:** регрессия пустого профиля, терминал в живом восстановлении, англ. текст ошибок ([9654071](https://github.com/popstas/windows11-manager/commit/9654071a1ee08baed5d0b976e2e9f1faa8657af3))
+* **claude-wt:** сессия без слота поднимается сама, а не подменяется чистой ([07655ba](https://github.com/popstas/windows11-manager/commit/07655ba05a722c2560a399adf9c30d7cad0d1dff))
+* **claude-wt:** убрать command из умолчаний launch — реестр терминалов был недостижим ([bb5a849](https://github.com/popstas/windows11-manager/commit/bb5a849f562064379a2fde7c64b6c324a11589e2))
+* **tray:** подпись версии начинается с версии, как в соседних треях ([082f442](https://github.com/popstas/windows11-manager/commit/082f442a289f16e746e24af36e513ae8d20456e7))
+
+
+### Performance Improvements
+
+* **build:** incremental в профиле release — 78,7 с → 13,3 с ([6a26dcc](https://github.com/popstas/windows11-manager/commit/6a26dcc3850498eeeb7036d8bf5678fa4eef2e6a))
+
 ## [3.0.0](https://github.com/popstas/windows11-manager/compare/windows11-manager-v2.1.0...windows11-manager-v3.0.0) (2026-08-15)
 
 
