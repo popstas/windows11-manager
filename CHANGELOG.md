@@ -32,6 +32,30 @@
 
 
 
+## [4.0.0](https://github.com/popstas/windows11-manager/compare/windows11-manager-v3.1.0...windows11-manager-v4.0.0) (2026-08-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **config:** пример и документация на YAML, config.example.cjs удалён
+
+### Features
+
+* **config:** загрузчик читает YAML, require и его кэш вырезаны ([1923eab](https://github.com/popstas/windows11-manager/commit/1923eab7209c72ed11f59b7b023d0474ff76a9d5))
+* **config:** кандидаты путей .yaml и правило перечитывания ([07be0f5](https://github.com/popstas/windows11-manager/commit/07be0f573a19469b83a6a892bb02e08c21946266))
+* **config:** команды config-dump и config-verify ([6e983d9](https://github.com/popstas/windows11-manager/commit/6e983d9d1fbe38bde87f4e46791fc59bb831cd43))
+* **config:** пример и документация на YAML, config.example.cjs удалён ([f885432](https://github.com/popstas/windows11-manager/commit/f8854323053f7682673f2b565fabab54d4e894ce))
+* **config:** разбор YAML с якорями и merge-ключами ([3658f9e](https://github.com/popstas/windows11-manager/commit/3658f9e390b9c00ba05a04683bb4246e7078b2b3))
+* **config:** сравнение двух конфигов путями расхождений ([ad58aef](https://github.com/popstas/windows11-manager/commit/ad58aef160c38aac3a0828642cbeaf7bd088b69b))
+
+
+### Bug Fixes
+
+* **ci:** сборка релиза ловит теги release-please, а не только `v*` ([f8a44a1](https://github.com/popstas/windows11-manager/commit/f8a44a1dda45d623cc2f414ab31495858dba2f56))
+* **ci:** сборка релиза ловит теги release-please, а не только `v*` ([de7eb2e](https://github.com/popstas/windows11-manager/commit/de7eb2e04bb19b9254aec43293f6a960b778ebcc))
+* **config:** диагностика объясняет отказ, а битый YAML не убивает службу ([ac04bf2](https://github.com/popstas/windows11-manager/commit/ac04bf2fe69e8289cd89bc2ec50450fc44ff4552))
+* **gitignore:** живой config.yaml больше не виден git ([828b137](https://github.com/popstas/windows11-manager/commit/828b1375f87be255aa9a4ab7a9c6ef6498b4f9df))
+
 ## [3.1.0](https://github.com/popstas/windows11-manager/compare/windows11-manager-v3.0.0...windows11-manager-v3.1.0) (2026-08-17)
 
 
