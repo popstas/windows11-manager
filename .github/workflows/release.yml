@@ -2,7 +2,16 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    # Два образца, и второй — не украшение: release-please ставит теги с
+    # префиксом компонента (`windows11-manager-v3.1.0`), а под `v*` такой не
+    # подходит. С переезда на release-please эта сборка не запускалась ни разу,
+    # и у релизов 2.1.0, 3.0.0 и 3.1.0 не оказалось ни одного .exe — молча:
+    # workflow, который не сработал, в релизе ничем себя не проявляет.
+    # Старый образец оставлен ради тегов, проставленных до release-please.
+    tags: ['v*', 'windows11-manager-v*']
+  # Ради тега, который уже стоит: пересобрать релиз, не переставляя тег
+  # (`gh workflow run release.yml --ref windows11-manager-v3.1.0`).
+  workflow_dispatch:
 
 permissions:
   contents: write
