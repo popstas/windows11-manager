@@ -280,6 +280,29 @@ async function start() {
       process.exit(res.ok ? 0 : 1);
     });
 
+  program
+    .command('config-dump')
+    .description('показать разобранный конфиг: по умолчанию YAML, при --json — JSON')
+    .argument('[path]', 'путь к конфигу; по умолчанию — тот, что выбрал бы менеджер')
+    .option('--json', 'вывести JSON вместо YAML')
+    .action(async (file, options) => {
+      const { dumpConfig } = await import('./commands/config-commands.js');
+      console.log(dumpConfig(file, { json: options.json }));
+      process.exit(0);
+    });
+
+  program
+    .command('config-verify')
+    .description('сравнить два конфига (.json-снимок или .yaml) и показать расхождения')
+    .argument('<a>', 'первый файл')
+    .argument('<b>', 'второй файл')
+    .action(async (a, b) => {
+      const { verifyConfigs } = await import('./commands/config-commands.js');
+      const { ok, lines } = verifyConfigs(a, b);
+      for (const line of lines) console.log(line);
+      process.exit(ok ? 0 : 1);
+    });
+
   program.allowExcessArguments();
   program.parse();
 }
