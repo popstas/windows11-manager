@@ -1075,7 +1075,7 @@ ssh popstas-pc "cd /d D:\projects\js\windows11-manager && node src/index.js conf
 ssh popstas-pc "powershell -NoProfile -Command \"Get-Content 'D:\projects\js\windows11-manager\data\windows11-manager.log' -Tail 15\""
 ```
 
-Expected: `config-dump` печатает конфиг и в `_configPath` не врёт; в журнале — `MQTT service started` и `claude-wt started`, без строк про конфиг.
+Expected: в stdout `config-dump` — разобранный конфиг, в stderr — строка `# C:\Users\popstas\AppData\Roaming\windows-mqtt\windows11-manager.config.yaml`, то есть прочитан живой конфиг, а не запасной кандидат поиска (`_configPath` в дамп не попадает: его добавляет только `getConfig()`); в журнале — `MQTT service started` и `claude-wt started`, без строк про конфиг.
 
 - [ ] **Step 7: Убрать старый файл**
 

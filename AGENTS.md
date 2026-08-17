@@ -66,7 +66,7 @@ The code in `calcFancyZonePos` divides ALL values (monitor coords + zone coords)
 ## Key lib exports (src/lib/)
 
 - `src/store.js` exports: `storeWindows`, `restoreWindows`, `openWindows`, `openPaths`, `openStore`, `clearWindows`
-- `src/config.js` exports: `getConfig`, `reloadConfigs`, `watchAppliedLayouts`
+- `src/config.js` exports: `getConfig`, `reloadConfigs`, `watchAppliedLayouts`, `loadConfigFile`, `resolveConfigPath`, `candidates`
 - `src/placement.js` exports: `placeWindows`, `placeWindowByConfig`
 - `src/claude-wt/index.js` exports: `startClaudeWt`, `stopClaudeWt`, `claudeWtStatus`, `getClaudeWtConfig`
 - `src/claude-wt/restore.js` exports: `restoreClaudeSessions`, `maybeRestoreOnStart`

@@ -81,7 +81,7 @@ mqtt:
 # читал модуль `windows`, а его выключает `windows.enabled: false`. Читает их
 # теперь долгоживущая служба `node src/index.js mqtt`. Этот файл сама служба
 # не читает — только образец; ключи ниже, вплоть до `homeassistant`, нужно
-# руками перенести в живой `C:\Users\popstas\.config\windows11-manager.config.yaml`
+# руками перенести в живой `%APPDATA%\windows-mqtt\windows11-manager.config.yaml`
 # (см. поиск конфига в шапке файла), иначе все они молчат.
 
 # Расставлять окно сразу при его появлении (`placeWindowOnOpen()`): опрос

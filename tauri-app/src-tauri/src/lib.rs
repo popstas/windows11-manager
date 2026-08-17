@@ -1411,7 +1411,7 @@ pub fn run() {
                                 warn!("  stderr: {}", stderr.trim());
                             }
                             if !output.status.success() {
-                                error!("Store failed (exit {}): check config.js and project path", exit_code);
+                                error!("Store failed (exit {}): check config.yaml and project path", exit_code);
                                 return;
                             }
                             info!("Store done (exit {}), restarting...", exit_code);
