@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseConfigText } from './config-helpers.js';
 import { configCandidates, shouldReload, formatMissingConfig } from './config-helpers.js';
+import { diffConfigs, describeValue, MISSING } from './config-helpers.js';
 
 describe('parseConfigText', () => {
   it('раскрывает merge-ключ: правило получает поля якоря', () => {
@@ -102,5 +103,51 @@ describe('formatMissingConfig', () => {
     expect(text).toContain('/a.yaml');
     expect(text).toContain('/b.yaml');
     expect(text).toMatch(/не найден/i);
+  });
+});
+
+describe('diffConfigs', () => {
+  it('одинаковые конфиги — ни одного расхождения', () => {
+    const a = { debug: true, windows: [{ x: 1 }] };
+    expect(diffConfigs(a, structuredClone(a))).toEqual([]);
+  });
+
+  it('расхождение в глубине называет полный путь', () => {
+    const a = { windows: [{}, {}, { fancyZones: { position: 3 } }] };
+    const b = { windows: [{}, {}, { fancyZones: { position: 1 } }] };
+    expect(diffConfigs(a, b)).toEqual([
+      { path: 'windows[2].fancyZones.position', a: 3, b: 1 },
+    ]);
+  });
+
+  it('лишний элемент массива виден как отсутствующий у соседа', () => {
+    const diffs = diffConfigs({ list: [1, 2] }, { list: [1] });
+    expect(diffs).toEqual([{ path: 'list[1]', a: 2, b: MISSING }]);
+  });
+
+  it('ключ есть у одного и отсутствует у другого', () => {
+    const diffs = diffConfigs({ a: 1 }, {});
+    expect(diffs).toEqual([{ path: 'a', a: 1, b: MISSING }]);
+  });
+
+  it('отличает отсутствие ключа от значения null', () => {
+    const diffs = diffConfigs({ a: null }, {});
+    expect(diffs).toEqual([{ path: 'a', a: null, b: MISSING }]);
+  });
+
+  it('объект против скаляра — одно расхождение, а не обход внутрь', () => {
+    const diffs = diffConfigs({ a: { b: 1 } }, { a: 5 });
+    expect(diffs).toEqual([{ path: 'a', a: { b: 1 }, b: 5 }]);
+  });
+});
+
+describe('describeValue', () => {
+  it('отсутствие называется словом, а не undefined', () => {
+    expect(describeValue(MISSING)).toBe('отсутствует');
+  });
+
+  it('строки печатаются в кавычках, числа — как есть', () => {
+    expect(describeValue('Work')).toBe('"Work"');
+    expect(describeValue(3)).toBe('3');
   });
 });

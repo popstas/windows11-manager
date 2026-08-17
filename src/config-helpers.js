@@ -83,4 +83,59 @@ function formatMissingConfig(candidates) {
   return ['Конфиг не найден. Просмотрены:', ...candidates.map(c => `  ${c}`)].join('\n');
 }
 
-export { ANCHORS_KEY, parseConfigText, configCandidates, shouldReload, formatMissingConfig };
+/**
+ * «Ключа нет вовсе» — не то же самое, что `undefined` в значении. Различать
+ * обязательно: переезд конфига как раз и ошибается тем, что запись теряют
+ * целиком, а не портят её значение.
+ */
+const MISSING = Symbol('отсутствует');
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Сравнить два разобранных конфига и вернуть расхождения путями.
+ *
+ * Сравниваются структуры, а не текст: порядок ключей, отступы и комментарии на
+ * поведение менеджера не влияют и расхождением не считаются.
+ */
+function diffConfigs(a, b, prefix = '', out = []) {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    const len = Math.max(a.length, b.length);
+    for (let i = 0; i < len; i++) {
+      diffConfigs(
+        i < a.length ? a[i] : MISSING,
+        i < b.length ? b[i] : MISSING,
+        `${prefix}[${i}]`,
+        out,
+      );
+    }
+    return out;
+  }
+  if (isPlainObject(a) && isPlainObject(b)) {
+    for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+      diffConfigs(
+        key in a ? a[key] : MISSING,
+        key in b ? b[key] : MISSING,
+        prefix ? `${prefix}.${key}` : key,
+        out,
+      );
+    }
+    return out;
+  }
+  if (a !== b) out.push({ path: prefix, a, b });
+  return out;
+}
+
+/** Значение для строки отчёта: отсутствие — словом, остальное — как в JSON. */
+function describeValue(value) {
+  if (value === MISSING) return 'отсутствует';
+  return JSON.stringify(value);
+}
+
+export {
+  ANCHORS_KEY, MISSING,
+  parseConfigText, configCandidates, shouldReload, formatMissingConfig,
+  diffConfigs, describeValue,
+};
