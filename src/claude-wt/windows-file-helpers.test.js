@@ -7,9 +7,9 @@ import {
 } from './windows-file-helpers.js';
 
 const WINDOWS = [
-  { id: 11, title: 'ccfzf-picker', sessionId: 'aaa' },
-  { id: 12, title: 'shell', sessionId: null },
-  { id: 13, title: 'notes', sessionId: 'bbb' },
+  { id: 11, title: 'ccfzf-picker', sessionId: 'aaa', app: 'WindowsTerminal.exe' },
+  { id: 12, title: 'shell', sessionId: null, app: 'WindowsTerminal.exe' },
+  { id: 13, title: 'notes', sessionId: 'bbb', app: 'wezterm-gui.exe' },
 ];
 
 const SLOTS = {
@@ -33,6 +33,7 @@ describe('buildWindowsFile', () => {
     });
     expect(out.windows.aaa).toEqual({
       title: 'ccfzf-picker', desktop: 2, lastSeen: 1700, focusedAt: 1650,
+      app: 'WindowsTerminal.exe',
     });
   });
 
@@ -47,6 +48,21 @@ describe('buildWindowsFile', () => {
     expect(out.windows.bbb.focusedAt).toBe(0);
   });
 
+  // Читатель различает терминалы в строке поимённо, и узнать их имя ему
+  // неоткуда: окон он не видит. Одной пометки «окно есть» не хватает — на этой
+  // машине рядом живут Windows Terminal и WezTerm.
+  it('names the terminal of each window, and stays empty when it is unknown', () => {
+    const out = buildWindowsFile({
+      windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000,
+    });
+    expect(out.windows.aaa.app).toBe('WindowsTerminal.exe');
+    expect(out.windows.bbb.app).toBe('wezterm-gui.exe');
+    const older = buildWindowsFile({
+      windows: [{ title: 'x', sessionId: 'aaa' }], slots: SLOTS, host: 'pc', pid: 42, nowMs: 0,
+    });
+    expect(older.windows.aaa.app).toBe('');
+  });
+
   it('carries host, pid and a generated stamp in seconds', () => {
     const out = buildWindowsFile({
       windows: [], slots: {}, host: 'pc', pid: 42, nowMs: 1_800_500,
@@ -59,7 +75,7 @@ describe('buildWindowsFile', () => {
       windows: [{ title: 'fresh', sessionId: 'zzz' }], slots: {}, host: 'pc', pid: 1, nowMs: 0,
     });
     expect(out.windows.zzz).toEqual({
-      title: 'fresh', desktop: null, lastSeen: 0, focusedAt: 0,
+      title: 'fresh', desktop: null, lastSeen: 0, focusedAt: 0, app: '',
     });
   });
 

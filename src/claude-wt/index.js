@@ -17,6 +17,7 @@ import { step } from './tracker-helpers.js';
 import {
   mergeClaudeWtConfig,
   isTerminalPath,
+  terminalAppName,
   desktopOnlyActions,
   desktopRelearnTarget,
   desktopFollowTarget,
@@ -88,7 +89,11 @@ function snapshot() {
     const title = stripTitleDecoration(w.getTitle());
     const bounds = w.getBounds();
     if (!title || !bounds) continue;
-    windows.push({ id, title, bounds });
+    // Имя терминала берётся здесь, а не в publishWindows: путь к exe есть
+    // только у объекта окна, и живёт тот в этой карте. Стоит это одного
+    // разбора строки на окно за тик — путь уже прочитан, `getPath()` тут не
+    // зовётся.
+    windows.push({ id, title, bounds, app: terminalAppName(w.path) });
   }
   return windows;
 }

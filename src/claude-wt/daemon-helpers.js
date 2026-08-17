@@ -92,6 +92,27 @@ function isTerminalPath(path, executables = TERMINAL_EXECUTABLES) {
 }
 
 /**
+ * Как зовут терминал этого окна — имя файла, без каталога.
+ *
+ * Уезжает в опубликованный файл окон (`buildWindowsFile`), а оттуда читателю:
+ * пикер различает по нему терминалы в строке поимённо. Одной пометки «окно
+ * есть» на это не хватает — на этой машине рядом живут Windows Terminal и
+ * WezTerm, и вопрос человека к строке как раз «какой из них».
+ *
+ * Путь целиком не едет намеренно: он называет каталог установки этой машины —
+ * читателю бесполезный, а в чужом списке лишний. Регистр не трогается: имя
+ * файла — то, что написал установщик, и приведи мы его к нижнему, читатель
+ * показал бы `windowsterminal.exe`.
+ *
+ * Разбор пути тот же, что у `isTerminalPath` рядом, и это не совпадение: оба
+ * отвечают на вопрос про имя файла, а не опознанное там окно сюда и не
+ * попадёт.
+ */
+function terminalAppName(path) {
+  return String(path ?? '').split(/[\\/]/).pop() ?? '';
+}
+
+/**
  * Virtual desktop moves that step() cannot express.
  *
  * `desktop` rides along on a move action, and step() suppresses the action when
@@ -387,6 +408,7 @@ export {
   mergeClaudeWtConfig,
   TERMINAL_EXECUTABLES,
   isTerminalPath,
+  terminalAppName,
   desktopOnlyActions,
   desktopRelearnTarget,
   desktopFollowTarget,

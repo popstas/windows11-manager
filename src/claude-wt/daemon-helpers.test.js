@@ -4,6 +4,7 @@ import {
   mergeClaudeWtConfig,
   TERMINAL_EXECUTABLES,
   isTerminalPath,
+  terminalAppName,
   desktopOnlyActions,
   layoutFingerprint,
   focusedSessionIds,
@@ -136,6 +137,24 @@ describe('умолчания реестра терминалов', () => {
       launch: { command: 'wt.exe', args: ['-w', '-1', 'ssh', '-t', 'ccfzf --session {id} --kiosk'] },
     });
     expect(isLegacyLaunch(cfg)).toBe(true);
+  });
+});
+
+describe('terminalAppName', () => {
+  // Имя уезжает читателю в файле окон: пикер по нему различает терминалы в
+  // строке поимённо, а путь установки этой машины ему бесполезен.
+  it('оставляет имя файла и выбрасывает каталог, хоть с / хоть с \\', () => {
+    expect(terminalAppName('C:\\Program Files\\WezTerm\\wezterm-gui.exe')).toBe('wezterm-gui.exe');
+    expect(terminalAppName('c:/x/WindowsTerminal.exe')).toBe('WindowsTerminal.exe');
+  });
+
+  it('регистр не трогает — имя пишет установщик, а не мы', () => {
+    expect(terminalAppName('C:\\x\\WindowsTerminal.exe')).toBe('WindowsTerminal.exe');
+  });
+
+  it('пустой путь стоит пустой строки, а не падения', () => {
+    expect(terminalAppName('')).toBe('');
+    expect(terminalAppName(undefined)).toBe('');
   });
 });
 
