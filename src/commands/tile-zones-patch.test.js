@@ -8,18 +8,6 @@ import { patchTileZonesText, verifyPatch } from './tile-zones-patch.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXAMPLE_CONFIG = path.resolve(__dirname, '../../config.example.yaml');
 
-/** Построчный diff двух текстов: индексы строк (1-based), различающихся между `a` и `b`. */
-function diffLines(a, b) {
-  const linesA = a.split('\n');
-  const linesB = b.split('\n');
-  const max = Math.max(linesA.length, linesB.length);
-  const changed = [];
-  for (let i = 0; i < max; i++) {
-    if (linesA[i] !== linesB[i]) changed.push(i + 1);
-  }
-  return changed;
-}
-
 describe('patchTileZonesText: реальный config.example.yaml', () => {
   const raw = fs.readFileSync(EXAMPLE_CONFIG, 'utf8');
 
