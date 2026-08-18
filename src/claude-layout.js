@@ -13,7 +13,7 @@ import { placeWindow } from './placement.js';
 import { claudeWtSessions } from './claude-wt/view.js';
 import { orderSessions } from './claude-wt/ha/session-slots.js';
 import { normalizeSort } from './claude-wt/ha/session-groups.js';
-import { arrange } from './claude-layout-helpers.js';
+import { arrange, toWindowSpace } from './claude-layout-helpers.js';
 
 /**
  * Зоны из `claudeWt.tileZones`, разрешённые в прямоугольники.
@@ -129,28 +129,32 @@ function layoutWorkArea(rects, log) {
   let work;
   try {
     const raw = mon.getWorkArea?.() ?? mon.bounds ?? null;
-    // getWorkArea()/bounds — физические пиксели монитора (то же пространство,
-    // что и editor-parameters.json FancyZones). tileGrid()/cascade() ниже
-    // считают геометрию окон, а окна двигаются через getBounds()/setBounds()
-    // node-window-manager — в ЛОГИЧЕСКИХ, виртуализованных пикселях: процесс
-    // DPI-unaware, и Windows масштабирует для него весь экран на коэффициент
-    // главного монитора. Без этого деления на мониторе со 125% сетка строила
-    // окно высотой 1728 там, где для окон экран высотой 1382 — лишние 346
-    // точек уезжали на соседний монитор снизу (реальный баг, из-за которого
-    // всё это чинится). Числа с живой машины popstas-pc: физическая рабочая
-    // область 2893x1728 при масштабе 1.25 даёт логическую 2314x1382 — именно
-    // в ней и должны жить окна. Деление второй раз не случается: placeWindow()
-    // зовёт adjustBoundsForScale(), но при заданных width/height (а arrange()
-    // их всегда задаёт) он возвращает bounds нетронутыми (src/scale.js).
+    // getWorkArea()/bounds отдают значения как есть (vendor/node-window-manager/
+    // src/classes/monitor.ts) — то же пространство, что и editor-parameters.json
+    // FancyZones. tileGrid()/cascade() ниже считают геометрию окон, а окна
+    // двигаются через getBounds()/setBounds() node-window-manager, и эта
+    // пара — не витрина монитора, а отдельное пространство: обёртка
+    // (vendor/node-window-manager/src/classes/window.ts) делит сырые
+    // координаты на масштаб СВОЕГО монитора при чтении и умножает при записи.
+    // Без этого деления на мониторе со 125% сетка строила окно высотой 1728
+    // там, где для окон экран высотой 1382 — лишние 346 точек уезжали на
+    // соседний монитор снизу (реальный баг, из-за которого всё это чинится).
+    // Числа с живой машины popstas-pc: рабочая область монитора 2893x1728 при
+    // масштабе 1.25 даёт пространство окон 2314x1382 — именно в нём и должны
+    // жить окна. toWindowSpace() (claude-layout-helpers.js) — та же формула,
+    // что и в обёртке, вынесенная в чистую функцию ради теста. Деление второй
+    // раз не случается: placeWindow() зовёт adjustBoundsForScale(), но при
+    // заданных width/height (а arrange() их всегда задаёт) он возвращает
+    // bounds нетронутыми (src/scale.js).
+    //
+    // На неглавном мониторе здесь та же неподтверждённая гипотеза, что и у зон
+    // FancyZones (см. AGENTS.md, раздел «FancyZones coordinate system & DPI
+    // gotchas», «Possible trap on a non-primary monitor»): не проверено на
+    // живой машине, масштабируется ли этот монитор по своему коэффициенту или
+    // по коэффициенту главного. Запасная сетка и каскад на нём могут уехать
+    // так же, как подозревались зоны.
     const scale = mon.getScaleFactor?.() ?? 1;
-    work = !raw || !scale || scale === 1
-      ? raw
-      : {
-        x: Math.round(raw.x / scale),
-        y: Math.round(raw.y / scale),
-        width: Math.round(raw.width / scale),
-        height: Math.round(raw.height / scale),
-      };
+    work = toWindowSpace(raw, scale);
   } catch (e) {
     log(`claude-place: не удалось получить рабочую область монитора — ${e.message}`, 'warn');
     return null;

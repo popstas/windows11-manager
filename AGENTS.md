@@ -50,43 +50,72 @@ recurring source of bugs (see git history around 2026-08-18: a commit removed
 the DPI division below on the wrong theory that both spaces were the same —
 verified wrong by a live check on a scaled monitor, and reverted):
 
-- **Monitor geometry** — `monitor.getBounds()`, `monitor.getWorkArea()`
-  (node-window-manager), and FancyZones' `editor-parameters.json`
-  (`monitor-width`/`-height`, `work-area-width`/`-height`,
-  `left-coordinate`/`top-coordinate`) and `custom-layouts.json` zone
-  coordinates — are all in **physical** pixels. Example from popstas-pc: the
-  MSI monitor is 3072x1728 physical, work-area 2893x1728.
-- **Window geometry** — `window.getBounds()`/`setBounds()`
-  (node-window-manager) — is in **logical**, virtualized pixels: the node
-  process is DPI-unaware, so Windows scales the entire desktop for it by a
-  factor. At 125% that same MSI monitor looks 2458x1382 to the process.
+Source of truth for this section: the vendored library itself,
+`vendor/node-window-manager/src/classes/window.ts` (`getBounds()`/
+`setBounds()`, ~lines 22-56) and `vendor/node-window-manager/src/classes/
+monitor.ts` (~lines 17-23). Describe the mechanism from that code, not from
+reasoning about it — a wrong retelling of this exact mechanism has broken
+placement twice in one day.
 
-Any code that takes a rectangle from monitor/zone space and feeds it to
-`setBounds()` (or vice versa) must divide (or multiply) by
-`scaleFactor = dpi/96` to cross between the two spaces. Two call sites do this
-today:
-- `calcFancyZonePos` (`src/fancyzones-helpers.js`), fed `scaleFactor` computed
-  in `fancyZonesToPos()` (`src/fancyzones.js`) from the zone's monitor `dpi`.
-- `layoutWorkArea()` (`src/claude-layout.js`), which divides
-  `mon.getWorkArea()` by `mon.getScaleFactor()` before handing it to
-  `tileGrid()`/`cascade()` — without this, windows on a scaled monitor were
-  sized in physical pixels and spilled onto the neighboring monitor below.
+- **`Monitor.getBounds()` / `Monitor.getWorkArea()`** return whatever the OS
+  addon hands back, **unmodified** — no division, no multiplication
+  (`monitor.ts`). Example from popstas-pc: the MSI monitor,
+  `getScaleFactor() === 1.25`, `getWorkArea()` returns `2893x1728`.
+- **`Window.getBounds()` / `Window.setBounds()`** live in a different space:
+  the wrapper itself **divides** the raw bounds by
+  `this.getMonitor().getScaleFactor()` inside `getBounds()`, and
+  **multiplies** back inside `setBounds()` (`window.ts`). This is wrapper
+  arithmetic, not an OS-level "physical vs logical" distinction — it happens
+  in this JS/TS code, using the scale of the monitor the window currently
+  sits on. On the same MSI monitor, a window's bounds live in `2314x1382`
+  (`2893/1.25`, `1728/1.25`, rounded).
+- **FancyZones' `editor-parameters.json`** (`monitor-width`/`-height`,
+  `work-area-width`/`-height`, `left-coordinate`/`top-coordinate`) and
+  `custom-layouts.json` zone coordinates come from the same space as
+  `Monitor.getBounds()`/`getWorkArea()` above — unmodified monitor values, not
+  the `Window` space. `src/monitors-helpers.js` documents the config side of
+  this: numbers written into `windows11-manager.config.yaml` are the ones a
+  human reads off the OS (e.g. "4K at 125% looks like 3072x1728"), which is
+  why `matchMonitorBySize()` multiplies `m.bounds` by `getScaleFactor()` when
+  matching. Any code that takes a rectangle out of monitor/zone space and
+  feeds it to `setBounds()` (or vice versa) must divide (or multiply) by the
+  target window's monitor scale factor to cross between the two spaces. Two
+  call sites do this today:
+  - `calcFancyZonePos` (`src/fancyzones-helpers.js`), fed `scaleFactor`
+    computed in `fancyZonesToPos()` (`src/fancyzones.js`) from the zone's
+    monitor `dpi`.
+  - `layoutWorkArea()` (`src/claude-layout.js`), via `toWindowSpace()`
+    (`src/claude-layout-helpers.js`), which divides `mon.getWorkArea()` by
+    `mon.getScaleFactor()` before handing it to `tileGrid()`/`cascade()` —
+    without this, windows on a scaled monitor were sized in monitor pixels
+    and spilled onto the neighboring monitor below.
 
-**Known limitation (not fixed, don't blind-fix it):** the division in
-`calcFancyZonePos` uses the DPI of the monitor the zone lives on, but Windows'
-DPI-unaware virtualization scales the *entire* virtual desktop by the
-**primary** monitor's scale factor, not by each monitor's own. For the primary
-monitor these coincide, so its zones divide correctly. For any other monitor
-they don't: on popstas-pc the iiyama monitor sits at physical `left-coordinate
-= 3840`, `dpi 96` (scaleFactor 1, no division happens), but in the logical
-window space (scaled by the *primary* monitor's 1.25) it actually starts at
-`3072`. A zone on that monitor lands roughly `768` px too far right. This has
-not been fixed because the user's config has accumulated `monitorsOffset`
-corrections over the years that may already compensate for exactly this — a
-blind fix risks breaking what currently works. If a zone on a non-primary
-monitor overshoots, check `monitorsOffset` for that monitor first, and check
-whether the primary monitor's scale factor differs from that monitor's own
-before touching the code.
+**Possible trap on a non-primary monitor (hypothesis, not confirmed — don't
+blind-fix it):** it was suspected that `calcFancyZonePos` divides a
+non-primary monitor's zone by that monitor's own DPI while Windows'
+DPI-unaware virtualization might scale the *entire* virtual desktop by the
+**primary** monitor's factor instead, which would overshoot a zone on any
+other monitor by roughly `left-coordinate × (1 − 1/primaryScale)` px. This is
+*not* what the vendored code shows: `Window.getBounds()`/`setBounds()` always
+use `this.getMonitor().getScaleFactor()` — the scale of the monitor the
+window is *on*, not the primary monitor's. So this specific mechanism doesn't
+follow from the code as written, and it has not been confirmed live either.
+Treat it as unverified until checked on the actual iiyama+MSI setup (compare
+a zone's expected vs actual landing position on the non-primary monitor). Do
+not "fix" this without that check — the user's config has accumulated
+`monitorsOffset` corrections over the years that may already compensate for
+whatever the real behavior turns out to be.
+
+**Confirmed inter-monitor trap:** `Window.setBounds()` reads the scale factor
+of the monitor the window is *currently on* before the move, not the monitor
+it's moving to (`window.ts` — `getMonitor()` is called fresh inside
+`setBounds()`, but that still reflects the window's position at call time).
+Moving a window across monitors with different scale factors in one
+`setBounds()` call therefore uses the wrong factor. `src/placement.js`
+(~lines 98-108) works around exactly this: after the first `setBounds()`, it
+re-reads the window's new monitor scale, and if it changed, calls
+`adjustBoundsForScale()` and `setBounds()` again to correct for the
+mismatch.
 
 ### Known issues
 - **Stale FZ data**: `editor-parameters.json` is only refreshed when the FancyZones editor is opened (Win+Shift+`) or after a **full system reboot**. Simply restarting PowerToys does NOT regenerate it. Stale data can have wrong DPI (192 vs 96) and wrong coordinates

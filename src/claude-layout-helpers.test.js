@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseArrangePayload, splitCounts, stackInCell, tileByZones, columns, tileGrid, cascade, arrange } from './claude-layout-helpers.js';
+import { parseArrangePayload, splitCounts, stackInCell, tileByZones, columns, tileGrid, cascade, arrange, toWindowSpace } from './claude-layout-helpers.js';
 
 describe('parseArrangePayload', () => {
   it('разбирает объект с режимом и списком', () => {
@@ -199,6 +199,30 @@ describe('cascade', () => {
       expect(b.x + b.width).toBeLessThanOrEqual(WORK.width);
       expect(b.y + b.height).toBeLessThanOrEqual(WORK.height);
     }
+  });
+});
+
+describe('toWindowSpace', () => {
+  // Числа с живой машины popstas-pc: монитор MSI, getScaleFactor() === 1.25,
+  // Monitor.getWorkArea() отдаёт 2893x1728, а окна на нём живут в 2314x1382.
+  it('делит рабочую область на масштаб монитора', () => {
+    expect(toWindowSpace({ x: 0, y: 0, width: 2893, height: 1728 }, 1.25))
+      .toEqual({ x: 0, y: 0, width: 2314, height: 1382 });
+  });
+
+  it('масштаб 1 — прямоугольник без изменений', () => {
+    const rect = { x: 10, y: 20, width: 1920, height: 1080 };
+    expect(toWindowSpace(rect, 1)).toBe(rect);
+  });
+
+  it('ненулевой origin делится вместе с размером', () => {
+    expect(toWindowSpace({ x: 3840, y: 0, width: 1920, height: 1080 }, 1.25))
+      .toEqual({ x: 3072, y: 0, width: 1536, height: 864 });
+  });
+
+  it('пустой прямоугольник или масштаб — вернуть как есть', () => {
+    expect(toWindowSpace(null, 1.25)).toBeNull();
+    expect(toWindowSpace({ x: 0, y: 0, width: 100, height: 100 }, 0)).toEqual({ x: 0, y: 0, width: 100, height: 100 });
   });
 });
 

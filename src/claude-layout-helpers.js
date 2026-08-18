@@ -214,6 +214,27 @@ function cascade(work, n) {
 }
 
 /**
+ * Перевести прямоугольник из пространства монитора (`getBounds()`/
+ * `getWorkArea()` node-window-manager, физические пиксели монитора) в
+ * пространство окон (`Window.getBounds()`/`setBounds()`) — то, в котором
+ * реально двигаются окна: обёртка (`vendor/node-window-manager/src/classes/
+ * window.ts`) делит сырые координаты на масштаб монитора при чтении и
+ * умножает при записи.
+ *
+ * Масштаб 1 — прямоугольник без изменений, без округления: не терять точность
+ * там, где округлять нечего.
+ */
+function toWindowSpace(rect, scaleFactor) {
+  if (!rect || !scaleFactor || scaleFactor === 1) return rect;
+  return {
+    x: Math.round(rect.x / scaleFactor),
+    y: Math.round(rect.y / scaleFactor),
+    width: Math.round(rect.width / scaleFactor),
+    height: Math.round(rect.height / scaleFactor),
+  };
+}
+
+/**
  * Разложить `n` окон. Порядок ответа — порядок окон.
  *
  * На входе именно рабочая область, а не экран: что из экрана вычесть, знает
@@ -228,4 +249,4 @@ function arrange({ mode, zones = [], work, n }) {
   return tileGrid(work, n);
 }
 
-export { layoutFromName, normalizeIds, parseArrangePayload, splitCounts, stackInCell, tileByZones, columns, tileGrid, cascade, arrange };
+export { layoutFromName, normalizeIds, parseArrangePayload, splitCounts, stackInCell, tileByZones, columns, tileGrid, cascade, arrange, toWindowSpace };

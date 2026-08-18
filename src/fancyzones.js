@@ -42,15 +42,17 @@ function fancyZonesToPos(opts) {
     console.log(`Zone not found: ${JSON.stringify(opts)}`);
     return;
   }
-  // left-coordinate/top-coordinate: на проверенной установке (popstas-pc,
-  // 2026-08-18, PowerToys текущей версии, мониторы 100% и 125%) они логические
-  // и совпадают с node-window-manager bounds/work, включая origin неосновного
-  // монитора. Но в зафиксированной фикстуре data/FancyZonesProfile/
-  // editor-parameters.json (дамп PowerToys 0.95) те же поля физические
-  // (left-coordinate: -3840 у монитора, логически стоящего на -1920) — то
-  // есть инвариант зависит от версии PowerToys и на старом формате не
-  // проверен. Если он всё же попадётся: зону на неосновном мониторе унесёт
-  // на left-coordinate × (1 − 1/масштаб) пикселей.
+  // left-coordinate/top-coordinate живут в том же пространстве, что и
+  // Monitor.getBounds()/getWorkArea() node-window-manager (см. комментарий
+  // ниже, у scaleFactor) — не пространстве Window.getBounds()/setBounds().
+  // Совпадают ли они численно с node-window-manager bounds/work на
+  // конкретной машине — не проверено и не гарантировано кодом; для
+  // неосновного монитора это тем более не подтверждено (AGENTS.md,
+  // «Possible trap on a non-primary monitor»). В зафиксированной фикстуре
+  // data/FancyZonesProfile/editor-parameters.json (дамп PowerToys 0.95)
+  // left-coordinate: -3840 у монитора, который в другом пространстве стоит на
+  // -1920 — то есть числа между дампами разных версий/машин уже расходятся
+  // вдвое, и полагаться на их «логичность» нельзя.
   const monBounds = {
     x: monitor['left-coordinate'],
     y: monitor['top-coordinate'],
@@ -58,11 +60,14 @@ function fancyZonesToPos(opts) {
     height: monitor['work-area-height'],
   };
   const config = getConfig();
-  // Геометрия монитора (editor-parameters.json FancyZones) — физические
-  // пиксели. Окна двигаются в логических (getBounds()/setBounds()
-  // node-window-manager, DPI-unaware процесс, виртуализация Windows).
-  // scaleFactor переводит зону из первого пространства во второе —
-  // calcFancyZonePos() делит на него координаты и размер зоны.
+  // Геометрия монитора (editor-parameters.json FancyZones) — то же
+  // пространство, что и Monitor.getBounds()/getWorkArea() node-window-manager
+  // (vendor/node-window-manager/src/classes/monitor.ts: отдаются как есть,
+  // без поправок). Окна двигаются в другом пространстве — getBounds()/
+  // setBounds() node-window-manager делят/умножают на масштаб монитора внутри
+  // самой обёртки (vendor/node-window-manager/src/classes/window.ts,
+  // ~строки 22-56). scaleFactor переводит зону из первого пространства во
+  // второе — calcFancyZonePos() делит на него координаты и размер зоны.
   const scaleFactor = monitor.dpi ? monitor.dpi / 96 : 1;
   return calcFancyZonePos({
     zone,
