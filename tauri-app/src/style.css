@@ -265,3 +265,63 @@ details summary:hover {
   border-radius: 6px;
   margin-bottom: 16px;
 }
+
+/* Вкладки настроек. Показ переключает один класс `active`, который стоит и на
+   кнопке вкладки, и на её странице, — обход в settings.js один на оба списка. */
+#tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #45475a;
+}
+
+.tab {
+  padding: 8px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: #a6adc8;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: #cdd6f4;
+}
+
+.tab.active {
+  color: #cba6f7;
+  border-bottom-color: #cba6f7;
+}
+
+section[data-tab] {
+  display: none;
+}
+
+section[data-tab].active {
+  display: block;
+}
+
+.tab-note {
+  margin-bottom: 16px;
+  color: #a6adc8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Лог показывается моноширинным и прокручивается сам: строки в нём длинные, а
+   переносить их значило бы рвать записи посередине. */
+#log-view {
+  height: 420px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid #45475a;
+  border-radius: 6px;
+  background: #181825;
+  color: #cdd6f4;
+  font-family: "Cascadia Code", "Fira Code", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
+}

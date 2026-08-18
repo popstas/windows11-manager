@@ -141,4 +141,50 @@ form.addEventListener('submit', async (e) => {
   }
 });
 
+// Вкладки. `data-tab` стоит и на кнопке, и на её странице, поэтому показ
+// переключается одним обходом по обоим спискам разом.
+const LOG_TAB = 'log';
+const LOG_REFRESH_MS = 2000;
+let logTimer = null;
+
+function showTab(id) {
+  for (const node of document.querySelectorAll('[data-tab]')) {
+    node.classList.toggle('active', node.dataset.tab === id);
+  }
+  // Лог перечитывается, только пока его вкладка открыта: файл читается с
+  // диска, а сидят в настройках обычно не на нём.
+  clearInterval(logTimer);
+  logTimer = null;
+  if (id === LOG_TAB) {
+    refreshLog();
+    logTimer = setInterval(refreshLog, LOG_REFRESH_MS);
+  }
+}
+
+async function refreshLog() {
+  const view = document.getElementById('log-view');
+  if (!view) return;
+  let text;
+  try {
+    text = await invoke('read_log');
+  } catch (e) {
+    text = String(e);
+  }
+  if (!text) text = 'nothing logged yet';
+  // Молчаливый такт не трогает узел вовсе: перезапись того же текста сбивала
+  // бы выделение под курсором каждые две секунды — а лог читают, выделяя
+  // строки. Она же сбрасывала бы прокрутку, отнятую у нижнего края.
+  if (text === view.textContent) return;
+  // Прокрутка догоняет низ, только если она и была внизу: человека, ушедшего
+  // читать выше, новая запись не должна утаскивать обратно.
+  const atBottom = view.scrollHeight - view.scrollTop - view.clientHeight < 4;
+  view.textContent = text;
+  if (atBottom) view.scrollTop = view.scrollHeight;
+}
+
+document.getElementById('tabs').addEventListener('click', (event) => {
+  const tab = event.target.closest('.tab');
+  if (tab) showTab(tab.dataset.tab);
+});
+
 loadSettings();

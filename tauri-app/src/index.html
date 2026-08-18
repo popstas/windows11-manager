@@ -9,142 +9,173 @@
 <body>
   <h1>Settings</h1>
   <p id="app-version" class="app-version"></p>
+  <!--
+    Вкладки: полей два десятка, и одной простынёй нужное поле искали прокруткой.
+    Разметка одна на все вкладки — `data-tab` стоит и на кнопке, и на её
+    странице, а показ переключает один класс (см. settings.js).
+  -->
+  <nav id="tabs">
+    <button type="button" class="tab active" data-tab="general">General</button>
+    <button type="button" class="tab" data-tab="hotkeys">Hotkeys</button>
+    <button type="button" class="tab" data-tab="claude">Claude</button>
+    <button type="button" class="tab" data-tab="mqtt">MQTT</button>
+    <button type="button" class="tab" data-tab="log">Log</button>
+  </nav>
   <form id="settings-form">
-    <div class="field">
-      <label for="project_path">Project path</label>
-      <input type="text" id="project_path" placeholder="C:\path\to\windows11-manager">
-    </div>
+    <section data-tab="general" class="active">
+      <div class="field">
+        <label for="project_path">Project path</label>
+        <input type="text" id="project_path" placeholder="C:\path\to\windows11-manager">
+      </div>
 
-    <div class="field">
-      <label for="autoplacer_interval">Autoplacer interval (seconds)</label>
-      <input type="number" id="autoplacer_interval" min="0" value="0">
-      <small>Periodic full placement pass. 0 = disabled (new-window detection only).</small>
-    </div>
+      <div class="field checkbox">
+        <label>
+          <input type="checkbox" id="run_on_startup">
+          Run on Windows startup
+        </label>
+      </div>
 
-    <div class="field checkbox">
-      <label>
-        <input type="checkbox" id="run_on_startup">
-        Run on Windows startup
-      </label>
-    </div>
+      <div class="field checkbox">
+        <label>
+          <input type="checkbox" id="show_notifications">
+          Show notifications
+        </label>
+      </div>
 
-    <div class="field checkbox">
-      <label>
-        <input type="checkbox" id="show_notifications">
-        Show notifications
-      </label>
-    </div>
+      <div class="field checkbox">
+        <label>
+          <input type="checkbox" id="restore_on_start">
+          Restore windows on start
+        </label>
+      </div>
 
-    <div class="field checkbox">
-      <label>
-        <input type="checkbox" id="restore_on_start">
-        Restore windows on start
-      </label>
-    </div>
+      <div class="field checkbox">
+        <label>
+          <input type="checkbox" id="store_before_exit">
+          Store windows before exit
+        </label>
+      </div>
 
-    <div class="field checkbox">
-      <label>
-        <input type="checkbox" id="store_before_exit">
-        Store windows before exit
-      </label>
-    </div>
+      <div class="field">
+        <label for="autoplacer_interval">Autoplacer interval (seconds)</label>
+        <input type="number" id="autoplacer_interval" min="0" value="0">
+        <small>Periodic full placement pass. 0 = disabled (new-window detection only).</small>
+      </div>
 
-    <div class="field checkbox">
-      <label>
-        <input type="checkbox" id="claude_wt_enabled">
-        Start claude-wt watcher on launch
-      </label>
-      <small>Window tracker daemon. Restarted automatically if it exits.</small>
-    </div>
+      <div class="field">
+        <label for="store_interval">Store windows interval (seconds)</label>
+        <input type="number" id="store_interval" min="0" value="300">
+        <small>Periodic save of window positions. 0 = disabled.</small>
+      </div>
 
-    <div class="field">
-      <label for="place_hotkey">Place windows hotkey</label>
-      <input type="text" id="place_hotkey" placeholder="Ctrl+Alt+Win+0">
-      <small>Global shortcut that places all windows once. Modifiers: Ctrl, Alt, Shift, Win. Empty = disabled. Applied on save; a warning is logged if the combination is taken. Note: Windows reserves every <code>Win</code>+digit combination (including Win+Ctrl+Shift+digit) for the taskbar — those can never be registered.</small>
-    </div>
+      <div class="field">
+        <label for="timeout_before_open">Timeout before open apps (seconds)</label>
+        <input type="number" id="timeout_before_open" min="0" value="5">
+        <small>Delay before opening default apps after restore. 0 = no delay.</small>
+      </div>
 
-    <div class="field">
-      <label for="tile_hotkey">Place Claude: tile hotkey</label>
-      <input type="text" id="tile_hotkey" placeholder="Ctrl+Win+F10">
-      <small>Global shortcut that tiles Claude terminal windows over FancyZones zones. Modifiers: Ctrl, Alt, Shift, Win. Empty = disabled. Applied on save; a warning is logged if the combination is taken.</small>
-    </div>
+      <div class="field">
+        <label for="store_match_list">Store match list (one exe per line)</label>
+        <textarea id="store_match_list" rows="8" placeholder="chrome.exe&#10;Code.exe&#10;firefox.exe"></textarea>
+        <small>Exe names to match for window storing. Empty = use config.yaml defaults.</small>
+      </div>
 
-    <div class="field">
-      <label for="cascade_hotkey">Place Claude: cascade hotkey</label>
-      <input type="text" id="cascade_hotkey" placeholder="Ctrl+Win+F11">
-      <small>Global shortcut that cascades Claude terminal windows. Modifiers: Ctrl, Alt, Shift, Win. Empty = disabled. Applied on save; a warning is logged if the combination is taken.</small>
-    </div>
+      <div class="field">
+        <label for="update_check_interval">Check for updates</label>
+        <select id="update_check_interval">
+          <option value="launch">Each launch</option>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+          <option value="yearly">Yearly</option>
+          <option value="never">Never</option>
+        </select>
+      </div>
+    </section>
 
-    <div class="field">
-      <label for="tile_zones">Claude tile zones (one "monitor,position" pair per line)</label>
-      <textarea id="tile_zones" rows="4" placeholder="1,6&#10;1,7&#10;1,8&#10;1,9"></textarea>
-      <small>FancyZones zones for "Place Claude: tile", in window order. Lives in the node config (claudeWt.tileZones), not in this store — saved separately from the form below. Empty = tile its own grid.</small>
-    </div>
+    <section data-tab="hotkeys">
+      <p class="tab-note">Global shortcuts. Modifiers: Ctrl, Alt, Shift, Win. Empty = disabled. Applied on save; a warning is logged if the combination is taken. Note: Windows reserves every <code>Win</code>+digit combination (including Win+Ctrl+Shift+digit) for the taskbar — those can never be registered.</p>
 
-    <div class="field">
-      <label for="store_interval">Store windows interval (seconds)</label>
-      <input type="number" id="store_interval" min="0" value="300">
-      <small>Periodic save of window positions. 0 = disabled.</small>
-    </div>
+      <div class="field">
+        <label for="place_hotkey">Place windows</label>
+        <input type="text" id="place_hotkey" placeholder="Ctrl+Alt+Win+0">
+        <small>Places all windows once.</small>
+      </div>
 
-    <div class="field">
-      <label for="timeout_before_open">Timeout before open apps (seconds)</label>
-      <input type="number" id="timeout_before_open" min="0" value="5">
-      <small>Delay before opening default apps after restore. 0 = no delay.</small>
-    </div>
+      <div class="field">
+        <label for="tile_hotkey">Place Claude: tile</label>
+        <input type="text" id="tile_hotkey" placeholder="Ctrl+Win+F10">
+        <small>Tiles Claude terminal windows over FancyZones zones.</small>
+      </div>
 
-    <div class="field">
-      <label for="store_match_list">Store match list (one exe per line)</label>
-      <textarea id="store_match_list" rows="8" placeholder="chrome.exe&#10;Code.exe&#10;firefox.exe"></textarea>
-      <small>Exe names to match for window storing. Empty = use config.yaml defaults.</small>
-    </div>
+      <div class="field">
+        <label for="cascade_hotkey">Place Claude: cascade</label>
+        <input type="text" id="cascade_hotkey" placeholder="Ctrl+Win+F11">
+        <small>Cascades Claude terminal windows.</small>
+      </div>
+    </section>
 
-    <div class="field">
-      <label for="update_check_interval">Check for updates</label>
-      <select id="update_check_interval">
-        <option value="launch">Each launch</option>
-        <option value="daily">Daily</option>
-        <option value="weekly">Weekly</option>
-        <option value="monthly">Monthly</option>
-        <option value="yearly">Yearly</option>
-        <option value="never">Never</option>
-      </select>
-    </div>
+    <section data-tab="claude">
+      <div class="field checkbox">
+        <label>
+          <input type="checkbox" id="claude_wt_enabled">
+          Start claude-wt watcher on launch
+        </label>
+        <small>Window tracker daemon. Restarted automatically if it exits.</small>
+      </div>
 
-    <hr>
-    <h2>MQTT</h2>
+      <div class="field">
+        <label for="tile_zones">Claude tile zones (one "monitor,position" pair per line)</label>
+        <textarea id="tile_zones" rows="4" placeholder="1,6&#10;1,7&#10;1,8&#10;1,9"></textarea>
+        <small>FancyZones zones for "Place Claude: tile", in window order. Lives in the node config (claudeWt.tileZones), not in this store — saved separately from the rest of this form. Empty = tile its own grid.</small>
+      </div>
+    </section>
 
-    <div class="field checkbox">
-      <label>
-        <input type="checkbox" id="mqtt_enabled">
-        Enable MQTT (auto-start on launch)
-      </label>
-    </div>
+    <section data-tab="mqtt">
+      <div class="field checkbox">
+        <label>
+          <input type="checkbox" id="mqtt_enabled">
+          Enable MQTT (auto-start on launch)
+        </label>
+      </div>
 
-    <div class="field">
-      <label for="mqtt_host">MQTT Host</label>
-      <input type="text" id="mqtt_host" placeholder="mqtt.example.com">
-    </div>
+      <div class="field">
+        <label for="mqtt_host">MQTT Host</label>
+        <input type="text" id="mqtt_host" placeholder="mqtt.example.com">
+      </div>
 
-    <div class="field">
-      <label for="mqtt_port">MQTT Port</label>
-      <input type="number" id="mqtt_port" min="1" max="65535" value="1883">
-    </div>
+      <div class="field">
+        <label for="mqtt_port">MQTT Port</label>
+        <input type="number" id="mqtt_port" min="1" max="65535" value="1883">
+      </div>
 
-    <div class="field">
-      <label for="mqtt_username">MQTT Username</label>
-      <input type="text" id="mqtt_username" placeholder="(optional)">
-    </div>
+      <div class="field">
+        <label for="mqtt_username">MQTT Username</label>
+        <input type="text" id="mqtt_username" placeholder="(optional)">
+      </div>
 
-    <div class="field">
-      <label for="mqtt_password">MQTT Password</label>
-      <input type="password" id="mqtt_password" placeholder="(optional)">
-    </div>
+      <div class="field">
+        <label for="mqtt_password">MQTT Password</label>
+        <input type="password" id="mqtt_password" placeholder="(optional)">
+      </div>
 
-    <div class="field">
-      <label for="mqtt_topic">MQTT Topic prefix</label>
-      <input type="text" id="mqtt_topic" placeholder="home/windows11-manager">
-    </div>
+      <div class="field">
+        <label for="mqtt_topic">MQTT Topic prefix</label>
+        <input type="text" id="mqtt_topic" placeholder="home/windows11-manager">
+      </div>
+    </section>
+
+    <!--
+      Единственная вкладка без полей: она ничего не сохраняет, а показывает
+      хвост data/windows11-manager.log. Заведена затем, что вопрос «почему
+      демон притих» до сих пор требовал открыть каталог логов и найти файл
+      руками (пункт трея «Open Log Location» рядом никуда не делся — он для
+      разбора лога целиком).
+    -->
+    <section data-tab="log">
+      <p class="tab-note">Tail of <code>data/windows11-manager.log</code>. Newest at the bottom, refreshed while this tab is open.</p>
+      <pre id="log-view"></pre>
+    </section>
 
     <div class="actions">
       <button type="submit">Save</button>

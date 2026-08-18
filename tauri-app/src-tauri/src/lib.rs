@@ -728,6 +728,29 @@ async fn get_app_version(app: tauri::AppHandle) -> Result<String, String> {
     Ok(version_item_label(&version, build_time(), Local::now().date_naive()))
 }
 
+/// Хвост лога для вкладки Log в окне настроек.
+///
+/// Пункт «Open Log Location» рядом открывает тот же файл в проводнике, и одно
+/// другого не отменяет: посмотреть последние строки, не выходя из настроек,
+/// нужно чаще, чем разбирать лог целиком.
+///
+/// Отсутствие файла — не отказ: приложение только что запустили с пустым
+/// `project_path`, писать было некуда, и показывать по этому поводу ошибку
+/// вместо пустой вкладки незачем.
+#[tauri::command]
+async fn read_log(app: tauri::AppHandle) -> Result<String, String> {
+    let project_path = get_project_path(&app);
+    if project_path.is_empty() {
+        return Err("Project path not configured".to_string());
+    }
+    let path = logging::log_path(&project_path);
+    match logging::read_tail(&path, logging::LOG_TAIL_BYTES, logging::LOG_TAIL_LINES) {
+        Ok(text) => Ok(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(format!("{}: {}", path.display(), e)),
+    }
+}
+
 /// Сохранить настройки. `Ok` несёт предупреждение о совпавших хоткеях, если
 /// оно есть (иначе — пустую строку): сохранение не запрещается совпадением —
 /// человек мог сделать это намеренно и поправит следующим шагом, но окно
@@ -1696,7 +1719,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(Mutex::new(AppState::new()))
-        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version, save_store_match_list, get_tile_zones, save_tile_zones])
+        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version, read_log, save_store_match_list, get_tile_zones, save_tile_zones])
         .setup(|app| {
             let project_path = get_project_path(app.handle());
             logging::init(&project_path);
