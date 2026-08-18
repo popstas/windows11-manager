@@ -215,7 +215,7 @@ git commit -m "feat(claude-place): разбор тела просьбы о ра�
   - `tileByZones(rects, n) → Bounds[]`
   - `Bounds` здесь и далее — `{ x, y, width, height }`, целые числа
 
-- [ ] **Step 1: Написать падающий тест**
+- [x] **Step 1: Написать падающий тест**
 
 Дописать в `src/claude-layout-helpers.test.js`:
 
@@ -296,12 +296,12 @@ describe('tileByZones', () => {
 });
 ```
 
-- [ ] **Step 2: Запустить тест и убедиться, что он падает**
+- [x] **Step 2: Запустить тест и убедиться, что он падает**
 
 Run: `npx vitest run src/claude-layout-helpers.test.js`
 Expected: FAIL — `splitCounts is not a function`
 
-- [ ] **Step 3: Написать минимальную реализацию**
+- [x] **Step 3: Написать минимальную реализацию**
 
 Дописать в `src/claude-layout-helpers.js` перед строкой `export`:
 
@@ -373,12 +373,12 @@ export {
 };
 ```
 
-- [ ] **Step 4: Запустить тест и убедиться, что он проходит**
+- [x] **Step 4: Запустить тест и убедиться, что он проходит**
 
 Run: `npx vitest run src/claude-layout-helpers.test.js`
 Expected: PASS, 21 тест
 
-- [ ] **Step 5: Коммит**
+- [x] **Step 5: Коммит**
 
 ```bash
 git add src/claude-layout-helpers.js src/claude-layout-helpers.test.js
