@@ -401,7 +401,7 @@ git commit -m "feat(claude-place): плитка по зонам FancyZones"
   - `cascade(work, n) → Bounds[]`
   - `arrange({ mode, zones, work, n }) → Bounds[]` — единственная точка входа для I/O-слоя
 
-- [ ] **Step 1: Написать падающий тест**
+- [x] **Step 1: Написать падающий тест**
 
 Дописать в `src/claude-layout-helpers.test.js`:
 
@@ -511,12 +511,12 @@ describe('arrange', () => {
 });
 ```
 
-- [ ] **Step 2: Запустить тест и убедиться, что он падает**
+- [x] **Step 2: Запустить тест и убедиться, что он падает**
 
 Run: `npx vitest run src/claude-layout-helpers.test.js`
 Expected: FAIL — `columns is not a function`
 
-- [ ] **Step 3: Написать минимальную реализацию**
+- [x] **Step 3: Написать минимальную реализацию**
 
 Дописать в `src/claude-layout-helpers.js` перед строкой экспорта:
 
@@ -636,17 +636,17 @@ function arrange({ mode, zones = [], work, n }) {
 
 И дописать в блок `export {…}` четыре имени: `columns, tileGrid, cascade, arrange`. Константы наружу не отдаются — их правят здесь же.
 
-- [ ] **Step 4: Запустить тест и убедиться, что он проходит**
+- [x] **Step 4: Запустить тест и убедиться, что он проходит**
 
 Run: `npx vitest run src/claude-layout-helpers.test.js`
 Expected: PASS, 36 тестов
 
-- [ ] **Step 5: Прогнать весь набор — соседние модули не задеты**
+- [x] **Step 5: Прогнать весь набор — соседние модули не задеты**
 
 Run: `npm test`
 Expected: PASS, всё как было плюс новый файл
 
-- [ ] **Step 6: Коммит**
+- [x] **Step 6: Коммит**
 
 ```bash
 git add src/claude-layout-helpers.js src/claude-layout-helpers.test.js

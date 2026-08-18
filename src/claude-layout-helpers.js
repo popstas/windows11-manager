@@ -116,4 +116,116 @@ function tileByZones(rects, n) {
   return out;
 }
 
-export { layoutFromName, normalizeIds, parseArrangePayload, splitCounts, stackInCell, tileByZones };
+/**
+ * Ширина знака моноширинного шрифта в логических пикселях.
+ *
+ * Ограничение задано в колонках, а двигаются окна в пикселях, и перевести одно
+ * в другое нечем: терминал своей ширины в знаках не сообщает. Десять — Cascadia
+ * Mono 12pt при 96 DPI (кегль 16 px, ширина знака 0.6 кегля ≈ 9.6). Масштаб
+ * сюда не входит: и `getBounds()`, и `setBounds()` живут в виртуализированном
+ * пространстве, а терминал DPI-aware и растёт ровно во столько же раз, во
+ * сколько виртуализация ужимает координаты. Число заведомо приблизительное, и
+ * это осознанно: ошибка в полпикселя сдвигает границу на несколько колонок, а
+ * не ломает раскладку. Меряется на живой машине и правится здесь.
+ */
+const COL_PX = 10;
+
+/** Что у окна занято не текстом: рамка, отступы, полоса прокрутки. */
+const CHROME_PX = 32;
+
+/** Колонок на терминал — не меньше и не больше. */
+const MIN_COLS = 80;
+const MAX_COLS = 120;
+
+/** Ступенька каскада — вправо и вниз разом. */
+const STEP = 50;
+
+const minWidth = () => MIN_COLS * COL_PX + CHROME_PX;
+const maxWidth = () => MAX_COLS * COL_PX + CHROME_PX;
+
+/**
+ * Сколько колонок в сетке. Зависит от экрана и только от него.
+ *
+ * Три — идеал, и от него отступают только под нажимом экрана. Когда экран
+ * узок настолько, что оба ограничения разом не выполнить (одна колонка уже
+ * шире 120 знаков, а две — уже 80), побеждает нижнее: читать узкий терминал
+ * хуже, чем широкий. Порядок операций здесь и решает этот спор, поэтому его
+ * нельзя переписать «покороче».
+ */
+function columns(width) {
+  const most = Math.max(1, Math.floor(width / minWidth()));
+  const least = Math.max(1, Math.ceil(width / maxWidth()));
+  return Math.max(1, Math.min(most, Math.max(3, least)));
+}
+
+/**
+ * Запасная сетка: та же плитка, но по своим колонкам, а не по зонам.
+ *
+ * Считается, когда зон нет вовсе, — на машине, где FancyZones не настроен.
+ * Про то, что случился откат, говорит вызывающий: тихий откат спрятал бы
+ * протухший editor-parameters.json, известную болезнь этого проекта.
+ */
+function tileGrid(work, n) {
+  if (!n || !work || work.width <= 0 || work.height <= 0) return [];
+  const cols = columns(work.width);
+  // Ширина режется по 120 колонкам даже там, где экран позволяет больше:
+  // растянутый терминал читать нечем — глаз не доносит строку до конца.
+  // Колонок при этом ровно столько, чтобы до обрезки не дошло: она сторож.
+  const w = Math.min(Math.floor(work.width / cols), maxWidth());
+  const counts = splitCounts(n, cols);
+  const out = [];
+  for (let col = 0; col < cols; col += 1) {
+    if (!counts[col]) continue;
+    out.push(...stackInCell(
+      { x: work.x + col * w, y: work.y, width: w, height: work.height },
+      counts[col],
+    ));
+  }
+  return out;
+}
+
+/**
+ * Стопка со сдвигом вправо и вниз.
+ *
+ * Окна одного размера: половина рабочей области по ширине, а по высоте —
+ * сколько осталось после ступенек. Высота считается от числа окон в стопке:
+ * двум окнам ступенька нужна одна, и отдавать им столько же места, сколько
+ * десяти, значит впустую резать высоту.
+ *
+ * Ступенек помещается столько, чтобы окно не стало ниже половины рабочей
+ * области и не уехало за правый край. Дальше стопка начинается заново от
+ * левого верхнего угла: окон, которым не хватило ступенек, к этому времени
+ * десяток, и экрану уже нечего им предложить, как ни считай.
+ */
+function cascade(work, n) {
+  if (!n || !work || work.width <= 0 || work.height <= 0) return [];
+  const w = Math.floor(work.width / 2);
+  const roomRight = Math.floor((work.width - w) / STEP);
+  const roomDown = Math.floor(Math.floor(work.height / 2) / STEP);
+  const perStack = 1 + Math.max(0, Math.min(roomRight, roomDown));
+  const steps = Math.min(n, perStack) - 1;
+  const h = work.height - steps * STEP;
+  const out = [];
+  for (let i = 0; i < n; i += 1) {
+    const step = i % perStack;
+    out.push({ x: work.x + step * STEP, y: work.y + step * STEP, width: w, height: h });
+  }
+  return out;
+}
+
+/**
+ * Разложить `n` окон. Порядок ответа — порядок окон.
+ *
+ * На входе именно рабочая область, а не экран: что из экрана вычесть, знает
+ * платформа (панель задач отдаёт `MONITORINFO.rcWork`), и знание это здесь не
+ * повторяется — повторённое, оно разошлось бы с настоящим на первом же
+ * переезде панели.
+ */
+function arrange({ mode, zones = [], work, n }) {
+  if (!n) return [];
+  if (mode === 'cascade') return cascade(work, n);
+  if (zones.length) return tileByZones(zones, n);
+  return tileGrid(work, n);
+}
+
+export { layoutFromName, normalizeIds, parseArrangePayload, splitCounts, stackInCell, tileByZones, columns, tileGrid, cascade, arrange };
