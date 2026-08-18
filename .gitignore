@@ -19,3 +19,6 @@ tauri-app/src-tauri/gen/schemas/windows-schema.json
 
 # local Claude Code settings (per-machine permissions)
 .claude/settings.local.json
+
+# рабочие каталоги subagent-driven-development
+.superpowers/

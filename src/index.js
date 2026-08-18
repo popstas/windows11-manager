@@ -200,6 +200,31 @@ async function start() {
   });
 
   claudeWt
+    .command('place <mode>')
+    .description('разложить окна сессий claude: tile | cascade')
+    .action(async (mode) => {
+      const { parseArrangePayload } = await import('./claude-layout-helpers.js');
+      const parsed = parseArrangePayload(mode);
+      if (!parsed) {
+        console.log(`unknown layout: ${mode} (ожидается tile или cascade)`);
+        process.exit(1);
+      }
+      const res = await winMan.arrangeClaudeWindows({
+        mode: parsed.mode,
+        log: (message, level = 'info') => {
+          if (level === 'error') console.error(message);
+          else if (level === 'warn') console.warn(message);
+          else console.log(message);
+        },
+      });
+      if (!res.ok) {
+        console.log(res.reason);
+        process.exit(1);
+      }
+      process.exit(0);
+    });
+
+  claudeWt
     .command('restore')
     .description('alias for "snapshots-restore last"')
     .option('--session <id...>', 'restore only these sessions from the snapshot')
@@ -267,6 +292,28 @@ async function start() {
     console.log(`[claude-wt] cleared ${statePath}`);
     process.exit(0);
   });
+
+  claudeWt
+    .command('tile-zones <action> [text]')
+    .description('read/write claudeWt.tileZones в живом конфиге: get | set <text>')
+    .action(async (action, text) => {
+      const mod = await import('./commands/tile-zones-commands.js');
+      try {
+        if (action === 'get') {
+          console.log(mod.readTileZonesText());
+        } else if (action === 'set') {
+          const zones = mod.writeTileZonesText(text ?? '');
+          console.log(`[claude-wt] tileZones сохранены: ${zones.length} зон(ы)`);
+        } else {
+          console.error(`unknown action: ${action} (ожидается get или set)`);
+          process.exit(1);
+        }
+      } catch (e) {
+        console.error(e.message);
+        process.exit(1);
+      }
+      process.exit(0);
+    });
 
   claudeWt
     .command('open-project')

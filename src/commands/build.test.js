@@ -17,6 +17,7 @@ function winManStub() {
     markSessionUnread: vi.fn(),
     restoreSnapshot: vi.fn(),
     restoreClaudeSessions: vi.fn(),
+    arrangeClaudeWindows: vi.fn().mockResolvedValue({ ok: true, placed: 0 }),
     virtualDesktop: { GetWindowDesktopNumber: vi.fn(), GoToDesktopNumber: vi.fn() },
   };
 }
@@ -45,6 +46,10 @@ describe('buildCommandMap', () => {
     for (const c of ['claude-focus', 'claude-focus-slot', 'claude-session-unread', 'claude-snapshot-restore', 'claude-session-open', 'claude-wt-restore']) {
       expect(Object.keys(map)).toContain(c);
     }
+  });
+
+  it('содержит claude-place', () => {
+    expect(typeof map['claude-place']).toBe('function');
   });
 
   it('заводит по обработчику на каждый командный топик слота', () => {

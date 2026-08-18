@@ -49,6 +49,11 @@ function getFancyZoneMonitor(num) {
   return sortedMons[num - 1];
 }
 
+/** Главный монитор — запасной ответ, когда зоны не сказали, на каком экране считать. */
+function getPrimaryMonitor() {
+  return getWindowsMonitors().find(mon => mon.isPrimary());
+}
+
 export {
   findMonitorByPoint,
   findMonitorNumByName,
@@ -64,4 +69,5 @@ export {
   getMonitorNumByName,
   getSortedMonitors,
   getFancyZoneMonitor,
+  getPrimaryMonitor,
 };

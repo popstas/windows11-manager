@@ -12,6 +12,7 @@ function deps(overrides = {}) {
       markSessionUnread: vi.fn().mockReturnValue({ ok: true, ids: ['abc'] }),
       restoreSnapshot: vi.fn().mockResolvedValue({ restored: ['abc'], skipped: [] }),
       restoreClaudeSessions: vi.fn().mockResolvedValue({ restored: ['abc'], skipped: [] }),
+      arrangeClaudeWindows: vi.fn().mockResolvedValue({ ok: true, placed: 2 }),
       openClaudeProject: vi.fn().mockResolvedValue({ ok: true, action: 'focus' }),
       resumeClaudeSession: vi.fn().mockResolvedValue({ ok: true, action: 'resume', sessionId: 'zzz' }),
       virtualDesktop: {
@@ -361,5 +362,48 @@ describe('claude-session-open: имя терминала', () => {
     const d = deps({ winMan: { getWindowById: vi.fn().mockReturnValue(null) } });
     await claudeCommands(d)['claude-session-open']({ id: 'abc', action: 'terminal' });
     expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledWith({ sessionIds: ['abc'] });
+  });
+});
+
+describe('claude-place', () => {
+  it('передаёт раскладку и список из объекта', async () => {
+    const d = deps();
+    await claudeCommands(d)['claude-place']({ mode: 'tile', ids: ['a', 'b'] });
+    expect(d.winMan.arrangeClaudeWindows).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'tile', ids: ['a', 'b'] }),
+    );
+  });
+
+  // Так шлёт панель openHASP: голое слово в теле топика.
+  it('принимает сырую строку', async () => {
+    const d = deps();
+    await claudeCommands(d)['claude-place']('cascade');
+    expect(d.winMan.arrangeClaudeWindows).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'cascade', ids: [] }),
+    );
+  });
+
+  it('незнакомая раскладка — жалоба в журнал и ни одного движения', async () => {
+    const d = deps();
+    await claudeCommands(d)['claude-place']('mosaic');
+    expect(d.winMan.arrangeClaudeWindows).not.toHaveBeenCalled();
+    expect(d.log).toHaveBeenCalledWith(expect.stringContaining('mosaic'), 'warn');
+  });
+
+  it('отказ раскладки доходит до человека', async () => {
+    const d = deps({
+      winMan: { arrangeClaudeWindows: vi.fn().mockResolvedValue({ ok: false, reason: 'открытых сессий claude нет' }) },
+    });
+    await claudeCommands(d)['claude-place']('tile');
+    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('открытых сессий claude нет'));
+  });
+
+  it('исключение не роняет обработчик', async () => {
+    const d = deps({
+      winMan: { arrangeClaudeWindows: vi.fn().mockRejectedValue(new Error('boom')) },
+    });
+    await claudeCommands(d)['claude-place']('tile');
+    expect(d.log).toHaveBeenCalledWith(expect.stringContaining('boom'), 'error');
+    expect(d.notify).toHaveBeenCalled();
   });
 });

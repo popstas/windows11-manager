@@ -45,12 +45,77 @@ This repository contains a Node.js tool for managing window placement on Windows
 
 ## FancyZones coordinate system & DPI gotchas
 
-FancyZones `editor-parameters.json` stores monitor data with **mixed coordinate spaces** for high-DPI monitors:
-- `left-coordinate`, `top-coordinate`: **physical pixels** (scaled by DPI). E.g., a 200% DPI monitor at logical x=-1920 stores left-coordinate=-3840
-- `monitor-width`, `monitor-height`, `work-area-width`, `work-area-height`: **logical pixels** (post-scaling)
-- Zone coordinates in `custom-layouts.json` are relative to `ref-width`/`ref-height` which matches `work-area-width` — also **logical pixels**
+Two different coordinate spaces meet in this project, and mixing them up is a
+recurring source of bugs (see git history around 2026-08-18: a commit removed
+the DPI division below on the wrong theory that both spaces were the same —
+verified wrong by a live check on a scaled monitor, and reverted):
 
-The code in `calcFancyZonePos` divides ALL values (monitor coords + zone coords) by `scaleFactor = dpi/96`. This works for monitor position (-3840/2=-1920) but **incorrectly halves zone dimensions** on high-DPI monitors (zone width 1599 becomes 800 instead of staying 1599).
+Source of truth for this section: the vendored library itself,
+`vendor/node-window-manager/src/classes/window.ts` (`getBounds()`/
+`setBounds()`, ~lines 22-56) and `vendor/node-window-manager/src/classes/
+monitor.ts` (~lines 17-23). Describe the mechanism from that code, not from
+reasoning about it — a wrong retelling of this exact mechanism has broken
+placement twice in one day.
+
+- **`Monitor.getBounds()` / `Monitor.getWorkArea()`** return whatever the OS
+  addon hands back, **unmodified** — no division, no multiplication
+  (`monitor.ts`). Example from popstas-pc: the MSI monitor,
+  `getScaleFactor() === 1.25`, `getWorkArea()` returns `2893x1728`.
+- **`Window.getBounds()` / `Window.setBounds()`** live in a different space:
+  the wrapper itself **divides** the raw bounds by
+  `this.getMonitor().getScaleFactor()` inside `getBounds()`, and
+  **multiplies** back inside `setBounds()` (`window.ts`). This is wrapper
+  arithmetic, not an OS-level "physical vs logical" distinction — it happens
+  in this JS/TS code, using the scale of the monitor the window currently
+  sits on. On the same MSI monitor, a window's bounds live in `2314x1382`
+  (`2893/1.25`, `1728/1.25`, rounded).
+- **FancyZones' `editor-parameters.json`** (`monitor-width`/`-height`,
+  `work-area-width`/`-height`, `left-coordinate`/`top-coordinate`) and
+  `custom-layouts.json` zone coordinates come from the same space as
+  `Monitor.getBounds()`/`getWorkArea()` above — unmodified monitor values, not
+  the `Window` space. `src/monitors-helpers.js` documents the config side of
+  this: numbers written into `windows11-manager.config.yaml` are the ones a
+  human reads off the OS (e.g. "4K at 125% looks like 3072x1728"), which is
+  why `matchMonitorBySize()` multiplies `m.bounds` by `getScaleFactor()` when
+  matching. Any code that takes a rectangle out of monitor/zone space and
+  feeds it to `setBounds()` (or vice versa) must divide (or multiply) by the
+  target window's monitor scale factor to cross between the two spaces. Two
+  call sites do this today:
+  - `calcFancyZonePos` (`src/fancyzones-helpers.js`), fed `scaleFactor`
+    computed in `fancyZonesToPos()` (`src/fancyzones.js`) from the zone's
+    monitor `dpi`.
+  - `layoutWorkArea()` (`src/claude-layout.js`), via `toWindowSpace()`
+    (`src/claude-layout-helpers.js`), which divides `mon.getWorkArea()` by
+    `mon.getScaleFactor()` before handing it to `tileGrid()`/`cascade()` —
+    without this, windows on a scaled monitor were sized in monitor pixels
+    and spilled onto the neighboring monitor below.
+
+**Possible trap on a non-primary monitor (hypothesis, not confirmed — don't
+blind-fix it):** it was suspected that `calcFancyZonePos` divides a
+non-primary monitor's zone by that monitor's own DPI while Windows'
+DPI-unaware virtualization might scale the *entire* virtual desktop by the
+**primary** monitor's factor instead, which would overshoot a zone on any
+other monitor by roughly `left-coordinate × (1 − 1/primaryScale)` px. This is
+*not* what the vendored code shows: `Window.getBounds()`/`setBounds()` always
+use `this.getMonitor().getScaleFactor()` — the scale of the monitor the
+window is *on*, not the primary monitor's. So this specific mechanism doesn't
+follow from the code as written, and it has not been confirmed live either.
+Treat it as unverified until checked on the actual iiyama+MSI setup (compare
+a zone's expected vs actual landing position on the non-primary monitor). Do
+not "fix" this without that check — the user's config has accumulated
+`monitorsOffset` corrections over the years that may already compensate for
+whatever the real behavior turns out to be.
+
+**Confirmed inter-monitor trap:** `Window.setBounds()` reads the scale factor
+of the monitor the window is *currently on* before the move, not the monitor
+it's moving to (`window.ts` — `getMonitor()` is called fresh inside
+`setBounds()`, but that still reflects the window's position at call time).
+Moving a window across monitors with different scale factors in one
+`setBounds()` call therefore uses the wrong factor. `src/placement.js`
+(~lines 98-108) works around exactly this: after the first `setBounds()`, it
+re-reads the window's new monitor scale, and if it changed, calls
+`adjustBoundsForScale()` and `setBounds()` again to correct for the
+mismatch.
 
 ### Known issues
 - **Stale FZ data**: `editor-parameters.json` is only refreshed when the FancyZones editor is opened (Win+Shift+`) or after a **full system reboot**. Simply restarting PowerToys does NOT regenerate it. Stale data can have wrong DPI (192 vs 96) and wrong coordinates
@@ -98,6 +163,65 @@ Two rules keep the once-a-second daemon off the CPU graph; both were paid for on
 Window titles are compared in decoration-stripped form (`title-helpers.js`): Claude Code prefixes the terminal title with a status glyph (`✳ ccfzf`) while the ccfzf dump stores the bare summary, so both sides are normalised by the same function.
 
 **There is a second poller now, and it is fine.** `placeWindowOnOpen` (`src/mqtt/autoplacer.js`, gated by `config.placeWindowOnOpen`) runs inside the `mqtt` process, not the daemon, and it polls too -- `getVisibleWindowIds()` every 1500ms, same call the daemon uses, same rule respected: `getWindows()` (~21-31ms) only fires once a new hwnd shows up among the visible ones, never in the loop, and the desktop number is never read in the loop either. So two processes now each poll `getVisibleWindowIds()` on their own timer (daemon at 1000ms, MQTT service at 1500ms) -- a few ms/s per process, not the pattern this rule exists to forbid.
+
+## Раскладки claude-place
+
+Просьба `claude-place` раскладывает окна сессий Claude плиткой или каскадом.
+Имена команды, форма тела (`{"mode": "tile"|"cascade", "ids": [...]}`, json-строка,
+голое слово) и правила раскладок взяты у `macos-windows-manager` **как есть** —
+кнопки в ccfzf-picker и на панели openHASP одни на все хосты, и разойтись с
+маком в разборе одного топика значит отлаживать сразу на двух машинах. Меняя
+что-то здесь, меняйте и там (`crates/mwm-core/src/{layout,request}.rs`).
+
+- Вся арифметика — `src/claude-layout-helpers.js`, чистая и с юнит-тестами.
+  Там же правятся `COL_PX` (ширина знака) и `CHROME_PX` (рамка и полоса
+  прокрутки): оба заведомо приблизительны и меряются на живой машине.
+- Всё, что ходит наружу, — `src/claude-layout.js`: зоны, мониторы, сессии,
+  движение окон через `placeWindow()`. Команда зарегистрирована в общей карте
+  (`src/commands/claude-commands.js`, `src/commands/build.js`), поэтому её
+  видят и MQTT, и HTTP-транспорт разом; отладка без брокера —
+  `node src/index.js claude-wt place tile|cascade`.
+- **Плитка идёт по зонам FancyZones**, а не по своей сетке: зоны уже нарисованы
+  человеком, и делить монитор второй раз — значит спорить с ним. Список зон —
+  `claudeWt.tileZones`, пары `{ monitor, position }` в той же форме, что у
+  `rule.fancyZones` (см. `config.example.yaml`):
+  ```yaml
+  tileZones:
+    - { monitor: 1, position: 6 }
+    - { monitor: 1, position: 7 }
+  ```
+  Порядок списка задаёт порядок окон. Окон больше, чем зон, — лишние достаются
+  последним зонам и делятся в них по высоте; окон меньше — хвост зон остаётся
+  пуст.
+- Откат на свою сетку (порт маковской, колонки по 80–120 знаков) целиком
+  живёт в `resolveZones()`, и причин у него ровно две: `claudeWt.tileZones` не
+  задан или пуст, либо зона не разрешилась в прямоугольник. Обе дают
+  `zones = []`, и дальше `arrange()` уходит на `tileGrid`. Откат пишет строку
+  `warn` с причиной — тихий откат прятал бы протухший `editor-parameters.json`
+  (известная болезнь, см. «Known issues» выше), и окна вставали бы не туда без
+  единого следа в журнале. Исключение — каскад с незаданным `tileZones`: своей
+  сетки у каскада нет вовсе, он всегда считает от рабочей области, так что
+  откатываться там не на что и предупреждать не о чем, строка не пишется.
+  Когда зона задана, но не разрешилась, хвост предупреждения зависит от
+  режима: у плитки «считаю своей сеткой», у каскада — «раскладываю по рабочей
+  области главного монитора» (своей сетки у него по-прежнему нет). Если
+  раскладка выглядит протухшей — сюда и смотреть первым делом:
+  `editor-parameters.json` обновляется только при открытии редактора зон
+  (Win+Shift+`) или после полной перезагрузки, перезапуска PowerToys не
+  хватает.
+- Рабочая область (`layoutWorkArea()`, `MONITORINFO.rcWork`) — отдельная вещь
+  от отката на сетку: она нужна каскаду и запасной сетке, а плитке по уже
+  разрешённым зонам не нужна вовсе (`tileByZones()` её даже не принимает). Не
+  нашёлся монитор по зоне или главный монитор — каскад и запасная сетка
+  отказываются с причиной «не найден монитор для раскладки», всегда со
+  строкой `warn`. Плитку по уже разрешённым зонам это не касается вовсе:
+  `layoutWorkArea()` для неё вообще не зовут (`arrangeClaudeWindows()`,
+  `mode === 'tile' && zones.length`), а не зовут и заглушают её warn —
+  иначе даже безобидный промах точки первой зоны мимо монитора писал бы
+  сюда ложные строки про «считаю по главному» или «область вырождена»,
+  хотя плитка ляжет ровно в зоны и никакого отката не будет.
+- Каскад считает от рабочей области (монитор первой зоны, иначе главный), зон
+  он не касается.
 
 ## Getting started
 

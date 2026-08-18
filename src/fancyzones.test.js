@@ -1,5 +1,23 @@
-import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { calcFancyZonePos } from './fancyzones-helpers.js';
+
+let toPosDir;
+let toPosConfig;
+
+vi.mock('./config.js', () => ({ getConfig: () => toPosConfig }));
+vi.mock('./monitors.js', () => ({
+  getFancyZoneMonitor: () => ({
+    monitor: 1,
+    dpi: 120,
+    'left-coordinate': 0,
+    'top-coordinate': 0,
+    'work-area-width': 2893,
+    'work-area-height': 1728,
+  }),
+}));
 
 const monBounds = { x: 0, y: 0, width: 1920, height: 1080 };
 
@@ -75,5 +93,48 @@ describe('calcFancyZonePos', () => {
     const monitorsOffset = { left: 60, right: 60 };
     const pos = calcFancyZonePos({ zone, monBounds, monitorGaps, monitorsOffset, scaleFactor: 2 });
     expect(pos).toEqual({ x: 30, y: 0, width: 900, height: 516 });
+  });
+});
+
+// calcFancyZonePos() выше вызывается напрямую с явным scaleFactor и не может
+// запереть регресс на уровне fancyZonesToPos() — там scaleFactor считается из
+// monitor.dpi и может снова потеряться при рефакторинге. Этот тест гоняет
+// полный путь через fancyZonesToPos() с замоканными fs/config/monitors и
+// реальными числами живой машины: зона на всю высоту рабочей области монитора
+// со 125% (dpi 120) должна выйти МЕНЬШЕ рабочей области — ровно в 1.25 раза,
+// потому что зона задана в физических пикселях монитора, а окна двигаются в
+// логических. Возврат деления на dpi/96 в calcFancyZonePos/fancyZonesToPos —
+// это и был откат ошибки d5f95b6/4b8156b, подтверждённый живой проверкой:
+// без деления окна на этом мониторе становились крупнее зоны.
+describe('fancyZonesToPos', () => {
+  beforeEach(() => {
+    toPosDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fancyzones-topos-'));
+    toPosConfig = { fancyZones: { path: toPosDir }, positionsMap: [] };
+  });
+
+  afterEach(() => {
+    fs.rmSync(toPosDir, { recursive: true, force: true });
+  });
+
+  // Живая машина popstas-pc (2026-08-18), монитор MSI, 125% (dpi 120):
+  // work-area 2893x1728 (физические), зона 919,0,1012,1728 (вся высота
+  // рабочей области, тоже физические). Деление на scaleFactor=1.25 даёт
+  // логические координаты, в которых живут окна: 735,0,810,1382.
+  it('на 125% DPI (dpi 120) делит зону на scaleFactor: физические пиксели зоны -> логические окна', async () => {
+    const uuid = 'zone-uuid';
+    fs.writeFileSync(path.join(toPosDir, 'applied-layouts.json'), JSON.stringify({
+      'applied-layouts': [
+        { device: { monitor: 1 }, 'applied-layout': { type: 'custom', uuid } },
+      ],
+    }));
+    fs.writeFileSync(path.join(toPosDir, 'custom-layouts.json'), JSON.stringify({
+      'custom-layouts': [
+        { uuid, info: { zones: [{ X: 919, Y: 0, width: 1012, height: 1728 }] } },
+      ],
+    }));
+
+    const { fancyZonesToPos } = await import('./fancyzones.js');
+    const pos = fancyZonesToPos({ monitor: 1, position: 1 });
+    expect(pos).toEqual({ x: 735, y: 0, width: 810, height: 1382 });
   });
 });
