@@ -63,4 +63,57 @@ function parseArrangePayload(payload) {
   return mode ? { mode, ids } : null;
 }
 
-export { layoutFromName, normalizeIds, parseArrangePayload };
+/**
+ * Сколько окон достаётся каждой ячейке (зоне или колонке).
+ *
+ * Обе ветки — одна формула, маковская (`layout.rs`, `tile()`): окон меньше,
+ * чем ячеек, — занимаются первые, по одному; больше — лишние достаются
+ * последним ячейкам, а не первым. Первое окно списка — самое верхнее в
+ * пикере, и ячейка ему достаётся целиком: разложи мы остаток слева, полную
+ * получало бы последнее, до которого человеку дела меньше всего.
+ */
+function splitCounts(n, cells) {
+  const base = Math.floor(n / cells);
+  const rem = n % cells;
+  const out = [];
+  for (let k = 0; k < cells; k += 1) {
+    out.push(base === 0 ? (k < rem ? 1 : 0) : base + (k >= cells - rem ? 1 : 0));
+  }
+  return out;
+}
+
+/**
+ * Разделить прямоугольник по высоте на `count` равных частей.
+ *
+ * Нижней достаётся остаток от деления: без этого между ней и краем оставалась
+ * бы щель в пару точек, и «занимает зону целиком» переставало быть правдой.
+ */
+function stackInCell(cell, count) {
+  const h = Math.floor(cell.height / count);
+  const out = [];
+  for (let row = 0; row < count; row += 1) {
+    const y = cell.y + row * h;
+    const height = row === count - 1 ? cell.y + cell.height - y : h;
+    out.push({ x: cell.x, y, width: cell.width, height });
+  }
+  return out;
+}
+
+/**
+ * Плитка по готовым прямоугольникам зон FancyZones.
+ *
+ * Зоны уже нарисованы человеком, и делить монитор второй раз своей сеткой —
+ * значит спорить с тем, как он его поделил. Здесь зона занимает то место, где
+ * на маке стояла колонка.
+ */
+function tileByZones(rects, n) {
+  if (!n || !rects?.length) return [];
+  const counts = splitCounts(n, rects.length);
+  const out = [];
+  rects.forEach((rect, k) => {
+    if (counts[k] > 0) out.push(...stackInCell(rect, counts[k]));
+  });
+  return out;
+}
+
+export { layoutFromName, normalizeIds, parseArrangePayload, splitCounts, stackInCell, tileByZones };

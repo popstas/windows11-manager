@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseArrangePayload } from './claude-layout-helpers.js';
+import { parseArrangePayload, splitCounts, stackInCell, tileByZones } from './claude-layout-helpers.js';
 
 describe('parseArrangePayload', () => {
   it('разбирает объект с режимом и списком', () => {
@@ -50,5 +50,78 @@ describe('parseArrangePayload', () => {
 
   it('число в теле — null, а не раскладка', () => {
     expect(parseArrangePayload('5')).toBeNull();
+  });
+});
+
+describe('splitCounts', () => {
+  it('окон меньше, чем ячеек — по одному в первые', () => {
+    expect(splitCounts(1, 4)).toEqual([1, 0, 0, 0]);
+    expect(splitCounts(3, 4)).toEqual([1, 1, 1, 0]);
+  });
+
+  it('поровну', () => {
+    expect(splitCounts(4, 4)).toEqual([1, 1, 1, 1]);
+  });
+
+  // Добор с конца: первое окно списка — самое верхнее в пикере, и ячейка ему
+  // достаётся целиком.
+  it('лишние окна достаются последним ячейкам', () => {
+    expect(splitCounts(6, 4)).toEqual([1, 1, 2, 2]);
+    expect(splitCounts(9, 4)).toEqual([2, 2, 2, 3]);
+  });
+});
+
+describe('stackInCell', () => {
+  const CELL = { x: 100, y: 0, width: 500, height: 1000 };
+
+  it('одно окно занимает ячейку целиком', () => {
+    expect(stackInCell(CELL, 1)).toEqual([{ x: 100, y: 0, width: 500, height: 1000 }]);
+  });
+
+  it('двое делят высоту пополам', () => {
+    expect(stackInCell(CELL, 2)).toEqual([
+      { x: 100, y: 0, width: 500, height: 500 },
+      { x: 100, y: 500, width: 500, height: 500 },
+    ]);
+  });
+
+  // Без остатка между нижним окном и краем ячейки оставалась бы щель.
+  it('нижнему достаётся остаток от деления', () => {
+    const out = stackInCell(CELL, 3);
+    expect(out.map((b) => b.height)).toEqual([333, 333, 334]);
+    expect(out[2].y + out[2].height).toBe(1000);
+  });
+});
+
+describe('tileByZones', () => {
+  const ZONES = [
+    { x: 0, y: 0, width: 500, height: 1000 },
+    { x: 500, y: 0, width: 500, height: 1000 },
+    { x: 1000, y: 0, width: 500, height: 1000 },
+    { x: 1500, y: 0, width: 500, height: 1000 },
+  ];
+
+  it('одно окно встаёт в первую зону целиком', () => {
+    expect(tileByZones(ZONES, 1)).toEqual([{ x: 0, y: 0, width: 500, height: 1000 }]);
+  });
+
+  it('по окну на зону', () => {
+    expect(tileByZones(ZONES, 4).map((b) => b.x)).toEqual([0, 500, 1000, 1500]);
+  });
+
+  it('шесть окон на четыре зоны: две последние делятся пополам', () => {
+    expect(tileByZones(ZONES, 6)).toEqual([
+      { x: 0, y: 0, width: 500, height: 1000 },
+      { x: 500, y: 0, width: 500, height: 1000 },
+      { x: 1000, y: 0, width: 500, height: 500 },
+      { x: 1000, y: 500, width: 500, height: 500 },
+      { x: 1500, y: 0, width: 500, height: 500 },
+      { x: 1500, y: 500, width: 500, height: 500 },
+    ]);
+  });
+
+  it('ноль окон и ноль зон — пусто', () => {
+    expect(tileByZones(ZONES, 0)).toEqual([]);
+    expect(tileByZones([], 3)).toEqual([]);
   });
 });
