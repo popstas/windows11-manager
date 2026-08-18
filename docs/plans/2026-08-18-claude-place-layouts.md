@@ -670,7 +670,7 @@ git commit -m "feat(claude-place): запасная сетка, каскад и 
 
 Проверяется этот шаг вручную на popstas-pc: юнит-тестов на I/O-слой в этом проекте нет ни у `placement.js`, ни у `fancyzones.js` — они тянут node-window-manager, которого на машине разработчика нет.
 
-- [ ] **Step 1: Добавить `getPrimaryMonitor` в `src/monitors.js`**
+- [x] **Step 1: Добавить `getPrimaryMonitor` в `src/monitors.js`**
 
 После функции `getWindowsMonitors()`:
 
@@ -683,7 +683,7 @@ function getPrimaryMonitor() {
 
 И дописать `getPrimaryMonitor` в перечень имён во втором блоке `export {…}` в конце файла (там, где `getWindowsMonitors, getMonitor, getMons, …`).
 
-- [ ] **Step 2: Создать `src/claude-layout.js`**
+- [x] **Step 2: Создать `src/claude-layout.js`**
 
 ```js
 /**
@@ -845,7 +845,7 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
 export { arrangeClaudeWindows };
 ```
 
-- [ ] **Step 3: Отдать функцию в `winMan`**
+- [x] **Step 3: Отдать функцию в `winMan`**
 
 В `src/lib/index.js` дописать после строки `export * from '../placement.js';`:
 
@@ -853,7 +853,7 @@ export { arrangeClaudeWindows };
 export * from '../claude-layout.js';
 ```
 
-- [ ] **Step 4: Добавить команду CLI**
+- [x] **Step 4: Добавить команду CLI**
 
 В `src/index.js`, сразу после `claudeWt.command('status')…` и до `claudeWt.command('restore')`:
 
@@ -880,7 +880,7 @@ export * from '../claude-layout.js';
     });
 ```
 
-- [ ] **Step 5: Описать ключ конфига**
+- [x] **Step 5: Описать ключ конфига**
 
 В `config.example.yaml`, в блок `claudeWt:` — после строки `terminalExecutables: []`:
 
@@ -898,12 +898,12 @@ export * from '../claude-layout.js';
   #   - { monitor: 1, position: 9 }
 ```
 
-- [ ] **Step 6: Убедиться, что ничего не сломано**
+- [x] **Step 6: Убедиться, что ничего не сломано**
 
 Run: `npm test`
 Expected: PASS — новых тестов здесь нет, но `src/lib/index.js` и `src/monitors.js` не должны сломать существующие
 
-- [ ] **Step 7: Коммит**
+- [x] **Step 7: Коммит**
 
 ```bash
 git add src/claude-layout.js src/monitors.js src/lib/index.js src/index.js config.example.yaml

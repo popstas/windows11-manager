@@ -1,4 +1,5 @@
 export * from '../placement.js';
+export * from '../claude-layout.js';
 export * from '../windows.js';
 export * from '../monitors.js';
 export * from '../fancyzones.js';

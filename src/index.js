@@ -200,6 +200,27 @@ async function start() {
   });
 
   claudeWt
+    .command('place <mode>')
+    .description('разложить окна сессий claude: tile | cascade')
+    .action(async (mode) => {
+      const { parseArrangePayload } = await import('./claude-layout-helpers.js');
+      const parsed = parseArrangePayload(mode);
+      if (!parsed) {
+        console.log(`unknown layout: ${mode} (ожидается tile или cascade)`);
+        process.exit(1);
+      }
+      const res = await winMan.arrangeClaudeWindows({
+        mode: parsed.mode,
+        log: (message) => console.log(message),
+      });
+      if (!res.ok) {
+        console.log(res.reason);
+        process.exit(1);
+      }
+      process.exit(0);
+    });
+
+  claudeWt
     .command('restore')
     .description('alias for "snapshots-restore last"')
     .option('--session <id...>', 'restore only these sessions from the snapshot')
