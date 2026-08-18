@@ -49,6 +49,12 @@ function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = 
       return result;
     },
     'claude-focus': withRefresh(claude['claude-focus']),
+    // Ограничитель по той же причине, что у claude-focus-slot: источник —
+    // палец на панели openHASP, а каждая раскладка — десяток setBounds()
+    // подряд, то есть настоящая работа.
+    'claude-place': throttlePress(claude['claude-place'], {
+      onDrop: (payload) => log(`claude-place ${payload} — отброшено, не чаще раза в секунду`, 'warn'),
+    }),
     'claude-focus-slot': throttlePress(
       withRefresh(async (payload) => {
         await claude['claude-focus-slot'](payload);

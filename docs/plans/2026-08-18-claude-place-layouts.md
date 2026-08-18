@@ -923,7 +923,7 @@ git commit -m "feat(claude-place): зоны, рабочая область и д
 - Consumes: `winMan.arrangeClaudeWindows(...)` из Task 4, `parseArrangePayload` из Task 1
 - Produces: ключ `'claude-place'` в карте команд — его сразу видят оба транспорта, MQTT и HTTP
 
-- [ ] **Step 1: Написать падающий тест**
+- [x] **Step 1: Написать падающий тест**
 
 Дописать в конец `src/commands/claude-commands.test.js`. Мок `arrangeClaudeWindows` надо добавить и в общий `deps()` — в объект `winMan`, рядом с `restoreClaudeSessions`:
 
@@ -992,12 +992,12 @@ describe('claude-place', () => {
   });
 ```
 
-- [ ] **Step 2: Запустить тесты и убедиться, что они падают**
+- [x] **Step 2: Запустить тесты и убедиться, что они падают**
 
 Run: `npx vitest run src/commands/claude-commands.test.js src/commands/build.test.js`
 Expected: FAIL — `claudeCommands(d)['claude-place'] is not a function`
 
-- [ ] **Step 3: Написать обработчик**
+- [x] **Step 3: Написать обработчик**
 
 В `src/commands/claude-commands.js` — импорт после существующих:
 
@@ -1039,7 +1039,7 @@ import { parseArrangePayload } from '../claude-layout-helpers.js';
     },
 ```
 
-- [ ] **Step 4: Зарегистрировать команду**
+- [x] **Step 4: Зарегистрировать команду**
 
 В `src/commands/build.js`, в объект `map` — после строки с `'claude-focus': withRefresh(...)`:
 
@@ -1052,17 +1052,17 @@ import { parseArrangePayload } from '../claude-layout-helpers.js';
     }),
 ```
 
-- [ ] **Step 5: Запустить тесты и убедиться, что они проходят**
+- [x] **Step 5: Запустить тесты и убедиться, что они проходят**
 
 Run: `npx vitest run src/commands/claude-commands.test.js src/commands/build.test.js`
 Expected: PASS
 
-- [ ] **Step 6: Прогнать весь набор**
+- [x] **Step 6: Прогнать весь набор**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 7: Коммит**
+- [x] **Step 7: Коммит**
 
 ```bash
 git add src/commands/claude-commands.js src/commands/claude-commands.test.js src/commands/build.js src/commands/build.test.js

@@ -11,6 +11,7 @@ import { chooseAction, resolveDesktopSwitch } from '../claude-wt/ha/session-grou
 import { sessionIdForSlot } from '../claude-wt/ha/session-slots.js';
 import { basenameOfCwd } from '../claude-wt/project-helpers.js';
 import { parseRestorePayload } from './restore-payload.js';
+import { parseArrangePayload } from '../claude-layout-helpers.js';
 
 /** Тело просьбы: `{"id": …}` либо голый id строкой — ради вызова руками. */
 function parseIdPayload(payload) {
@@ -178,6 +179,36 @@ function claudeCommands({ winMan, log, notify, slots }) {
 
   return {
     'claude-focus': focus,
+
+    /**
+     * Разложить окна сессий плиткой или каскадом.
+     *
+     * Тело разбирается тремя видами, как у мака: объект от пикера, json-строка
+     * и голое слово с панели openHASP. Успех в журнал пишет сам
+     * arrangeClaudeWindows — он один знает, сколько окон нашлось; сюда доходят
+     * только отказы, и они идут ещё и человеком, потому что у публикации в
+     * MQTT ответа нет и молчание неотличимо от успеха.
+     */
+    async 'claude-place'(payload) {
+      const parsed = parseArrangePayload(payload);
+      if (!parsed) {
+        log(`claude-place: тело не разобрано — ${JSON.stringify(payload)}`, 'warn');
+        return;
+      }
+      let res;
+      try {
+        res = await winMan.arrangeClaudeWindows({ mode: parsed.mode, ids: parsed.ids, log });
+      } catch (e) {
+        log(`claude-place ${parsed.mode}: ${e.message}`, 'error');
+        notify(`claude-wt: ошибка раскладки — ${e.message}`);
+        return;
+      }
+      if (!res?.ok) {
+        const reason = res?.reason ?? 'не удалось разложить';
+        log(`claude-place ${parsed.mode}: ${reason}`, 'warn');
+        notify(`claude-wt: ${reason}`);
+      }
+    },
 
     /**
      * Панель шлёт номер строки, а не id: топик в openhasp_buttons.yaml —
