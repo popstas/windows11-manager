@@ -24,6 +24,13 @@ import { arrange } from './claude-layout-helpers.js';
  * (AGENTS.md, «Known issues»), и тихий откат спрятал бы её — окна просто
  * встали бы не туда, а человек искал бы причину в зонах.
  *
+ * То же самое, если зона задана, но не разрешилась (битый editor-parameters.json
+ * посреди списка): хвост строки warn зависит от режима — у плитки есть своя
+ * сетка (tileGrid), у каскада её нет, и он всегда считает от рабочей области
+ * главного монитора независимо от tileZones. Строка ровно одна на зону: если
+ * `fancyZonesToPos()` бросил, вторую, из ветки «не разрешилась», не пишем —
+ * `rect` там всё равно останется `undefined` теми же корнями, что и в catch.
+ *
  * `fancyZonesToPos()` зовётся под try: сам разбор `false` в деструктуризации
  * не бросает (боксится как булево), но `getFancyZoneInfo()` внутри читает и
  * парсит `applied-layouts.json`/`custom-layouts.json`, а `getFancyZoneMonitor()`
@@ -38,16 +45,25 @@ function resolveZones(log, mode) {
     }
     return [];
   }
+  // Хвост сообщения зависит от режима: у плитки при отказе есть своя сетка
+  // (tileGrid по рабочей области), а у каскада её нет вовсе — он всегда
+  // считает от рабочей области главного монитора, зоны ему не указ.
+  const fallbackTail = mode === 'cascade'
+    ? 'раскладываю по рабочей области главного монитора'
+    : 'считаю своей сеткой';
   const rects = [];
   for (const zone of list) {
     let rect;
     try {
       rect = fancyZonesToPos(zone);
     } catch (e) {
-      log(`claude-place: зона ${JSON.stringify(zone)} — ${e.message}`, 'warn');
+      // Один log(), не два: rect остаётся undefined, и без return сюда же
+      // упала бы вторая, лишняя строка из ветки «не разрешилась» ниже.
+      log(`claude-place: зона ${JSON.stringify(zone)} — ${e.message}, ${fallbackTail}`, 'warn');
+      return [];
     }
     if (!rect) {
-      log(`claude-place: зона ${JSON.stringify(zone)} не разрешилась — считаю своей сеткой`, 'warn');
+      log(`claude-place: зона ${JSON.stringify(zone)} не разрешилась — ${fallbackTail}`, 'warn');
       return [];
     }
     rects.push(rect);
@@ -71,8 +87,24 @@ function resolveZones(log, mode) {
  * Откат на главный монитор — как и откат на свою сетку в resolveZones() —
  * всегда со строкой warn: без неё протухший editor-parameters.json (точка
  * зоны мимо любого mon.bounds) увозит окна на другой экран молча.
+ *
+ * Исключение — плитка с уже разрешёнными зонами (`mode === 'tile'` и
+ * `rects.length`): результат этой функции тогда вообще не используется,
+ * tileByZones() кладёт окна прямо в зоны. Если точка первой зоны мимо
+ * любого монитора, писать «считаю по главному» было бы враньём того же
+ * рода, что чинит resolveZones(), — по главному ничего считаться не будет,
+ * поэтому строка тут не пишется вовсе.
+ *
+ * Возврат не только `null`, но и вырожденный прямоугольник — самостоятельная
+ * дыра: `{width:0,height:0}` истинный, внешняя проверка на `!work` его
+ * пропускает, а tileGrid()/cascade() тихо отдают `[]` по своей проверке
+ * `work.width <= 0`. Снаружи это выглядело бы как «разложено 0 из N» без
+ * единой строки warn — ровно то молчание, которое проект запрещает. Поэтому
+ * здесь же, при выходе, проверяются оба измерения.
  */
-function layoutWorkArea(rects, log) {
+function layoutWorkArea(rects, log, mode) {
+  // Плитка по уже разрешённым зонам не читает то, что вернёт эта функция.
+  const zoneDrivesLayout = mode === 'tile' && rects.length > 0;
   let mon;
   try {
     mon = rects[0] && getMonitorByPoint(rects[0]);
@@ -81,7 +113,7 @@ function layoutWorkArea(rects, log) {
     mon = null;
   }
   if (!mon) {
-    if (rects[0]) {
+    if (rects[0] && !zoneDrivesLayout) {
       log('claude-place: монитор по зоне не найден — считаю по главному', 'warn');
     }
     try {
@@ -95,7 +127,18 @@ function layoutWorkArea(rects, log) {
     log('claude-place: главный монитор не определён — раскладывать не по чему', 'warn');
     return null;
   }
-  return mon.getWorkArea?.() ?? mon.bounds ?? null;
+  let work;
+  try {
+    work = mon.getWorkArea?.() ?? mon.bounds ?? null;
+  } catch (e) {
+    log(`claude-place: не удалось получить рабочую область монитора — ${e.message}`, 'warn');
+    return null;
+  }
+  if (!work || !(work.width > 0) || !(work.height > 0)) {
+    log('claude-place: рабочая область монитора вырождена — раскладывать не по чему', 'warn');
+    return null;
+  }
+  return work;
 }
 
 /**
@@ -156,13 +199,20 @@ function pickWindows(ids, log) {
  */
 async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
   const zones = resolveZones(log, mode);
-  const work = layoutWorkArea(zones, log);
+  const work = layoutWorkArea(zones, log, mode);
   if (!work && (mode === 'cascade' || !zones.length)) {
     return { ok: false, reason: 'не найден монитор для раскладки' };
   }
   const { error, windows, asked } = pickWindows(ids, log);
   if (error) return { ok: false, reason: error };
-  if (!windows.length) return { ok: false, reason: 'открытых сессий claude нет' };
+  if (!windows.length) {
+    // Про ненайденные id уже есть строка warn в pickWindows(); здесь — точный
+    // диагноз для отказа: если ids был задан, сессии-то есть, просто не эти.
+    return {
+      ok: false,
+      reason: ids.length ? 'ни одна из запрошенных сессий claude здесь не открыта' : 'открытых сессий claude нет',
+    };
+  }
 
   const rects = arrange({ mode, zones, work, n: windows.length });
   let placed = 0;
@@ -174,7 +224,13 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
   let unchanged = 0;
   for (let i = 0; i < windows.length; i += 1) {
     const pos = rects[i];
-    if (!pos) break;
+    if (!pos) {
+      // Тихий break прятал бы это как «разложено N из M» без единой строки
+      // warn — arrange() вернула меньше прямоугольников, чем окон, и это
+      // само по себе повод для диагноза, а не для молчания.
+      log(`claude-place: раскладка дала ${rects.length} прямоугольник(ов) на ${windows.length} окон — остаток не расставлен`, 'warn');
+      break;
+    }
     // Одно упавшее окно не обрывает остальные — та же сетка, что в
     // placeWindowsByConfig(): процесс окна мог умереть между перечислением и
     // расстановкой.
