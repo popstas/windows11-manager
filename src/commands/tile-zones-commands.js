@@ -6,17 +6,19 @@
  * node-команду, которую Rust зовёт тем же способом, что и остальные
  * (`run_node_command` и соседи), а не через прямую запись в файл настроек.
  *
- * Запись обязана сохранять комментарии — конфиг человек ведёт руками, и он
- * весь в поясняющих комментариях. Наивная сериализация всего объекта
- * (`JSON.parse`/`stringify` или `yaml.stringify(obj)`) их бы стёрла. Вместо
- * этого — Document API пакета `yaml` (`parseDocument` + точечная правка узла +
- * `String(doc)`), который сохраняет комментарии и форматирование остального
- * файла нетронутыми.
+ * Запись обязана сохранять комментарии и форматирование конфига целиком —
+ * конфиг человек ведёт руками, и он весь в поясняющих комментариях. Правку
+ * значения делает `patchTileZonesText` (`./tile-zones-patch.js`) точечно, по
+ * диапазону символов узла `claudeWt.tileZones`, а не пересборкой всего
+ * документа: `yaml.stringify(obj)` или `String(parseDocument(...))`
+ * переразбирают весь файл и меняют форматирование мест, которых никто не
+ * трогал (см. комментарий в tile-zones-patch.js).
  */
 import fs from 'node:fs';
-import { parseDocument } from 'yaml';
+import path from 'node:path';
 import { getConfig, resolveConfigPath } from '../config.js';
 import { formatTileZonesText, parseTileZonesText } from './tile-zones-helpers.js';
+import { patchTileZonesText } from './tile-zones-patch.js';
 
 /** Текущие tileZones в текстовой форме поля настроек. */
 function readTileZonesText() {
@@ -25,12 +27,42 @@ function readTileZonesText() {
 }
 
 /**
- * Записать tileZones из текста поля настроек в YAML-конфиг, не трогая
- * остальное его содержимое.
+ * Атомарная запись текста в файл рядом (тот же том — сосед по каталогу):
+ * временный файл, `fsync`, переименование поверх оригинала. Тот же приём,
+ * что у `src/claude-wt/state.js` (`writeState`) — переименование
+ * журналируется файловой системой, а данные без `fsync` нет, и без него
+ * обрыв питания посреди записи мог оставить рваный временный файл, откат на
+ * который не спасал бы: переименование уже могло случиться раньше fsync.
  *
- * Запись атомарна: пишется во временный файл рядом с конфигом, затем —
- * переименование поверх оригинала. Обрыв посреди записи оставляет нетронутым
- * старый файл, а не половину нового.
+ * Право доступа временного файла берётся у оригинала явно: `fs.writeFileSync`
+ * создал бы его по umask, а в этом конфиге лежит `mqtt_password` — сужать
+ * права записи молча нельзя.
+ *
+ * При любой неудаче между открытием и переименованием временный файл
+ * убирается, а не остаётся мусором `*.tmp-<pid>` рядом с конфигом.
+ */
+function writeFileAtomic(filePath, text) {
+  const mode = fs.existsSync(filePath) ? fs.statSync(filePath).mode & 0o777 : 0o644;
+  const tmpPath = `${filePath}.tmp-${process.pid}`;
+  try {
+    const fd = fs.openSync(tmpPath, 'w', mode);
+    try {
+      fs.writeSync(fd, text, null, 'utf8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmpPath, filePath);
+  } catch (e) {
+    try { fs.unlinkSync(tmpPath); } catch { /* временного файла и не появилось, или уже убран */ }
+    throw e;
+  }
+}
+
+/**
+ * Записать tileZones из текста поля настроек в YAML-конфиг, не трогая
+ * остальное его содержимое — байт в байт, за пределами диапазона самого
+ * значения `tileZones` (см. `patchTileZonesText`).
  */
 function writeTileZonesText(text) {
   const { zones, error } = parseTileZonesText(text);
@@ -40,18 +72,10 @@ function writeTileZonesText(text) {
   if (!filePath) throw new Error('конфиг не найден ни в одном из мест поиска');
 
   const raw = fs.readFileSync(filePath, 'utf8');
-  const doc = parseDocument(raw, { merge: true });
+  const out = patchTileZonesText(raw, zones);
 
-  // Плоский стиль `{ monitor: 1, position: 6 }` — тот же, что у примера в
-  // config.example.yaml, а не блочный (каждое поле на своей строке).
-  const seq = doc.createNode(zones.map((z) => ({ monitor: z.monitor, position: z.position })));
-  for (const item of seq.items) item.flow = true;
-  doc.setIn(['claudeWt', 'tileZones'], seq);
-
-  const out = String(doc);
-  const tmpPath = `${filePath}.tmp-${process.pid}`;
-  fs.writeFileSync(tmpPath, out, 'utf8');
-  fs.renameSync(tmpPath, filePath);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  writeFileAtomic(filePath, out);
 
   return zones;
 }

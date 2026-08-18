@@ -132,4 +132,33 @@ describe('writeTileZonesText', () => {
     expect(() => writeTileZonesText('not a zone')).toThrow(/строка 1/);
     expect(read()).toBe(original);
   });
+
+  // Права temp-файла берутся у оригинала явно, а не отдаются umask: в
+  // конфиге лежит mqtt_password, сузить доступ молча нельзя.
+  it('временный файл создаётся с правами оригинала, а не по umask', async () => {
+    write('claudeWt:\n  enabled: true\n');
+    const file = path.join(dir, CONFIG_NAME);
+    fs.chmodSync(file, 0o600);
+    const { writeTileZonesText } = await loadModule();
+    writeTileZonesText('1,1');
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+  });
+
+  // fsync — то, ради чего атомарная запись вообще нужна (см. state.js):
+  // переименование журналируется файловой системой, данные без fsync нет.
+  // Здесь же проверяется его сосед — уборка временного файла, если запись
+  // после его открытия всё же не удалась.
+  it('неудача fsync не оставляет временный файл и не трогает оригинал', async () => {
+    const original = 'claudeWt:\n  enabled: true\n';
+    write(original);
+    const { writeTileZonesText } = await loadModule();
+    const fsyncSpy = vi.spyOn(fs, 'fsyncSync').mockImplementation(() => {
+      throw new Error('диск отвалился');
+    });
+    expect(() => writeTileZonesText('1,1')).toThrow(/диск отвалился/);
+    fsyncSpy.mockRestore();
+    expect(read()).toBe(original);
+    const leftovers = fs.readdirSync(dir).filter((f) => f.includes('.tmp-'));
+    expect(leftovers).toEqual([]);
+  });
 });

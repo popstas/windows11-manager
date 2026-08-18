@@ -116,6 +116,28 @@ fn normalize_hotkey(raw: &str) -> String {
 /// не трогает регистр остальных токенов, а `Ctrl+Win+F10` и `ctrl+win+f10` —
 /// одна и та же комбинация для RegisterHotKey. Пустые (выключенные) хоткеи не
 /// считаются совпадением.
+/// Разложить нормализованный хоткей на «множество модификаторов + клавиша».
+///
+/// Для `RegisterHotKey` модификаторы — битовая маска, а не позиция в строке:
+/// `Ctrl+Alt+Win+0` и `Alt+Ctrl+Win+0` — одна и та же комбинация, но
+/// склеенные нормализованные строки этого не видят (сравнение "склеенная
+/// строка == склеенная строка" ловит только точное совпадение порядка
+/// токенов). Регистр тоже не важен для регистрации — приводится здесь же.
+/// `None` — выключенный (пустой) хоткей.
+fn hotkey_signature(raw: &str) -> Option<(std::collections::BTreeSet<String>, String)> {
+    let normalized = normalize_hotkey(raw);
+    if normalized.is_empty() {
+        return None;
+    }
+    let mut tokens: Vec<String> = normalized
+        .split('+')
+        .map(|t| t.trim().to_ascii_lowercase())
+        .filter(|t| !t.is_empty())
+        .collect();
+    let key = tokens.pop()?;
+    Some((tokens.into_iter().collect(), key))
+}
+
 fn hotkey_collision_warning(settings: &Settings) -> Option<String> {
     let entries = [
         ("Place windows", &settings.place_hotkey),
@@ -124,20 +146,18 @@ fn hotkey_collision_warning(settings: &Settings) -> Option<String> {
     ];
     for i in 0..entries.len() {
         let (name_a, raw_a) = entries[i];
-        let norm_a = normalize_hotkey(raw_a);
-        if norm_a.is_empty() {
+        let Some(sig_a) = hotkey_signature(raw_a) else {
             continue;
-        }
+        };
         for entry_b in entries.iter().skip(i + 1) {
             let (name_b, raw_b) = *entry_b;
-            let norm_b = normalize_hotkey(raw_b);
-            if norm_b.is_empty() {
+            let Some(sig_b) = hotkey_signature(raw_b) else {
                 continue;
-            }
-            if norm_a.eq_ignore_ascii_case(&norm_b) {
+            };
+            if sig_a == sig_b {
                 return Some(format!(
                     "Сохранено, но «{}» и «{}» используют одну комбинацию ({}) — сработает только одна",
-                    name_a, name_b, norm_a
+                    name_a, name_b, normalize_hotkey(raw_a)
                 ));
             }
         }
@@ -323,6 +343,18 @@ mod tests {
         s.tile_hotkey = "Ctrl+Win+F10".to_string();
         s.place_hotkey = "ctrl+win+f10".to_string();
         assert!(hotkey_collision_warning(&s).is_some());
+    }
+
+    /// Модификаторы для RegisterHotKey — битовая маска, а не последовательность:
+    /// перестановка не меняет комбинацию, а склеенные строки различались бы.
+    #[test]
+    fn hotkey_collision_warning_ignores_modifier_order() {
+        let mut s = Settings::default();
+        s.place_hotkey = "Ctrl+Alt+Win+0".to_string();
+        s.tile_hotkey = "Alt+Ctrl+Win+0".to_string();
+        let warning = hotkey_collision_warning(&s).expect("перестановка модификаторов — та же комбинация");
+        assert!(warning.contains("Place windows"));
+        assert!(warning.contains("Place Claude: tile"));
     }
 
     #[test]
@@ -700,6 +732,21 @@ async fn get_dashboard_data(app: tauri::AppHandle) -> Result<String, String> {
     Ok(stdout.trim().to_string())
 }
 
+/// Сообщение об отказе node-команды: сначала stderr, а если он пуст (процесс
+/// убит, не написал ни слова и просто вышел с ненулевым кодом) — код
+/// возврата, а не пустая строка после префикса вроде «Tile zones: » в
+/// статусе окна настроек.
+fn describe_node_failure(output: &tauri_plugin_shell::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !stderr.is_empty() {
+        return stderr;
+    }
+    match output.status.code() {
+        Some(code) => format!("команда узла завершилась с кодом {code}, без сообщения в stderr"),
+        None => "команда узла прервана сигналом, без сообщения в stderr".to_string(),
+    }
+}
+
 /// Прочитать `claudeWt.tileZones` из живого YAML-конфига node-части.
 ///
 /// Трей хранилище YAML не разбирает вовсе — ни зависимости, ни кода для
@@ -726,8 +773,7 @@ async fn get_tile_zones(app: tauri::AppHandle) -> Result<String, String> {
     .map_err(|e| e.to_string())?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("tile-zones get failed: {}", stderr.trim()));
+        return Err(format!("tile-zones get failed: {}", describe_node_failure(&output)));
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -760,8 +806,7 @@ async fn save_tile_zones(app: tauri::AppHandle, text: String) -> Result<(), Stri
     .map_err(|e| e.to_string())?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(stderr.trim().to_string());
+        return Err(describe_node_failure(&output));
     }
 
     Ok(())
