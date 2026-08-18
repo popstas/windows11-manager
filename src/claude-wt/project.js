@@ -7,8 +7,9 @@ import { stripTitleDecoration } from './title-helpers.js';
 import { pickOpenProjectSession, planLaunchNew, planWtLaunch, profileForTerminal, sessionNameFor } from './project-helpers.js';
 import { chooseTerminal } from './terminal-helpers.js';
 import { waitForNewWindow } from './restore.js';
+import { startTiming, noTiming } from './timing.js';
 
-async function focusTerminalWindow(windowId) {
+async function focusTerminalWindow(windowId, mark = noTiming) {
   try {
     const current = await virtualDesktop.GetWindowDesktopNumber(windowId);
     if (current !== undefined && current !== null && current !== '') {
@@ -18,7 +19,13 @@ async function focusTerminalWindow(windowId) {
   } catch {
     // Focus still worth trying if the desktop query fails.
   }
-  return focusWindowById(windowId);
+  // Отдельной меткой, потому что это не одна операция, а два запуска
+  // VirtualDesktop11.exe: спросить стол окна и перейти на него. Процесс на
+  // каждый запуск — звено, которое легко недооценить на глаз.
+  mark('desktop');
+  const ok = focusWindowById(windowId);
+  mark('focus');
+  return ok;
 }
 
 function terminalWindows() {
@@ -82,6 +89,7 @@ async function focusSpawnedWindow(title, deps = {}) {
     waitMs = WINDOW_WAIT_MS,
     pollMs = WINDOW_POLL_MS,
     settleMs = PLACEMENT_SETTLE_MS,
+    mark = noTiming,
   } = deps;
   const deadline = now() + waitMs;
   let w = findWindow(title);
@@ -89,9 +97,14 @@ async function focusSpawnedWindow(title, deps = {}) {
     await wait(pollMs);
     w = findWindow(title);
   }
-  if (!w) return false;
+  if (!w) {
+    mark('window:not-found');
+    return false;
+  }
+  mark('window');
   await wait(settleMs);
-  return focus(w.id);
+  mark('settle');
+  return focus(w.id, mark);
 }
 
 /**
@@ -114,11 +127,17 @@ async function focusNewTerminalWindow(knownIds, deps = {}) {
     wait = sleep,
     waitMs = WINDOW_WAIT_MS,
     settleMs = PLACEMENT_SETTLE_MS,
+    mark = noTiming,
   } = deps;
   const win = await waitForWindow(knownIds, waitMs);
-  if (!win) return false;
+  if (!win) {
+    mark('window:not-found');
+    return false;
+  }
+  mark('window');
   await wait(settleMs);
-  return focus(win.id);
+  mark('settle');
+  return focus(win.id, mark);
 }
 
 /**
@@ -155,6 +174,7 @@ async function resumeClaudeSession({ id, cwd = '', terminal } = {}, deps = {}) {
   } = deps;
   const sessionId = typeof id === 'string' ? id.trim() : '';
   if (!sessionId) return { ok: false, reason: 'id is required' };
+  const mark = deps.mark ?? startTiming(`resume ${sessionId}`);
   // Блок `launch`, а не `launchNew`: здесь собирается возобновление сессии, и
   // старость конфига судится по тому блоку, из которого берётся шаблон.
   const { chosen, message } = chooseTerminal(terminal, cfg, 'launch');
@@ -170,15 +190,17 @@ async function resumeClaudeSession({ id, cwd = '', terminal } = {}, deps = {}) {
   }
   // Список окон снимается до запуска: после него новое окно уже не отличить.
   const known = new Set(listWindows().map(w => w.id));
+  mark('windows-list');
   try {
     spawnProcess(command, args, { detached: true, stdio: 'ignore' }).unref();
   } catch (e) {
     return { ok: false, action: 'spawn', reason: e.message };
   }
+  mark('spawn');
   // Хвостом, как у `openClaudeProject`, и `.catch()` по той же причине:
   // необработанное отклонение роняет процесс, в котором живут экспорт в Home
   // Assistant и сторож демона.
-  focusNew(known, deps).catch((e) => {
+  focusNew(known, { ...deps, mark }).catch((e) => {
     console.error(`[claude-wt] failed to focus ${sessionId}: ${e.message}`);
   });
   return { ok: true, action: 'resume', sessionId };
@@ -209,6 +231,7 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
     return { ok: false, reason: 'cwd and name are required' };
   }
   const sessionName = sessionNameFor({ cwd, name, reuseOpen });
+  const mark = startTiming(`open ${sessionName}`);
 
   // Просьбе «заведи ещё одну» оба поиска не нужны и вредны: первый поднял бы
   // ту самую сессию, рядом с которой просят открыть новую, а второй — её окно
@@ -216,7 +239,7 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
   if (reuseOpen) {
     let res;
     try {
-      res = claudeWtSessions();
+      res = claudeWtSessions({ mark });
     } catch (e) {
       return { ok: false, reason: e.message };
     }
@@ -224,15 +247,16 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
 
     const session = pickOpenProjectSession(res.sessions, cwd);
     if (session?.windowId && getWindowById(session.windowId)) {
-      if (!(await focusTerminalWindow(session.windowId))) {
+      if (!(await focusTerminalWindow(session.windowId, mark))) {
         return { ok: false, action: 'focus', reason: 'window is not on screen', sessionId: session.id };
       }
       return { ok: true, action: 'focus', sessionId: session.id };
     }
 
     const byTitle = findOpenTerminalByTitle(sessionName);
+    mark('by-title');
     if (byTitle) {
-      if (!(await focusTerminalWindow(byTitle.id))) {
+      if (!(await focusTerminalWindow(byTitle.id, mark))) {
         return { ok: false, action: 'focus-title', reason: 'window is not on screen' };
       }
       return { ok: true, action: 'focus-title', sessionName };
@@ -257,16 +281,18 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
   if (!command) {
     return { ok: false, reason: 'claudeWt: no terminal named by the request or the config' };
   }
+  mark('plan');
   try {
     spawn(command, args, { detached: true, stdio: 'ignore' }).unref();
   } catch (e) {
     return { ok: false, action: 'spawn', reason: e.message };
   }
+  mark('spawn');
   // Хвостом, а не до ответа: окно появится через секунды, а просьба должна
   // вернуться сразу — её ждёт обработчик MQTT, который пишет в журнал исход.
   // `.catch()` обязателен: необработанное отклонение в node 22 роняет процесс
   // целиком, а в нём же живут экспорт в Home Assistant и сторож демона.
-  focusSpawnedWindow(sessionName).catch((e) => {
+  focusSpawnedWindow(sessionName, { mark }).catch((e) => {
     console.error(`[claude-wt] failed to focus ${sessionName}: ${e.message}`);
   });
   return { ok: true, action: 'spawn', cwd, name: sessionName, sessionName };

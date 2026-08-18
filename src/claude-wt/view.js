@@ -9,6 +9,7 @@ import { buildSessionList } from './view-helpers.js';
 import { loadProgress } from './progress.js';
 import { loadMeta } from './meta.js';
 import { listSnapshots } from './snapshotter.js';
+import { noTiming } from './timing.js';
 
 /**
  * Session id -> hwnd for every claude terminal on screen right now.
@@ -36,13 +37,20 @@ function openSessionMap(cfg, state) {
  * State comes from disk rather than the daemon's in-memory copy: the daemon
  * writes on every change of the layout fingerprint, so the file is current, and
  * reading it keeps this usable from a process that is not running the watcher.
+ *
+ * `mark` — секундомер звеньев (`./timing.js`), и по умолчанию его нет: почти
+ * всё здесь читается с сетевого диска, а зовут эту функцию и пикер, и экспорт
+ * в Home Assistant. Разбивка нужна только в горячем пути открытия сессии, где
+ * человек ждёт; в остальных вызовах она забила бы журнал.
  */
-function claudeWtSessions() {
+function claudeWtSessions({ mark = noTiming } = {}) {
   const cfg = getClaudeWtConfig();
   if (!cfg.enabled) return { ok: false, reason: 'claudeWt.enabled is false in config' };
   if (!cfg.statePath) return { ok: false, reason: 'claudeWt.statePath is not set in config' };
   const state = readState(cfg.statePath);
+  mark('sessions:state');
   const openMap = openSessionMap(cfg, state);
+  mark('sessions:openMap');
   // Прогресс и мета читаются только здесь — то есть пока открыт пикер. Каталог
   // лежит на сетевом диске, и в тике демона им не место.
   const slotIds = Object.keys(state.slots);
@@ -53,14 +61,16 @@ function claudeWtSessions() {
   const ids = [...new Set(slotIds.concat(
     slotIds.flatMap(id => (agents[id] ?? []).map(child => child.id)),
   ))];
+  mark('sessions:agents');
   const progress = loadProgress(cfg.progressDir, ids);
+  mark('sessions:progress');
   const meta = loadMeta(cfg.progressDir, slotIds);
-  return {
-    ok: true,
-    sessions: buildSessionList({
-      slots: state.slots, openMap, mons: getMons(), progress, meta, agents,
-    }),
-  };
+  mark('sessions:meta');
+  const list = buildSessionList({
+    slots: state.slots, openMap, mons: getMons(), progress, meta, agents,
+  });
+  mark('sessions:build');
+  return { ok: true, sessions: list };
 }
 
 /**
