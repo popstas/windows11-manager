@@ -37,6 +37,11 @@ pub struct Settings {
     pub update_check_interval: String,
     /// Глобальный хоткей разовой расстановки окон. Пустая строка — выключен.
     pub place_hotkey: String,
+    /// Глобальный хоткей плитки терминалов Claude по зонам FancyZones.
+    /// Пустая строка — выключен.
+    pub tile_hotkey: String,
+    /// Глобальный хоткей каскада терминалов Claude. Пустая строка — выключен.
+    pub cascade_hotkey: String,
 }
 
 impl Default for Settings {
@@ -73,6 +78,12 @@ impl Default for Settings {
             // живой машине: Win+цифра, Win+Shift+цифра и Win+Ctrl+Shift+цифра
             // заняты все, Ctrl+Alt+Win+0 свободна.
             place_hotkey: "Ctrl+Alt+Win+0".to_string(),
+            // Прямое требование человека: F10 под плитку, F11 — соседней
+            // клавишей под каскад. С Win+цифрой (см. выше) конфликта нет —
+            // это функциональные клавиши, а не цифровой ряд, который
+            // резервирует оболочка Windows.
+            tile_hotkey: "Ctrl+Win+F10".to_string(),
+            cascade_hotkey: "Ctrl+Win+F11".to_string(),
         }
     }
 }
@@ -185,6 +196,8 @@ mod tests {
         assert_eq!(s.timeout_before_open, 5);
         assert_eq!(s.update_check_interval, "launch");
         assert_eq!(s.place_hotkey, "Ctrl+Alt+Win+0");
+        assert_eq!(s.tile_hotkey, "Ctrl+Win+F10");
+        assert_eq!(s.cascade_hotkey, "Ctrl+Win+F11");
     }
 
     #[test]
@@ -217,6 +230,26 @@ mod tests {
         assert!(Shortcut::from_str(&normalize_hotkey("Ctrl+Alt+Shift+P")).is_ok());
         // А без перевода Win парсер именно отказывает — ради этого перевод и есть.
         assert!(Shortcut::from_str("Ctrl+Win+Shift+0").is_err());
+    }
+
+    /// Та же проверка на живой библиотеке для двух новых умолчаний — F10 и
+    /// F11 под раскладки терминалов Claude.
+    #[test]
+    fn normalized_default_tile_and_cascade_hotkeys_parse() {
+        use std::str::FromStr;
+        use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
+
+        let defaults = Settings::default();
+
+        let tile = Shortcut::from_str(&normalize_hotkey(&defaults.tile_hotkey))
+            .expect("умолчание tile_hotkey должно разбираться");
+        assert_eq!(tile.key, Code::F10);
+        assert_eq!(tile.mods, Modifiers::CONTROL | Modifiers::SUPER);
+
+        let cascade = Shortcut::from_str(&normalize_hotkey(&defaults.cascade_hotkey))
+            .expect("умолчание cascade_hotkey должно разбираться");
+        assert_eq!(cascade.key, Code::F11);
+        assert_eq!(cascade.mods, Modifiers::CONTROL | Modifiers::SUPER);
     }
 
     #[test]
@@ -425,6 +458,14 @@ async fn get_settings(app: tauri::AppHandle) -> Result<Settings, String> {
             .get("place_hotkey")
             .and_then(|v| v.as_str().map(String::from))
             .unwrap_or(defaults.place_hotkey),
+        tile_hotkey: store
+            .get("tile_hotkey")
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or(defaults.tile_hotkey),
+        cascade_hotkey: store
+            .get("cascade_hotkey")
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or(defaults.cascade_hotkey),
     };
 
     Ok(settings)
@@ -479,11 +520,32 @@ async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), 
         .and_then(|v| v.as_str().map(String::from))
         .unwrap_or_else(|| Settings::default().place_hotkey);
     store.set("place_hotkey", serde_json::json!(settings.place_hotkey));
+
+    let previous_tile_hotkey = store
+        .get("tile_hotkey")
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_else(|| Settings::default().tile_hotkey);
+    store.set("tile_hotkey", serde_json::json!(settings.tile_hotkey));
+
+    let previous_cascade_hotkey = store
+        .get("cascade_hotkey")
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_else(|| Settings::default().cascade_hotkey);
+    store.set("cascade_hotkey", serde_json::json!(settings.cascade_hotkey));
+
     store.save().map_err(|e| e.to_string())?;
 
     if normalize_hotkey(&previous_hotkey) != normalize_hotkey(&settings.place_hotkey) {
         unregister_place_hotkey(&app, &previous_hotkey);
         register_place_hotkey(&app, &settings.place_hotkey);
+    }
+    if normalize_hotkey(&previous_tile_hotkey) != normalize_hotkey(&settings.tile_hotkey) {
+        unregister_tile_hotkey(&app, &previous_tile_hotkey);
+        register_tile_hotkey(&app, &settings.tile_hotkey);
+    }
+    if normalize_hotkey(&previous_cascade_hotkey) != normalize_hotkey(&settings.cascade_hotkey) {
+        unregister_cascade_hotkey(&app, &previous_cascade_hotkey);
+        register_cascade_hotkey(&app, &settings.cascade_hotkey);
     }
 
     // Write store-match-list.json to project dir so Node can read it
@@ -587,6 +649,8 @@ fn load_settings_from_store(app: &tauri::AppHandle) -> Settings {
         timeout_before_open: store.get("timeout_before_open").and_then(|v| v.as_u64()).unwrap_or(5) as u32,
         update_check_interval: store.get("update_check_interval").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.update_check_interval),
         place_hotkey: store.get("place_hotkey").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.place_hotkey),
+        tile_hotkey: store.get("tile_hotkey").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.tile_hotkey),
+        cascade_hotkey: store.get("cascade_hotkey").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.cascade_hotkey),
     }
 }
 
@@ -652,6 +716,27 @@ fn place_windows(app: &tauri::AppHandle) {
     run_node_command(app, &["src", "place", "--verbose"], "Place Windows");
 }
 
+/// Плитка терминалов Claude по зонам FancyZones. Тот же приём, что у соседа
+/// по меню `claude_wt_restore` — голый `run_node_command` без проверки
+/// project_path, потому что расстановка Claude без него всё равно ничего не
+/// сделает и сама пожалуется в лог.
+fn place_claude_tile(app: &tauri::AppHandle) {
+    run_node_command(
+        app,
+        &["src/index.js", "claude-wt", "place", "tile"],
+        "Place Claude: tile",
+    );
+}
+
+/// Каскад терминалов Claude. См. `place_claude_tile`.
+fn place_claude_cascade(app: &tauri::AppHandle) {
+    run_node_command(
+        app,
+        &["src/index.js", "claude-wt", "place", "cascade"],
+        "Place Claude: cascade",
+    );
+}
+
 /// Повесить разовую расстановку окон на глобальный хоткей.
 ///
 /// Отказ регистрации — не повод падать: комбинацию мог занять кто угодно
@@ -694,6 +779,82 @@ fn unregister_place_hotkey(app: &tauri::AppHandle, raw: &str) {
     // удалось занять при старте. Снимать нечего — это не повод шуметь ошибкой.
     if let Err(e) = app.global_shortcut().unregister(shortcut.as_str()) {
         info!("Place hotkey {} was not registered: {}", shortcut, e);
+    }
+}
+
+/// Повесить плитку Claude на глобальный хоткей. Тот же приём и те же
+/// оговорки, что у `register_place_hotkey`.
+fn register_tile_hotkey(app: &tauri::AppHandle, raw: &str) {
+    use tauri_plugin_global_shortcut::ShortcutState;
+
+    let shortcut = normalize_hotkey(raw);
+    if shortcut.is_empty() {
+        info!("Tile hotkey is empty — not registering");
+        return;
+    }
+
+    let label = shortcut.clone();
+    if let Err(e) = app
+        .global_shortcut()
+        .on_shortcut(shortcut.as_str(), move |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                info!("Hotkey {} pressed", label);
+                place_claude_tile(app);
+            }
+        })
+    {
+        warn!("Could not register hotkey {}: {} (already in use?)", shortcut, e);
+    } else {
+        info!("Tile hotkey registered: {}", shortcut);
+    }
+}
+
+/// Снять регистрацию прежней комбинации плитки Claude при смене настройки.
+fn unregister_tile_hotkey(app: &tauri::AppHandle, raw: &str) {
+    let shortcut = normalize_hotkey(raw);
+    if shortcut.is_empty() {
+        return;
+    }
+    if let Err(e) = app.global_shortcut().unregister(shortcut.as_str()) {
+        info!("Tile hotkey {} was not registered: {}", shortcut, e);
+    }
+}
+
+/// Повесить каскад Claude на глобальный хоткей. Тот же приём и те же
+/// оговорки, что у `register_place_hotkey`.
+fn register_cascade_hotkey(app: &tauri::AppHandle, raw: &str) {
+    use tauri_plugin_global_shortcut::ShortcutState;
+
+    let shortcut = normalize_hotkey(raw);
+    if shortcut.is_empty() {
+        info!("Cascade hotkey is empty — not registering");
+        return;
+    }
+
+    let label = shortcut.clone();
+    if let Err(e) = app
+        .global_shortcut()
+        .on_shortcut(shortcut.as_str(), move |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                info!("Hotkey {} pressed", label);
+                place_claude_cascade(app);
+            }
+        })
+    {
+        warn!("Could not register hotkey {}: {} (already in use?)", shortcut, e);
+    } else {
+        info!("Cascade hotkey registered: {}", shortcut);
+    }
+}
+
+/// Снять регистрацию прежней комбинации каскада Claude при смене настройки.
+fn unregister_cascade_hotkey(app: &tauri::AppHandle, raw: &str) {
+    let shortcut = normalize_hotkey(raw);
+    if shortcut.is_empty() {
+        return;
+    }
+    if let Err(e) = app.global_shortcut().unregister(shortcut.as_str()) {
+        info!("Cascade hotkey {} was not registered: {}", shortcut, e);
     }
 }
 
@@ -1239,6 +1400,28 @@ pub fn run() {
                 true,
                 None::<&str>,
             )?;
+            // Плитка и каскад для терминалов Claude. Знак перед подписью — тот
+            // же приём, что на маке (macos-windows-manager): символ без
+            // цветного Emoji_Presentation сам берёт цвет и размер у шрифта
+            // меню, растра под каждую тему и масштаб экрана не требуется.
+            // После знака — один волосяной пробел (U+200A) как разделитель;
+            // ширины под шрифт меню Windows никто не мерил, точную подгонку
+            // здесь не изображаем — в отличие от мака, где количество таких
+            // пробелов подобрано по замерам в системном шрифте.
+            let claude_wt_place_tile_i = MenuItem::with_id(
+                app,
+                "claude_wt_place_tile",
+                "\u{25a6}\u{200a}Place Claude: tile",
+                true,
+                None::<&str>,
+            )?;
+            let claude_wt_place_cascade_i = MenuItem::with_id(
+                app,
+                "claude_wt_place_cascade",
+                "\u{2750}\u{200a}Place Claude: cascade",
+                true,
+                None::<&str>,
+            )?;
             let sep1 = PredefinedMenuItem::separator(app)?;
             let mqtt_status_i =
                 MenuItem::with_id(app, "mqtt_status", "MQTT: stopped", false, None::<&str>)?;
@@ -1278,6 +1461,8 @@ pub fn run() {
                     &auto_i,
                     &claude_wt_i,
                     &claude_wt_restore_i,
+                    &claude_wt_place_tile_i,
+                    &claude_wt_place_cascade_i,
                     &sep1,
                     &mqtt_status_i,
                     &mqtt_toggle_i,
@@ -1364,6 +1549,12 @@ pub fn run() {
                             &["src/index.js", "claude-wt", "restore"],
                             "claude-wt restore",
                         );
+                    }
+                    "claude_wt_place_tile" => {
+                        place_claude_tile(app);
+                    }
+                    "claude_wt_place_cascade" => {
+                        place_claude_cascade(app);
                     }
                     "mqtt_toggle" => {
                         let state = app.state::<Mutex<AppState>>();
@@ -1681,6 +1872,8 @@ pub fn run() {
             }
 
             register_place_hotkey(app.handle(), &settings.place_hotkey);
+            register_tile_hotkey(app.handle(), &settings.tile_hotkey);
+            register_cascade_hotkey(app.handle(), &settings.cascade_hotkey);
 
             Ok(())
         })
