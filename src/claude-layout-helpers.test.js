@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseArrangePayload, splitCounts, stackInCell, tileByZones, columns, tileGrid, cascade, arrange, toWindowSpace } from './claude-layout-helpers.js';
+import { parseArrangePayload, pickFocusTarget, splitCounts, stackInCell, tileByZones, columns, tileGrid, cascade, arrange, toWindowSpace } from './claude-layout-helpers.js';
 
 describe('parseArrangePayload', () => {
   it('разбирает объект с режимом и списком', () => {
@@ -249,5 +249,24 @@ describe('arrange', () => {
   it('ноль окон или нет рабочей области — пусто', () => {
     expect(arrange({ mode: 'tile', zones: [], work: WORK, n: 0 })).toEqual([]);
     expect(arrange({ mode: 'cascade', zones: [], work: null, n: 3 })).toEqual([]);
+  });
+});
+
+describe('pickFocusTarget', () => {
+  it('бывшее переднее окно, если оно раскладывается', () => {
+    expect(pickFocusTarget([11, 22, 33], 22)).toBe(22);
+  });
+
+  it('переднее окно со стороны в счёт не идёт — фокус первому', () => {
+    expect(pickFocusTarget([11, 22, 33], 99)).toBe(11);
+  });
+
+  it('переднего окна нет — фокус первому', () => {
+    expect(pickFocusTarget([11, 22], 0)).toBe(11);
+  });
+
+  it('окон нет — фокусировать нечего', () => {
+    expect(pickFocusTarget([], 22)).toBeNull();
+    expect(pickFocusTarget()).toBeNull();
   });
 });

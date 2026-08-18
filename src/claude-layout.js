@@ -8,12 +8,12 @@
 import { getConfig } from './config.js';
 import { fancyZonesToPos } from './fancyzones.js';
 import { getMonitorByPoint, getPrimaryMonitor } from './monitors.js';
-import { getWindowById } from './windows.js';
+import { focusWindowById, getActiveWindowId, getWindowById } from './windows.js';
 import { placeWindow } from './placement.js';
 import { claudeWtSessions } from './claude-wt/view.js';
 import { orderSessions } from './claude-wt/ha/session-slots.js';
 import { normalizeSort } from './claude-wt/ha/session-groups.js';
-import { arrange, toWindowSpace } from './claude-layout-helpers.js';
+import { arrange, pickFocusTarget, toWindowSpace } from './claude-layout-helpers.js';
 
 /**
  * Зоны из `claudeWt.tileZones`, разрешённые в прямоугольники.
@@ -218,9 +218,11 @@ function pickWindows(ids, log) {
  * между экранами с разным DPI, повтор при промахе и строку журнала в
  * привычном формате `from → to`. Второй раз поправлять масштаб здесь нельзя.
  *
- * `isBulk: true` глушит bringToTop() внутри: плитке он не нужен вовсе
- * (перекрытий нет), а каскаду нужен порядком, поэтому окна поднимаются
- * отдельным проходом — в порядке списка, так что последнее оказывается сверху.
+ * `isBulk: true` глушит bringToTop() внутри: окна поднимаются отдельным
+ * проходом после расстановки — в порядке списка, так что последнее
+ * оказывается сверху. Каскаду этот порядок нужен по смыслу, плитке он
+ * безразличен (перекрытий нет), но поднимать её всё равно надо: раскладка
+ * зовётся, чтобы увидеть сессии, а стоят они за чужими окнами.
  */
 async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
   const zones = resolveZones(log, mode);
@@ -244,6 +246,10 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
       reason: ids.length ? 'ни одна из запрошенных сессий claude здесь не открыта' : 'открытых сессий claude нет',
     };
   }
+
+  // Переднее окно снимается до того, как что-либо сдвинулось: после подъёма
+  // всей раскладки узнать, на что человек смотрел, уже негде.
+  const activeBefore = getActiveWindowId();
 
   const rects = arrange({ mode, zones, work, n: windows.length });
   let placed = 0;
@@ -275,14 +281,21 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
     if (result && result.changes?.some(c => c.name === 'bounds')) placed += 1;
     else unchanged += 1;
   }
-  if (mode === 'cascade') {
-    for (const w of windows) {
-      try {
-        w.bringToTop();
-      } catch (e) {
-        log(`claude-place: ${w.id} не поднялось — ${e.message}`, 'warn');
-      }
+  for (const w of windows) {
+    try {
+      w.bringToTop();
+    } catch (e) {
+      log(`claude-place: ${w.id} не поднялось — ${e.message}`, 'warn');
     }
+  }
+  // Подъём — ещё не фокус: `bringToTop()` кладёт окно поверх остальных, но
+  // ввод остаётся там, где был, и раскладка выходит немой. Кого фокусировать,
+  // решает pickFocusTarget(); отказ не рушит раскладку — окна уже стоят и
+  // подняты, а фокус мог не дойти до окна, свёрнутого или ушедшего на другой
+  // стол между подъёмом и этой строкой.
+  const focusId = pickFocusTarget(windows.map(w => w.id), activeBefore);
+  if (focusId !== null && !focusWindowById(focusId)) {
+    log(`claude-place: фокус не дошёл до окна ${focusId}`, 'warn');
   }
   // Ноль без изменений — обычный случай, хвост не нужен: «разложено 2 из 3»
   // короче и не менее честно, чем «разложено 2, без изменений 0 из 3».
