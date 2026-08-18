@@ -26,6 +26,16 @@ jobs:
           target-branch: master
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # release-please зовёт релиз `windows11-manager: v4.1.0`; событие
+      # `release: published` от GITHUB_TOKEN workflow не запускает, поэтому
+      # заголовок правится здесь же, а не в Release Title.
+      - name: Set release title
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+        run: node scripts/release-title.js "$TAG"
+
       - name: Get release PR number
         if: steps.release.outputs.pr != ''
         id: pr

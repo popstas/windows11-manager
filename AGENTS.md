@@ -223,6 +223,22 @@ Window titles are compared in decoration-stripped form (`title-helpers.js`): Cla
 - Каскад считает от рабочей области (монитор первой зоны, иначе главный), зон
   он не касается.
 
+## Заголовки релизов
+
+Заголовок GitHub-релиза — `vX.Y.Z: <главная фича>`. Фича берётся из тела
+релиза: тела здесь дописываются руками и начинаются с `## Раскладки окон для
+терминалов Claude` — этот заголовок и едет в название. Пока тело осталось
+автогенерацией release-please (строка с версией или сразу `### Bug Fixes`),
+фичи в нём нет, и названием остаётся просто `vX.Y.Z`.
+
+- `scripts/release-title.js` — вся логика; чистые `versionFromTag()`,
+  `featureFromBody()`, `releaseTitle()` покрыты `scripts/release-title.test.js`.
+- Вручную: `node scripts/release-title.js [--all] [--dry-run] [tag...]`
+  (без аргументов — последний релиз). Нужен залогиненный `gh`.
+- В CI: шаг в `release-please.yml` сразу после выпуска (событий от
+  GITHUB_TOKEN GitHub в workflow не пускает, поэтому именно шаг) и
+  `release-title.yml` на `release: edited` — правка тела переименовывает релиз.
+
 ## Getting started
 
 1. Run `npm install` to install dependencies.

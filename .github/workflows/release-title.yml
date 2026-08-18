@@ -1,0 +1,35 @@
+name: Release Title
+
+on:
+  # Тела релизов здесь дописываются руками уже после выпуска, а главная фича в
+  # заголовке берётся как раз из тела — поэтому правка тела и переименовывает.
+  release:
+    types: [published, edited]
+  # Ради релиза, тело которого правили до появления этого workflow.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Тег релиза (пусто — последний)'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  title:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # `gh release edit` ходит под GITHUB_TOKEN, а событий от него GitHub
+      # обратно в workflow не пускает — рекурсии на `edited` не будет.
+      - name: Set release title
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          if [ -n "$TAG" ]; then
+            node scripts/release-title.js "$TAG"
+          else
+            node scripts/release-title.js
+          fi
