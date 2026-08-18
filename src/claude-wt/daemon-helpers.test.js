@@ -41,6 +41,13 @@ describe('mergeClaudeWtConfig', () => {
     expect(mergeClaudeWtConfig(null)).toEqual(expected);
   });
 
+  it('пауза перед фокусом настраивается, умолчание 400 мс', () => {
+    expect(mergeClaudeWtConfig(undefined).focusSettleMs).toBe(400);
+    expect(mergeClaudeWtConfig({ focusSettleMs: 1500 }).focusSettleMs).toBe(1500);
+    // Ноль — законное значение «не ждать вовсе», а не «не задано».
+    expect(mergeClaudeWtConfig({ focusSettleMs: 0 }).focusSettleMs).toBe(0);
+  });
+
   it('overrides only the keys that were given', () => {
     const cfg = mergeClaudeWtConfig({ interval: 2000 });
     expect(cfg.interval).toBe(2000);

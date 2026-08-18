@@ -42,8 +42,18 @@ function openSessionMap(cfg, state) {
  * всё здесь читается с сетевого диска, а зовут эту функцию и пикер, и экспорт
  * в Home Assistant. Разбивка нужна только в горячем пути открытия сессии, где
  * человек ждёт; в остальных вызовах она забила бы журнал.
+ *
+ * `brief` — список без состояния агента: пропускаются `loadProgress` и
+ * `loadMeta`, и вместе с ними единственные два звена, которые здесь чего-то
+ * стоят. Замер на popstas-pc: состояние, окна и фоновые агенты — 19 мс на всё,
+ * прогресс — 669 мс, мета — 760 мс; каталог лежит на сетевом диске, и читается
+ * из него файл на сессию. Зовущему, который решает «есть ли открытое окно
+ * этого каталога», ни то, ни другое не нужно: `meta` в таком решении не
+ * участвует вовсе, а `progress` — только тай-брейком при равном `focusedAt`,
+ * где `lastActivityAt()` и так падает на `slot.lastSeen`. Пикеру список нужен
+ * целиком — ему полтора лишних поля и есть весь смысл списка.
  */
-function claudeWtSessions({ mark = noTiming } = {}) {
+function claudeWtSessions({ mark = noTiming, brief = false } = {}) {
   const cfg = getClaudeWtConfig();
   if (!cfg.enabled) return { ok: false, reason: 'claudeWt.enabled is false in config' };
   if (!cfg.statePath) return { ok: false, reason: 'claudeWt.statePath is not set in config' };
@@ -62,9 +72,9 @@ function claudeWtSessions({ mark = noTiming } = {}) {
     slotIds.flatMap(id => (agents[id] ?? []).map(child => child.id)),
   ))];
   mark('sessions:agents');
-  const progress = loadProgress(cfg.progressDir, ids);
+  const progress = brief ? {} : loadProgress(cfg.progressDir, ids);
   mark('sessions:progress');
-  const meta = loadMeta(cfg.progressDir, slotIds);
+  const meta = brief ? {} : loadMeta(cfg.progressDir, slotIds);
   mark('sessions:meta');
   const list = buildSessionList({
     slots: state.slots, openMap, mons: getMons(), progress, meta, agents,

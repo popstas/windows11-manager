@@ -51,12 +51,42 @@ function findOpenTerminalByTitle(title) {
 // за это время — значит и не найдём, а не «подождём ещё».
 const WINDOW_WAIT_MS = 15000;
 const WINDOW_POLL_MS = 250;
-// Пауза между появлением окна и фокусом. За неё успевают оба, кто двигает окно
-// новой сессии: автопостановщик (такт 1.5 с плюс задержка 1 с) и демон
-// claude-wt, привязывающий сессию к слоту за два тика и способный увести окно
-// на чужой стол. Фокус, взятый раньше них, у человека отберут — переход на
-// другой стол оставляет передним что придётся.
-const PLACEMENT_SETTLE_MS = 4000;
+// Пауза между появлением окна и фокусом.
+//
+// Была 4000 мс — ровно столько, чтобы пересидеть обоих, кто двигает окно новой
+// сессии: автопостановщик (такт 1.5 с плюс задержка 1 с) и демон claude-wt,
+// привязывающий сессию к слоту за два тика и способный увести окно на чужой
+// стол. Ждать их приходилось потому, что переход на другой стол оставляет
+// передним что придётся, и фокус, взятый раньше переноса, у человека отбирали.
+//
+// Ждать больше нечего: демон, уйдя за окном на его стол, сам делает это окно
+// передним (см. `claudeWtTick`, ветка `follow`). Переносу теперь всё равно,
+// был фокус до него или нет, и пауза осталась только тем, чем должна быть, —
+// временем на отрисовку самого терминала. Замер на popstas-pc: окно находится
+// по заголовку через 277 мс после `spawn`, то есть заголовок ставит уже
+// поднявшийся `claude`, а не пустая рама.
+//
+// Настройкой, а не константой: цена ошибки в меньшую сторону — отобранный у
+// человека фокус, и чинить это перевыкаткой кода на живой машине незачем.
+const PLACEMENT_SETTLE_MS = 400;
+
+/**
+ * Пауза из конфига, с откатом на константу.
+ *
+ * Отказ конфига здесь не повод не фокусировать окно: оно уже открыто и ждёт
+ * человека, а всё, чего мы лишаемся, — подобранного числа вместо умолчания.
+ * `getClaudeWtConfig()` бросает, когда файла нет вовсе (так и живут тесты, и
+ * любая машина без установки), и без этого отката хвост `focusSpawnedWindow`
+ * умирал бы в `.catch()` строкой в журнале — окно открылось, фокуса нет.
+ */
+const settleMsFromConfig = () => {
+  try {
+    const raw = getClaudeWtConfig().focusSettleMs;
+    return Number.isFinite(raw) && raw >= 0 ? raw : PLACEMENT_SETTLE_MS;
+  } catch {
+    return PLACEMENT_SETTLE_MS;
+  }
+};
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -88,7 +118,7 @@ async function focusSpawnedWindow(title, deps = {}) {
     now = Date.now,
     waitMs = WINDOW_WAIT_MS,
     pollMs = WINDOW_POLL_MS,
-    settleMs = PLACEMENT_SETTLE_MS,
+    settleMs = settleMsFromConfig(),
     mark = noTiming,
   } = deps;
   const deadline = now() + waitMs;
@@ -126,7 +156,7 @@ async function focusNewTerminalWindow(knownIds, deps = {}) {
     focus = focusTerminalWindow,
     wait = sleep,
     waitMs = WINDOW_WAIT_MS,
-    settleMs = PLACEMENT_SETTLE_MS,
+    settleMs = settleMsFromConfig(),
     mark = noTiming,
   } = deps;
   const win = await waitForWindow(knownIds, waitMs);
@@ -236,10 +266,14 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
   // Просьбе «заведи ещё одну» оба поиска не нужны и вредны: первый поднял бы
   // ту самую сессию, рядом с которой просят открыть новую, а второй — её окно
   // по заголовку. Заодно не читается список сессий, а он ходит на сетевой диск.
+  //
+  // `brief: true` — по той же причине, только для тех просьб, где список всё же
+  // нужен: состояние агента здесь ни на что не влияет, а читается дольше всего
+  // остального вместе взятого (замер: 1.43 с из 1.47 с до spawn).
   if (reuseOpen) {
     let res;
     try {
-      res = claudeWtSessions({ mark });
+      res = claudeWtSessions({ mark, brief: true });
     } catch (e) {
       return { ok: false, reason: e.message };
     }
