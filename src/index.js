@@ -294,6 +294,28 @@ async function start() {
   });
 
   claudeWt
+    .command('tile-zones <action> [text]')
+    .description('read/write claudeWt.tileZones в живом конфиге: get | set <text>')
+    .action(async (action, text) => {
+      const mod = await import('./commands/tile-zones-commands.js');
+      try {
+        if (action === 'get') {
+          console.log(mod.readTileZonesText());
+        } else if (action === 'set') {
+          const zones = mod.writeTileZonesText(text ?? '');
+          console.log(`[claude-wt] tileZones сохранены: ${zones.length} зон(ы)`);
+        } else {
+          console.error(`unknown action: ${action} (ожидается get или set)`);
+          process.exit(1);
+        }
+      } catch (e) {
+        console.error(e.message);
+        process.exit(1);
+      }
+      process.exit(0);
+    });
+
+  claudeWt
     .command('open-project')
     .description('focus the last open session for a project cwd, or spawn a fresh named Claude')
     .requiredOption('--cwd <path>', 'Linux project directory')

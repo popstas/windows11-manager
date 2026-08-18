@@ -17,6 +17,13 @@ async function loadSettings() {
     document.getElementById('tile_hotkey').value = settings.tile_hotkey ?? '';
     document.getElementById('cascade_hotkey').value = settings.cascade_hotkey ?? '';
     document.getElementById('store_interval').value = settings.store_interval;
+    // tileZones живёт не в этом хранилище, а в YAML-конфиге node-части —
+    // читается отдельным вызовом (см. save_tile_zones ниже про запись).
+    try {
+      document.getElementById('tile_zones').value = await invoke('get_tile_zones');
+    } catch (e) {
+      console.error('Failed to load tile zones:', e);
+    }
     document.getElementById('store_match_list').value = (settings.store_match_list || []).join('\n');
     document.getElementById('timeout_before_open').value = settings.timeout_before_open;
     document.getElementById('update_check_interval').value = settings.update_check_interval || 'launch';
@@ -30,9 +37,11 @@ async function loadSettings() {
     console.error('Failed to load settings:', e);
   }
   try {
+    // Та же строка, что у неактивного пункта меню трея (`version_info`):
+    // формат считает Rust (version_item_label), здесь — только вывод.
     const version = await invoke('get_app_version');
     const el = document.getElementById('app-version');
-    if (el) el.textContent = 'Version ' + version;
+    if (el) el.textContent = version;
   } catch (e) {
     console.error('Failed to load version:', e);
   }
@@ -64,11 +73,36 @@ form.addEventListener('submit', async (e) => {
     mqtt_topic: document.getElementById('mqtt_topic').value,
   };
 
+  const tileZonesText = document.getElementById('tile_zones').value;
+
   try {
-    await invoke('save_settings', { settings });
-    status.style.color = '#a6e3a1';
-    status.textContent = 'Saved!';
-    setTimeout(() => { status.textContent = ''; }, 2000);
+    // Совпавшие хоткеи не блокируют сохранение (см. save_settings) — пустая
+    // строка значит «без предупреждений».
+    const warning = await invoke('save_settings', { settings });
+
+    // tileZones живёт не в этом хранилище, а в YAML-конфиге node-части, и
+    // сохраняется отдельным вызовом. Неразборчивую строку node не отбрасывает
+    // молча, а отказывает с её номером и содержимым — это и есть текст ошибки
+    // ниже, показанный в статусе окна, а не только в логе.
+    let tileZonesError = '';
+    try {
+      await invoke('save_tile_zones', { text: tileZonesText });
+    } catch (e) {
+      tileZonesError = String(e);
+    }
+
+    if (tileZonesError) {
+      status.style.color = '#f38ba8';
+      status.textContent = 'Tile zones: ' + tileZonesError;
+    } else if (warning) {
+      status.style.color = '#f9e2af';
+      status.textContent = warning;
+      setTimeout(() => { status.textContent = ''; }, 8000);
+    } else {
+      status.style.color = '#a6e3a1';
+      status.textContent = 'Saved!';
+      setTimeout(() => { status.textContent = ''; }, 2000);
+    }
   } catch (e) {
     status.textContent = 'Error: ' + e;
     status.style.color = '#f38ba8';

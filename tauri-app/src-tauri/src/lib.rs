@@ -106,6 +106,45 @@ fn normalize_hotkey(raw: &str) -> String {
         .join("+")
 }
 
+/// Найти совпадение среди трёх хоткеев настроек, если оно есть.
+///
+/// На Windows вторая регистрация одной и той же комбинации возвращает
+/// `ERROR_HOTKEY_ALREADY_REGISTERED`: код тихо пишет `warn!` в лог и не
+/// регистрирует её — человек видит только то, что одна из клавиш «не
+/// работает», а причину находит лишь в логе. Сравнение идёт после
+/// `normalize_hotkey` и без учёта регистра: она переводит `Win` в `Super`, но
+/// не трогает регистр остальных токенов, а `Ctrl+Win+F10` и `ctrl+win+f10` —
+/// одна и та же комбинация для RegisterHotKey. Пустые (выключенные) хоткеи не
+/// считаются совпадением.
+fn hotkey_collision_warning(settings: &Settings) -> Option<String> {
+    let entries = [
+        ("Place windows", &settings.place_hotkey),
+        ("Place Claude: tile", &settings.tile_hotkey),
+        ("Place Claude: cascade", &settings.cascade_hotkey),
+    ];
+    for i in 0..entries.len() {
+        let (name_a, raw_a) = entries[i];
+        let norm_a = normalize_hotkey(raw_a);
+        if norm_a.is_empty() {
+            continue;
+        }
+        for entry_b in entries.iter().skip(i + 1) {
+            let (name_b, raw_b) = *entry_b;
+            let norm_b = normalize_hotkey(raw_b);
+            if norm_b.is_empty() {
+                continue;
+            }
+            if norm_a.eq_ignore_ascii_case(&norm_b) {
+                return Some(format!(
+                    "Сохранено, но «{}» и «{}» используют одну комбинацию ({}) — сработает только одна",
+                    name_a, name_b, norm_a
+                ));
+            }
+        }
+    }
+    None
+}
+
 /// Время сборки этого бинаря, если оно в него вшито.
 ///
 /// `None` у релизной сборки: её называет версия, а штамп там лишний. Ноль в
@@ -258,6 +297,41 @@ mod tests {
         assert_eq!(normalize_hotkey("Ctrl+Alt+Shift+P"), "Ctrl+Alt+Shift+P");
         // Клавиша с "win" внутри имени — не модификатор, трогать нельзя.
         assert_eq!(normalize_hotkey("Ctrl+Window"), "Ctrl+Window");
+    }
+
+    #[test]
+    fn hotkey_collision_warning_none_for_defaults() {
+        // Умолчания разведены нарочно (Alt+Ctrl+Win+0 против Ctrl+Win+F10/F11) —
+        // совпадения быть не должно.
+        assert!(hotkey_collision_warning(&Settings::default()).is_none());
+    }
+
+    #[test]
+    fn hotkey_collision_warning_catches_exact_match() {
+        let mut s = Settings::default();
+        s.cascade_hotkey = s.tile_hotkey.clone();
+        let warning = hotkey_collision_warning(&s).expect("совпадение должно найтись");
+        assert!(warning.contains("Place Claude: tile"));
+        assert!(warning.contains("Place Claude: cascade"));
+    }
+
+    /// Требование из ревью: `Ctrl+Win+F10` и `ctrl+win+f10` — одна и та же
+    /// комбинация, сравнение сырых строк её не поймало бы.
+    #[test]
+    fn hotkey_collision_warning_ignores_case() {
+        let mut s = Settings::default();
+        s.tile_hotkey = "Ctrl+Win+F10".to_string();
+        s.place_hotkey = "ctrl+win+f10".to_string();
+        assert!(hotkey_collision_warning(&s).is_some());
+    }
+
+    #[test]
+    fn hotkey_collision_warning_ignores_disabled_hotkeys() {
+        let mut s = Settings::default();
+        s.place_hotkey = String::new();
+        s.tile_hotkey = String::new();
+        s.cascade_hotkey = String::new();
+        assert!(hotkey_collision_warning(&s).is_none());
     }
 
     #[test]
@@ -471,13 +545,22 @@ async fn get_settings(app: tauri::AppHandle) -> Result<Settings, String> {
     Ok(settings)
 }
 
+/// Строка версии для окна настроек — ровно та же, что и у неактивного пункта
+/// меню трея (`version_info`): одна функция форматирования, два вызывающих,
+/// чтобы окно настроек не завело свой формат и не разошлось с треем.
 #[tauri::command]
 async fn get_app_version(app: tauri::AppHandle) -> Result<String, String> {
-    Ok(app.package_info().version.to_string())
+    let version = app.package_info().version.to_string();
+    Ok(version_item_label(&version, build_time(), Local::now().date_naive()))
 }
 
+/// Сохранить настройки. `Ok` несёт предупреждение о совпавших хоткеях, если
+/// оно есть (иначе — пустую строку): сохранение не запрещается совпадением —
+/// человек мог сделать это намеренно и поправит следующим шагом, но окно
+/// настроек обязано сказать об этом сразу, а не оставить искать причину в
+/// логе.
 #[tauri::command]
-async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), String> {
+async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<String, String> {
     let store = app
         .store("settings.json")
         .map_err(|e| e.to_string())?;
@@ -563,7 +646,7 @@ async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), 
         }
     }
 
-    Ok(())
+    Ok(hotkey_collision_warning(&settings).unwrap_or_default())
 }
 
 #[tauri::command]
@@ -615,6 +698,73 @@ async fn get_dashboard_data(app: tauri::AppHandle) -> Result<String, String> {
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     Ok(stdout.trim().to_string())
+}
+
+/// Прочитать `claudeWt.tileZones` из живого YAML-конфига node-части.
+///
+/// Трей хранилище YAML не разбирает вовсе — ни зависимости, ни кода для
+/// этого нет, — поэтому чтение и запись идут через node-команду
+/// `claude-wt tile-zones`, тем же приёмом, что `get_dashboard_data`.
+#[tauri::command]
+async fn get_tile_zones(app: tauri::AppHandle) -> Result<String, String> {
+    let project_path = get_project_path(&app);
+    if project_path.is_empty() {
+        return Err("Project path not configured".to_string());
+    }
+
+    let shell = app.shell();
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        shell
+            .command("node")
+            .args(["src/index.js", "claude-wt", "tile-zones", "get"])
+            .current_dir(&project_path)
+            .output(),
+    )
+    .await
+    .map_err(|_| "tile-zones get timed out after 10s".to_string())?
+    .map_err(|e| e.to_string())?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tile-zones get failed: {}", stderr.trim()));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Записать `claudeWt.tileZones` в живой YAML-конфиг node-части.
+///
+/// Разбор и точечная правка (сохраняющая комментарии конфига) — целиком на
+/// стороне node; здесь только передача текста поля и прогон ошибки разбора
+/// (неразборчивая строка) человеку в статус окна настроек, а не в лог.
+#[tauri::command]
+async fn save_tile_zones(app: tauri::AppHandle, text: String) -> Result<(), String> {
+    let project_path = get_project_path(&app);
+    if project_path.is_empty() {
+        return Err("Project path not configured".to_string());
+    }
+
+    let shell = app.shell();
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        shell
+            .command("node")
+            .args(["src/index.js", "claude-wt", "tile-zones", "set"])
+            .arg(&text)
+            .current_dir(&project_path)
+            .output(),
+    )
+    .await
+    .map_err(|_| "tile-zones set timed out after 10s".to_string())?
+    .map_err(|e| e.to_string())?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.trim().to_string());
+    }
+
+    Ok(())
 }
 
 fn get_project_path(app: &tauri::AppHandle) -> String {
@@ -1359,7 +1509,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(Mutex::new(AppState::new()))
-        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version, save_store_match_list])
+        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version, save_store_match_list, get_tile_zones, save_tile_zones])
         .setup(|app| {
             let project_path = get_project_path(app.handle());
             logging::init(&project_path);
