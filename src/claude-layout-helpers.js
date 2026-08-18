@@ -235,6 +235,26 @@ function toWindowSpace(rect, scaleFactor) {
 }
 
 /**
+ * Какому окну вернуть фокус после раскладки.
+ *
+ * Раскладка поднимает все окна поверх чужих, и после этого фокус обязан
+ * оказаться на одном из них — иначе поднятая плитка стоит впереди, а ввод
+ * уходит окну, которого не видно.
+ *
+ * Бывшее переднее окно в приоритете, но только если оно само раскладывается:
+ * человек звал раскладку, глядя на одно из этих окон, и отбирать у него ввод
+ * незачем. Переднее окно со стороны (пикер, браузер) в счёт не идёт — вернуть
+ * фокус ему значило бы отдать ввод тому, что раскладка только что накрыла.
+ *
+ * Пустой список — ничего фокусировать не надо, `null`.
+ */
+function pickFocusTarget(ids = [], activeId = 0) {
+  if (!ids.length) return null;
+  if (activeId && ids.includes(activeId)) return activeId;
+  return ids[0];
+}
+
+/**
  * Разложить `n` окон. Порядок ответа — порядок окон.
  *
  * На входе именно рабочая область, а не экран: что из экрана вычесть, знает
@@ -249,4 +269,4 @@ function arrange({ mode, zones = [], work, n }) {
   return tileGrid(work, n);
 }
 
-export { layoutFromName, normalizeIds, parseArrangePayload, splitCounts, stackInCell, tileByZones, columns, tileGrid, cascade, arrange, toWindowSpace };
+export { layoutFromName, normalizeIds, parseArrangePayload, pickFocusTarget, splitCounts, stackInCell, tileByZones, columns, tileGrid, cascade, arrange, toWindowSpace };

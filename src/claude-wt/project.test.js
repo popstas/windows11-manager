@@ -18,6 +18,7 @@ function harness({ appearsAfterMs = 0, found = { id: 77 } } = {}) {
         calls.push(`find:${title}`);
         return clock - 1000 >= appearsAfterMs ? found : null;
       },
+      place: (w, title) => { calls.push(`place:${w.id}:${title}`); return Promise.resolve(true); },
       focus: (id) => { calls.push(`focus:${id}`); return Promise.resolve(true); },
       waitMs: 15000,
       pollMs: 250,
@@ -30,7 +31,10 @@ describe('focusSpawnedWindow', () => {
   it('поднимает окно, появившееся сразу, — но не раньше паузы на расстановку', async () => {
     const h = harness();
     expect(await focusSpawnedWindow('skill-do', h.deps)).toBe(true);
-    expect(h.calls).toEqual(['find:skill-do', 'wait:4000', 'focus:77']);
+    // Место — раньше фокуса: окно, получившее ввод до переезда в свою
+    // геометрию, читается как «открылось только сейчас», когда через секунду
+    // прыгает на место.
+    expect(h.calls).toEqual(['find:skill-do', 'wait:4000', 'place:77:skill-do', 'focus:77']);
   });
 
   it('ждёт окно опросом, пока заголовок ставит запускающийся claude', async () => {
@@ -40,7 +44,7 @@ describe('focusSpawnedWindow', () => {
       'find:skill-do', 'wait:250',
       'find:skill-do', 'wait:250',
       'find:skill-do', 'wait:4000',
-      'focus:77',
+      'place:77:skill-do', 'focus:77',
     ]);
   });
 

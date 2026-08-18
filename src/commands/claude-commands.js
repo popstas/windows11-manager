@@ -7,11 +7,12 @@
  * ccfzf-picker пропадала молча — тот же случай, что уже описан в комментарии
  * windows.js:1088-1093 про claude-focus.
  */
-import { chooseAction, resolveDesktopSwitch } from '../claude-wt/ha/session-groups.js';
+import { chooseAction } from '../claude-wt/ha/session-groups.js';
 import { sessionIdForSlot } from '../claude-wt/ha/session-slots.js';
 import { basenameOfCwd } from '../claude-wt/project-helpers.js';
 import { parseRestorePayload } from './restore-payload.js';
 import { parseArrangePayload } from '../claude-layout-helpers.js';
+import { startTiming, noTiming } from '../claude-wt/timing.js';
 
 /** Тело просьбы: `{"id": …}` либо голый id строкой — ради вызова руками. */
 function parseIdPayload(payload) {
@@ -37,10 +38,18 @@ function slotFromPayload(payload) {
 }
 
 function claudeCommands({ winMan, log, notify, slots }) {
-  function findSession(id) {
+  /**
+   * `brief: true` — по той же причине, что и в openClaudeProject: решается
+   * здесь «открыто ли окно этой сессии», а на это состояние агента не влияет
+   * никак. Читалось же оно дольше всего остального вместе взятого — прогресс и
+   * мета лежат на сетевом диске, файл на сессию, 1.43 с замером на popstas-pc.
+   * Ровно эту секунду с лишним человек и ждал, выбирая в пикере уже открытое
+   * окно: сама расстановка фокуса занимает миллисекунды.
+   */
+  function findSession(id, mark = noTiming) {
     let res;
     try {
-      res = winMan.claudeWtSessions();
+      res = winMan.claudeWtSessions({ mark, brief: true });
     } catch (e) {
       return { error: e.message };
     }
@@ -72,22 +81,26 @@ function claudeCommands({ winMan, log, notify, slots }) {
   /**
    * Живое окно поднимаем, мёртвую сессию восстанавливаем.
    *
-   * Переход на её рабочий стол идёт первым: фокус на окне с чужого стола
-   * Windows отдаёт молча и без результата.
+   * Стол трогается только если пришлось: `focusTerminalWindow` сперва пробует
+   * сам фокус и бесплатно проверяет, стал ли hwnd передним, и лишь потом
+   * платит за запуск `VirtualDesktop11.exe`. Окно на текущем столе — обычный
+   * случай, и он теперь не стоит ничего.
+   *
+   * Известный номер стола сюда не передаётся намеренно, хотя слот его помнит:
+   * память слота может отстать от жизни (окно увели вручную), и переход по ней
+   * увёл бы человека не туда. Живой ответ спрашивается только тогда, когда
+   * дешёвая попытка уже не удалась, — то есть редко.
    *
    * `terminal` доходит только досюда с дорогой session-open: у claude-focus
    * его в просьбе не бывает, и вызов оттуда просто не передаёт третий
    * аргумент.
    */
-  async function focusOrRestore(id, session, terminal) {
+  async function focusOrRestore(id, session, terminal, mark = noTiming) {
     if (chooseAction(session, (windowId) => !!winMan.getWindowById(windowId)) === 'restore') {
       await restoreOne(id, terminal);
       return;
     }
-    const current = await winMan.virtualDesktop.GetWindowDesktopNumber(session.windowId);
-    const target = resolveDesktopSwitch(current);
-    if (target !== null) await winMan.virtualDesktop.GoToDesktopNumber(target);
-    if (!winMan.focusWindowById(session.windowId)) log(`claude-wt: ${id} is not on screen`, 'warn');
+    if (!(await winMan.focusTerminalWindow(session.windowId, mark))) log(`claude-wt: ${id} is not on screen`, 'warn');
   }
 
   /**
@@ -168,13 +181,14 @@ function claudeCommands({ winMan, log, notify, slots }) {
   async function focus(payload) {
     const { id } = parseIdPayload(payload);
     if (!id) return;
-    const found = findSession(id);
+    const mark = startTiming(`focus ${id}`);
+    const found = findSession(id, mark);
     if (found.error) {
       log(`claude-wt: ${found.error}`, 'warn');
       notify(`claude-wt: ${found.error}`);
       return;
     }
-    await focusOrRestore(id, found.session);
+    await focusOrRestore(id, found.session, undefined, mark);
   }
 
   return {
@@ -311,6 +325,10 @@ function claudeCommands({ winMan, log, notify, slots }) {
       // пусто — берётся дефолт машины. Проверять имя здесь нечем и незачем:
       // реестр знает менеджер, и он же скажет в лог, если имя чужое.
       const wantedTerminal = typeof terminal === 'string' ? terminal.trim() : '';
+      // Секундомер заводится здесь, а не в ветке подъёма: считать надо с
+      // прихода просьбы, иначе разбор тела и поиск сессии выпадут из отчёта —
+      // а именно поиск и оказался тем, что стоило больше секунды.
+      const mark = startTiming(`session-open ${id ?? dir}`);
       // «Заведи ещё одну» — просьба про каталог и только про него. Сессию не
       // ищем даже при заданном id: нашлась бы та самая, рядом с которой просят
       // открыть новую, и вместо второго терминала человек получил бы подъём
@@ -325,9 +343,9 @@ function claudeCommands({ winMan, log, notify, slots }) {
         await openProject(dir, asked, { reuseOpen: false, terminal: wantedTerminal });
         return;
       }
-      const found = id ? findSession(id) : null;
+      const found = id ? findSession(id, mark) : null;
       if (found?.session) {
-        await focusOrRestore(id, found.session, wantedTerminal);
+        await focusOrRestore(id, found.session, wantedTerminal, mark);
         return;
       }
       // Список сессий не прочитался — это поломка, а не «сессии тут нет»;

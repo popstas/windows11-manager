@@ -1,6 +1,6 @@
 import os from 'node:os';
 import { getConfig } from '../config.js';
-import { getVisibleWindowIds, getWindowById, getActiveWindowId } from '../windows.js';
+import { getVisibleWindowIds, getWindowById, getActiveWindowId, focusWindowById } from '../windows.js';
 import { placeWindowByConfig } from '../placement.js';
 import { getWindowsMonitors } from '../monitors.js';
 import { virtualDesktop } from '../virtual-desktop.js';
@@ -208,6 +208,16 @@ async function claudeWtTick(tickGen = null) {
         // Слот хранит 1-based номер, GoToDesktopNumber ждёт 0-based — та же
         // пара, что у GetWindowDesktopNumber выше.
         await virtualDesktop.GoToDesktopNumber(follow - 1);
+        // Перейти на стол — ещё не вернуться к окну: передним после
+        // переключения Windows оставляет что придётся, и человек, шедший за
+        // своим окном, оказывается на нужном столе перед чужим. Раньше это
+        // прятала пауза в focusSpawnedWindow: фокус брался уже после всех
+        // переносов, то есть ценой четырёх секунд ожидания на каждое открытие.
+        // Здесь тот же исход достаётся даром — окно, за которым пошли, и есть
+        // то, которое надо сделать передним.
+        if (!focusWindowById(activeWindowId)) {
+          console.error(`[claude-wt] followed window ${activeWindowId} to desktop ${follow}, but focus did not stick`);
+        }
       } catch (e) {
         console.error(`[claude-wt] failed to follow window to desktop ${follow}: ${e.message}`);
       }

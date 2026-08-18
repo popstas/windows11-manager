@@ -8,12 +8,13 @@
 import { getConfig } from './config.js';
 import { fancyZonesToPos } from './fancyzones.js';
 import { getMonitorByPoint, getPrimaryMonitor } from './monitors.js';
-import { getWindowById } from './windows.js';
+import { focusWindowById, getActiveWindowId, getWindowById } from './windows.js';
 import { placeWindow } from './placement.js';
 import { claudeWtSessions } from './claude-wt/view.js';
 import { orderSessions } from './claude-wt/ha/session-slots.js';
 import { normalizeSort } from './claude-wt/ha/session-groups.js';
-import { arrange, toWindowSpace } from './claude-layout-helpers.js';
+import { arrange, pickFocusTarget, toWindowSpace } from './claude-layout-helpers.js';
+import { startTiming } from './claude-wt/timing.js';
 
 /**
  * Зоны из `claudeWt.tileZones`, разрешённые в прямоугольники.
@@ -174,11 +175,19 @@ function layoutWorkArea(rects, log) {
  * ждёт, что раскладка ляжет его чередой. Ненайденный id пропускается со
  * строкой в журнал: сессия закрыта или живёт на другой машине, и отменять из-за
  * неё всю просьбу незачем.
+ *
+ * Оттуда же и `brief`. Со своим порядком (`ids` задан — а его задаёт пикер,
+ * то есть почти всегда) список нужен лишь затем, чтобы перевести id в hwnd, и
+ * состояние агента в этом не участвует; читается же оно с сетевого диска
+ * файлом на сессию и стоит больше секунды. Без `ids` порядок считает эта
+ * машина, а `compareSessions` сортирует по `lastActivity` — та берётся из
+ * прогресса, и краткое чтение переставило бы окна. Поэтому не «всегда
+ * кратко», а «кратко там, где порядок пришёл готовым».
  */
-function pickWindows(ids, log) {
+function pickWindows(ids, log, mark = () => 0) {
   let res;
   try {
-    res = claudeWtSessions();
+    res = claudeWtSessions({ mark, brief: ids.length > 0 });
   } catch (e) {
     return { error: e.message };
   }
@@ -218,12 +227,16 @@ function pickWindows(ids, log) {
  * между экранами с разным DPI, повтор при промахе и строку журнала в
  * привычном формате `from → to`. Второй раз поправлять масштаб здесь нельзя.
  *
- * `isBulk: true` глушит bringToTop() внутри: плитке он не нужен вовсе
- * (перекрытий нет), а каскаду нужен порядком, поэтому окна поднимаются
- * отдельным проходом — в порядке списка, так что последнее оказывается сверху.
+ * `isBulk: true` глушит bringToTop() внутри: окна поднимаются отдельным
+ * проходом после расстановки — в порядке списка, так что последнее
+ * оказывается сверху. Каскаду этот порядок нужен по смыслу, плитке он
+ * безразличен (перекрытий нет), но поднимать её всё равно надо: раскладка
+ * зовётся, чтобы увидеть сессии, а стоят они за чужими окнами.
  */
 async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
+  const mark = startTiming(`place ${mode}`);
   const zones = resolveZones(log, mode);
+  mark('zones');
   // Плитка с уже разрешёнными зонами не читает рабочую область вовсе —
   // tileByZones() кладёт окна прямо в зоны. Звать layoutWorkArea() здесь всё
   // равно означало бы рисковать ложными строками warn про «главный монитор»
@@ -234,7 +247,7 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
   if (!work && (mode === 'cascade' || !zones.length)) {
     return { ok: false, reason: 'не найден монитор для раскладки' };
   }
-  const { error, windows, asked } = pickWindows(ids, log);
+  const { error, windows, asked } = pickWindows(ids, log, mark);
   if (error) return { ok: false, reason: error };
   if (!windows.length) {
     // Про ненайденные id уже есть строка warn в pickWindows(); здесь — точный
@@ -245,7 +258,12 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
     };
   }
 
+  // Переднее окно снимается до того, как что-либо сдвинулось: после подъёма
+  // всей раскладки узнать, на что человек смотрел, уже негде.
+  const activeBefore = getActiveWindowId();
+
   const rects = arrange({ mode, zones, work, n: windows.length });
+  mark('arrange');
   let placed = 0;
   // Без изменений — окно дошло до placeWindow(), но bounds не поменялись:
   // слишком узкое, свёрнутое или уже стоящее ровно на месте. Различать
@@ -275,15 +293,25 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
     if (result && result.changes?.some(c => c.name === 'bounds')) placed += 1;
     else unchanged += 1;
   }
-  if (mode === 'cascade') {
-    for (const w of windows) {
-      try {
-        w.bringToTop();
-      } catch (e) {
-        log(`claude-place: ${w.id} не поднялось — ${e.message}`, 'warn');
-      }
+  mark('place');
+  for (const w of windows) {
+    try {
+      w.bringToTop();
+    } catch (e) {
+      log(`claude-place: ${w.id} не поднялось — ${e.message}`, 'warn');
     }
   }
+  // Подъём — ещё не фокус: `bringToTop()` кладёт окно поверх остальных, но
+  // ввод остаётся там, где был, и раскладка выходит немой. Кого фокусировать,
+  // решает pickFocusTarget(); отказ не рушит раскладку — окна уже стоят и
+  // подняты, а фокус мог не дойти до окна, свёрнутого или ушедшего на другой
+  // стол между подъёмом и этой строкой.
+  mark('raise');
+  const focusId = pickFocusTarget(windows.map(w => w.id), activeBefore);
+  if (focusId !== null && !focusWindowById(focusId)) {
+    log(`claude-place: фокус не дошёл до окна ${focusId}`, 'warn');
+  }
+  mark('focus');
   // Ноль без изменений — обычный случай, хвост не нужен: «разложено 2 из 3»
   // короче и не менее честно, чем «разложено 2, без изменений 0 из 3».
   const unchangedTail = unchanged ? `, без изменений ${unchanged}` : '';

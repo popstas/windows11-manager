@@ -1,16 +1,45 @@
 import { spawn } from 'node:child_process';
-import { focusWindowById, getWindowById, getWindows } from '../windows.js';
+import { focusWindowById, getActiveWindowId, getWindowById, getWindows } from '../windows.js';
+import { placeWindowByConfig } from '../placement.js';
 import { virtualDesktop } from '../virtual-desktop.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { claudeWtSessions } from './view.js';
+import { readState } from './state.js';
+import { loadSessionIndex } from './sessions.js';
+import { resolveSession } from './tracker-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { pickOpenProjectSession, planLaunchNew, planWtLaunch, profileForTerminal, sessionNameFor } from './project-helpers.js';
 import { chooseTerminal } from './terminal-helpers.js';
 import { waitForNewWindow } from './restore.js';
+import { startTiming, noTiming } from './timing.js';
 
-async function focusTerminalWindow(windowId) {
+/**
+ * Сфокусировать окно терминала, заплатив за столы только если пришлось.
+ *
+ * Раньше порядок был обратный: спросить у `VirtualDesktop11.exe` стол окна,
+ * перейти на него, потом фокус. Два запуска процесса на каждый перевод фокуса —
+ * 208 мс замером на popstas-pc, и платились они всегда, даже когда окно и так
+ * на текущем столе, то есть почти всегда.
+ *
+ * Здесь сначала пробуется сам фокус, а потом проверяется, вышло ли: окно стало
+ * передним — делать больше нечего, и ни одного процесса не запущено. Проверка
+ * бесплатная, и в этом весь трюк: `getActiveWindowId()` — это
+ * `GetForegroundWindow()` и ничего больше, тогда как любой вопрос про столы
+ * стоит запуска exe. Не вышло — окно на другом столе (фокус на такое Windows
+ * отдаёт молча и без результата), и вот тогда переход оправдан.
+ *
+ * `knownDesktop` (1-based, как хранит слот) снимает и оставшийся вопрос: стол
+ * знает тот, кто только что сам поставил туда окно, и спрашивать его у Windows
+ * незачем.
+ */
+async function focusTerminalWindow(windowId, mark = noTiming, knownDesktop = null) {
+  if (focusWindowById(windowId) && getActiveWindowId() === windowId) {
+    mark('focus');
+    return true;
+  }
   try {
-    const current = await virtualDesktop.GetWindowDesktopNumber(windowId);
+    const known = Number.isFinite(knownDesktop) && knownDesktop > 0 ? knownDesktop - 1 : null;
+    const current = known ?? await virtualDesktop.GetWindowDesktopNumber(windowId);
     if (current !== undefined && current !== null && current !== '') {
       const target = Number(current);
       if (!Number.isNaN(target)) await virtualDesktop.GoToDesktopNumber(target);
@@ -18,7 +47,10 @@ async function focusTerminalWindow(windowId) {
   } catch {
     // Focus still worth trying if the desktop query fails.
   }
-  return focusWindowById(windowId);
+  mark('desktop');
+  const ok = focusWindowById(windowId);
+  mark('focus');
+  return ok;
 }
 
 function terminalWindows() {
@@ -44,14 +76,101 @@ function findOpenTerminalByTitle(title) {
 // за это время — значит и не найдём, а не «подождём ещё».
 const WINDOW_WAIT_MS = 15000;
 const WINDOW_POLL_MS = 250;
-// Пауза между появлением окна и фокусом. За неё успевают оба, кто двигает окно
-// новой сессии: автопостановщик (такт 1.5 с плюс задержка 1 с) и демон
-// claude-wt, привязывающий сессию к слоту за два тика и способный увести окно
-// на чужой стол. Фокус, взятый раньше них, у человека отберут — переход на
-// другой стол оставляет передним что придётся.
-const PLACEMENT_SETTLE_MS = 4000;
+// Пауза между появлением окна и фокусом.
+//
+// Была 4000 мс — ровно столько, чтобы пересидеть обоих, кто двигает окно новой
+// сессии: автопостановщик (такт 1.5 с плюс задержка 1 с) и демон claude-wt,
+// привязывающий сессию к слоту за два тика и способный увести окно на чужой
+// стол. Ждать их приходилось потому, что переход на другой стол оставляет
+// передним что придётся, и фокус, взятый раньше переноса, у человека отбирали.
+//
+// Ждать больше нечего, и потому умолчание — ноль. Демон, уйдя за окном на его
+// стол, сам делает это окно передним (см. `claudeWtTick`, ветка `follow`), а
+// геометрию слота окно получает здесь же, до фокуса. Ждать «на всякий случай»
+// нечего: окно найдено по точному заголовку, а его ставит уже поднявшийся
+// `claude`, а не пустая рама, — то есть терминал к этому моменту нарисован.
+// Всякое другое число здесь было бы тем же гаданием, от которого эта правка и
+// уходит: прежние 4000 мс никто не измерял, а стоили они две трети всей
+// задержки.
+//
+// Страховка на случай, если терминал всё-таки переставит себя после нас,
+// двойная и обе не наши: `placeWindow()` повторяет промах, а тик демона
+// поставит окно на место, как ставил всегда.
+//
+// Настройкой, а не константой: цена ошибки — отобранный у человека фокус или
+// вернувшийся прыжок окна, и чинить это перевыкаткой кода на живой машине
+// незачем.
+const PLACEMENT_SETTLE_MS = 0;
+
+/**
+ * Пауза из конфига, с откатом на константу.
+ *
+ * Отказ конфига здесь не повод не фокусировать окно: оно уже открыто и ждёт
+ * человека, а всё, чего мы лишаемся, — подобранного числа вместо умолчания.
+ * `getClaudeWtConfig()` бросает, когда файла нет вовсе (так и живут тесты, и
+ * любая машина без установки), и без этого отката хвост `focusSpawnedWindow`
+ * умирал бы в `.catch()` строкой в журнале — окно открылось, фокуса нет.
+ */
+const settleMsFromConfig = () => {
+  try {
+    const raw = getClaudeWtConfig().focusSettleMs;
+    return Number.isFinite(raw) && raw >= 0 ? raw : PLACEMENT_SETTLE_MS;
+  } catch {
+    return PLACEMENT_SETTLE_MS;
+  }
+};
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Поставить только что открытое окно туда, где эта сессия стояла раньше.
+ *
+ * Тем же слотом и той же дорогой, что и демон, — но сразу, а не через две
+ * секунды. Демону ждать приходится: заголовок при входе в сессию скачет
+ * (`shell` → `claude` → имя сессии), и он привязывает окно к слоту только
+ * после `stableTicks` одинаковых тиков, иначе окно уехало бы в слот
+ * промежуточного заголовка. Здесь ждать нечего: окно найдено по точному
+ * заголовку, который мы сами и задали при запуске, — сомнений, чья это
+ * сессия, нет вовсе.
+ *
+ * Ради этого всё и затевалось. Замер на popstas-pc: фокус доходил до окна за
+ * 947 мс, а демон двигал и растягивал его на 1.9 с — и вот этот прыжок из
+ * терминальской геометрии в свою человек и видел как «окно наконец
+ * открылось». Поставленное заранее окно демон на своём тике уже не двигает:
+ * `placeWindow()` пропускает то, что и так стоит на месте.
+ *
+ * Отказ здесь ничего не отменяет: слота может не быть вовсе (сессия с этим
+ * именем открывается впервые), состояние может не прочитаться — окно всё
+ * равно откроется и получит фокус, просто там, куда его поставил терминал.
+ *
+ * Ответ — номер стола, на который окно поставлено (1-based, как в слоте), либо
+ * `null`. Зовущий передаёт его фокусу, и тот не спрашивает у Windows то, что
+ * мы только что сами и сделали.
+ */
+async function placeSpawnedWindow(win, title, mark = noTiming) {
+  let slot = null;
+  try {
+    const cfg = getClaudeWtConfig();
+    const state = readState(cfg.statePath);
+    const sessionIndex = loadSessionIndex(cfg.sessionsFile, cfg.progressDir);
+    const resolved = resolveSession(stripTitleDecoration(title), sessionIndex, state.slots);
+    slot = resolved ? state.slots[resolved.id] : null;
+  } catch (e) {
+    console.error(`[claude-wt] no remembered place for ${title}: ${e.message}`);
+  }
+  mark('slot');
+  if (!slot?.bounds) return null;
+  const rule = { window: win.id, ...slot.bounds };
+  if (slot.desktop) rule.desktop = slot.desktop;
+  try {
+    await placeWindowByConfig(rule);
+  } catch (e) {
+    console.error(`[claude-wt] failed to place ${title}: ${e.message}`);
+    return null;
+  }
+  mark('place');
+  return rule.desktop ?? null;
+}
 
 /**
  * Дождаться окна только что запущенной сессии и сфокусировать его.
@@ -81,7 +200,9 @@ async function focusSpawnedWindow(title, deps = {}) {
     now = Date.now,
     waitMs = WINDOW_WAIT_MS,
     pollMs = WINDOW_POLL_MS,
-    settleMs = PLACEMENT_SETTLE_MS,
+    settleMs = settleMsFromConfig(),
+    place = placeSpawnedWindow,
+    mark = noTiming,
   } = deps;
   const deadline = now() + waitMs;
   let w = findWindow(title);
@@ -89,9 +210,18 @@ async function focusSpawnedWindow(title, deps = {}) {
     await wait(pollMs);
     w = findWindow(title);
   }
-  if (!w) return false;
+  if (!w) {
+    mark('window:not-found');
+    return false;
+  }
+  mark('window');
   await wait(settleMs);
-  return focus(w.id);
+  mark('settle');
+  // Место — раньше фокуса: окно, которое сначала получает ввод, а через
+  // секунду прыгает в свою геометрию, человек читает как «открылось только
+  // сейчас», и вся экономия предыдущих звеньев пропадает зря.
+  const desktop = await place(w, title, mark);
+  return focus(w.id, mark, desktop);
 }
 
 /**
@@ -113,12 +243,18 @@ async function focusNewTerminalWindow(knownIds, deps = {}) {
     focus = focusTerminalWindow,
     wait = sleep,
     waitMs = WINDOW_WAIT_MS,
-    settleMs = PLACEMENT_SETTLE_MS,
+    settleMs = settleMsFromConfig(),
+    mark = noTiming,
   } = deps;
   const win = await waitForWindow(knownIds, waitMs);
-  if (!win) return false;
+  if (!win) {
+    mark('window:not-found');
+    return false;
+  }
+  mark('window');
   await wait(settleMs);
-  return focus(win.id);
+  mark('settle');
+  return focus(win.id, mark);
 }
 
 /**
@@ -155,6 +291,7 @@ async function resumeClaudeSession({ id, cwd = '', terminal } = {}, deps = {}) {
   } = deps;
   const sessionId = typeof id === 'string' ? id.trim() : '';
   if (!sessionId) return { ok: false, reason: 'id is required' };
+  const mark = deps.mark ?? startTiming(`resume ${sessionId}`);
   // Блок `launch`, а не `launchNew`: здесь собирается возобновление сессии, и
   // старость конфига судится по тому блоку, из которого берётся шаблон.
   const { chosen, message } = chooseTerminal(terminal, cfg, 'launch');
@@ -170,15 +307,17 @@ async function resumeClaudeSession({ id, cwd = '', terminal } = {}, deps = {}) {
   }
   // Список окон снимается до запуска: после него новое окно уже не отличить.
   const known = new Set(listWindows().map(w => w.id));
+  mark('windows-list');
   try {
     spawnProcess(command, args, { detached: true, stdio: 'ignore' }).unref();
   } catch (e) {
     return { ok: false, action: 'spawn', reason: e.message };
   }
+  mark('spawn');
   // Хвостом, как у `openClaudeProject`, и `.catch()` по той же причине:
   // необработанное отклонение роняет процесс, в котором живут экспорт в Home
   // Assistant и сторож демона.
-  focusNew(known, deps).catch((e) => {
+  focusNew(known, { ...deps, mark }).catch((e) => {
     console.error(`[claude-wt] failed to focus ${sessionId}: ${e.message}`);
   });
   return { ok: true, action: 'resume', sessionId };
@@ -209,14 +348,19 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
     return { ok: false, reason: 'cwd and name are required' };
   }
   const sessionName = sessionNameFor({ cwd, name, reuseOpen });
+  const mark = startTiming(`open ${sessionName}`);
 
   // Просьбе «заведи ещё одну» оба поиска не нужны и вредны: первый поднял бы
   // ту самую сессию, рядом с которой просят открыть новую, а второй — её окно
   // по заголовку. Заодно не читается список сессий, а он ходит на сетевой диск.
+  //
+  // `brief: true` — по той же причине, только для тех просьб, где список всё же
+  // нужен: состояние агента здесь ни на что не влияет, а читается дольше всего
+  // остального вместе взятого (замер: 1.43 с из 1.47 с до spawn).
   if (reuseOpen) {
     let res;
     try {
-      res = claudeWtSessions();
+      res = claudeWtSessions({ mark, brief: true });
     } catch (e) {
       return { ok: false, reason: e.message };
     }
@@ -224,15 +368,16 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
 
     const session = pickOpenProjectSession(res.sessions, cwd);
     if (session?.windowId && getWindowById(session.windowId)) {
-      if (!(await focusTerminalWindow(session.windowId))) {
+      if (!(await focusTerminalWindow(session.windowId, mark))) {
         return { ok: false, action: 'focus', reason: 'window is not on screen', sessionId: session.id };
       }
       return { ok: true, action: 'focus', sessionId: session.id };
     }
 
     const byTitle = findOpenTerminalByTitle(sessionName);
+    mark('by-title');
     if (byTitle) {
-      if (!(await focusTerminalWindow(byTitle.id))) {
+      if (!(await focusTerminalWindow(byTitle.id, mark))) {
         return { ok: false, action: 'focus-title', reason: 'window is not on screen' };
       }
       return { ok: true, action: 'focus-title', sessionName };
@@ -257,19 +402,21 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
   if (!command) {
     return { ok: false, reason: 'claudeWt: no terminal named by the request or the config' };
   }
+  mark('plan');
   try {
     spawn(command, args, { detached: true, stdio: 'ignore' }).unref();
   } catch (e) {
     return { ok: false, action: 'spawn', reason: e.message };
   }
+  mark('spawn');
   // Хвостом, а не до ответа: окно появится через секунды, а просьба должна
   // вернуться сразу — её ждёт обработчик MQTT, который пишет в журнал исход.
   // `.catch()` обязателен: необработанное отклонение в node 22 роняет процесс
   // целиком, а в нём же живут экспорт в Home Assistant и сторож демона.
-  focusSpawnedWindow(sessionName).catch((e) => {
+  focusSpawnedWindow(sessionName, { mark }).catch((e) => {
     console.error(`[claude-wt] failed to focus ${sessionName}: ${e.message}`);
   });
   return { ok: true, action: 'spawn', cwd, name: sessionName, sessionName };
 }
 
-export { openClaudeProject, resumeClaudeSession, focusSpawnedWindow, focusNewTerminalWindow };
+export { openClaudeProject, resumeClaudeSession, focusSpawnedWindow, focusNewTerminalWindow, focusTerminalWindow };
