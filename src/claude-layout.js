@@ -91,7 +91,10 @@ function layoutWorkArea(rects, log) {
       return null;
     }
   }
-  if (!mon) return null;
+  if (!mon) {
+    log('claude-place: главный монитор не определён — раскладывать не по чему', 'warn');
+    return null;
+  }
   return mon.getWorkArea?.() ?? mon.bounds ?? null;
 }
 
