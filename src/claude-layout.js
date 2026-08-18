@@ -72,7 +72,9 @@ function resolveZones(log, mode) {
 }
 
 /**
- * Рабочая область — экран без панели задач, `MONITORINFO.rcWork`.
+ * Рабочая область — экран без панели задач, `MONITORINFO.rcWork`, переведённая
+ * из физических пикселей монитора в логические, в которых живут окна (см.
+ * комментарий у деления на `mon.getScaleFactor()` внутри).
  *
  * Монитор ищется по прямоугольнику первой зоны, а не по её номеру: номер в
  * tileZones — номер монитора FancyZones (getSortedMonitors по
@@ -126,7 +128,29 @@ function layoutWorkArea(rects, log) {
   }
   let work;
   try {
-    work = mon.getWorkArea?.() ?? mon.bounds ?? null;
+    const raw = mon.getWorkArea?.() ?? mon.bounds ?? null;
+    // getWorkArea()/bounds — физические пиксели монитора (то же пространство,
+    // что и editor-parameters.json FancyZones). tileGrid()/cascade() ниже
+    // считают геометрию окон, а окна двигаются через getBounds()/setBounds()
+    // node-window-manager — в ЛОГИЧЕСКИХ, виртуализованных пикселях: процесс
+    // DPI-unaware, и Windows масштабирует для него весь экран на коэффициент
+    // главного монитора. Без этого деления на мониторе со 125% сетка строила
+    // окно высотой 1728 там, где для окон экран высотой 1382 — лишние 346
+    // точек уезжали на соседний монитор снизу (реальный баг, из-за которого
+    // всё это чинится). Числа с живой машины popstas-pc: физическая рабочая
+    // область 2893x1728 при масштабе 1.25 даёт логическую 2314x1382 — именно
+    // в ней и должны жить окна. Деление второй раз не случается: placeWindow()
+    // зовёт adjustBoundsForScale(), но при заданных width/height (а arrange()
+    // их всегда задаёт) он возвращает bounds нетронутыми (src/scale.js).
+    const scale = mon.getScaleFactor?.() ?? 1;
+    work = !raw || !scale || scale === 1
+      ? raw
+      : {
+        x: Math.round(raw.x / scale),
+        y: Math.round(raw.y / scale),
+        width: Math.round(raw.width / scale),
+        height: Math.round(raw.height / scale),
+      };
   } catch (e) {
     log(`claude-place: не удалось получить рабочую область монитора — ${e.message}`, 'warn');
     return null;

@@ -45,22 +45,48 @@ This repository contains a Node.js tool for managing window placement on Windows
 
 ## FancyZones coordinate system & DPI gotchas
 
-`calcFancyZonePos` (`src/fancyzones-helpers.js`) does **not** divide anything by
-`scaleFactor = dpi/96`, and must not: zones (`custom-layouts.json`) and
-work-area (`work-area-width`/`work-area-height` in `editor-parameters.json`)
-are already logical pixels — the same space as `getBounds()`/`setBounds()`
-in node-window-manager. Dividing them by scaleFactor was the bug: a zone
-spanning the full work-area height came out at 80% height on a 125%-scaled
-monitor. Nothing is claimed here about `monitor-width`/`monitor-height` —
-they can be physical pixels in older PowerToys data and are unused by the
-calculator anyway.
+Two different coordinate spaces meet in this project, and mixing them up is a
+recurring source of bugs (see git history around 2026-08-18: a commit removed
+the DPI division below on the wrong theory that both spaces were the same —
+verified wrong by a live check on a scaled monitor, and reverted):
 
-`left-coordinate`/`top-coordinate` (origin of `monBounds` in `src/fancyzones.js`)
-are logical on the machine this was verified on, but a fixture captured from
-PowerToys 0.95 (`data/FancyZonesProfile/editor-parameters.json`) stores them
-physical — so this one is version-dependent and not handled in code; see the
-comment at the `monBounds` construction in `src/fancyzones.js` for the
-possible symptom.
+- **Monitor geometry** — `monitor.getBounds()`, `monitor.getWorkArea()`
+  (node-window-manager), and FancyZones' `editor-parameters.json`
+  (`monitor-width`/`-height`, `work-area-width`/`-height`,
+  `left-coordinate`/`top-coordinate`) and `custom-layouts.json` zone
+  coordinates — are all in **physical** pixels. Example from popstas-pc: the
+  MSI monitor is 3072x1728 physical, work-area 2893x1728.
+- **Window geometry** — `window.getBounds()`/`setBounds()`
+  (node-window-manager) — is in **logical**, virtualized pixels: the node
+  process is DPI-unaware, so Windows scales the entire desktop for it by a
+  factor. At 125% that same MSI monitor looks 2458x1382 to the process.
+
+Any code that takes a rectangle from monitor/zone space and feeds it to
+`setBounds()` (or vice versa) must divide (or multiply) by
+`scaleFactor = dpi/96` to cross between the two spaces. Two call sites do this
+today:
+- `calcFancyZonePos` (`src/fancyzones-helpers.js`), fed `scaleFactor` computed
+  in `fancyZonesToPos()` (`src/fancyzones.js`) from the zone's monitor `dpi`.
+- `layoutWorkArea()` (`src/claude-layout.js`), which divides
+  `mon.getWorkArea()` by `mon.getScaleFactor()` before handing it to
+  `tileGrid()`/`cascade()` — without this, windows on a scaled monitor were
+  sized in physical pixels and spilled onto the neighboring monitor below.
+
+**Known limitation (not fixed, don't blind-fix it):** the division in
+`calcFancyZonePos` uses the DPI of the monitor the zone lives on, but Windows'
+DPI-unaware virtualization scales the *entire* virtual desktop by the
+**primary** monitor's scale factor, not by each monitor's own. For the primary
+monitor these coincide, so its zones divide correctly. For any other monitor
+they don't: on popstas-pc the iiyama monitor sits at physical `left-coordinate
+= 3840`, `dpi 96` (scaleFactor 1, no division happens), but in the logical
+window space (scaled by the *primary* monitor's 1.25) it actually starts at
+`3072`. A zone on that monitor lands roughly `768` px too far right. This has
+not been fixed because the user's config has accumulated `monitorsOffset`
+corrections over the years that may already compensate for exactly this — a
+blind fix risks breaking what currently works. If a zone on a non-primary
+monitor overshoots, check `monitorsOffset` for that monitor first, and check
+whether the primary monitor's scale factor differs from that monitor's own
+before touching the code.
 
 ### Known issues
 - **Stale FZ data**: `editor-parameters.json` is only refreshed when the FancyZones editor is opened (Win+Shift+`) or after a **full system reboot**. Simply restarting PowerToys does NOT regenerate it. Stale data can have wrong DPI (192 vs 96) and wrong coordinates

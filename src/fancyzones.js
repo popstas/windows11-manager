@@ -58,11 +58,18 @@ function fancyZonesToPos(opts) {
     height: monitor['work-area-height'],
   };
   const config = getConfig();
+  // Геометрия монитора (editor-parameters.json FancyZones) — физические
+  // пиксели. Окна двигаются в логических (getBounds()/setBounds()
+  // node-window-manager, DPI-unaware процесс, виртуализация Windows).
+  // scaleFactor переводит зону из первого пространства во второе —
+  // calcFancyZonePos() делит на него координаты и размер зоны.
+  const scaleFactor = monitor.dpi ? monitor.dpi / 96 : 1;
   return calcFancyZonePos({
     zone,
     monBounds,
     monitorGaps: config?.monitorsGaps?.[opts.monitor],
     monitorsOffset: config?.monitorsOffset?.[opts.monitor],
+    scaleFactor,
   });
 }
 

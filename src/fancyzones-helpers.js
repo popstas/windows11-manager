@@ -2,7 +2,7 @@
 
 import { applyMonitorGaps, applyMonitorsOffset } from './geometry.js';
 
-function calcFancyZonePos({ zone, monBounds, monitorGaps, monitorsOffset }) {
+function calcFancyZonePos({ zone, monBounds, monitorGaps, monitorsOffset, scaleFactor }) {
   const pos = {
     x: monBounds.x + zone.X,
     y: monBounds.y + zone.Y,
@@ -12,18 +12,22 @@ function calcFancyZonePos({ zone, monBounds, monitorGaps, monitorsOffset }) {
   applyMonitorGaps({ pos, monBounds, monitorGaps });
   applyMonitorsOffset({ pos, offset: monitorsOffset });
 
-  // Деления на DPI/scaleFactor здесь намеренно нет. Зоны и work-area из
-  // editor-parameters.json/custom-layouts.json живут в том же пространстве,
-  // что getBounds()/setBounds() node-window-manager — то есть уже в логических
-  // пикселях (проверено на popstas-pc, 2026-08-18, монитор MSI, 125%/dpi 120:
-  // work-area совпала с getWorkArea() node-window-manager; независимо
-  // подтверждено фикстурой data/FancyZonesProfile/custom-layouts.json —
-  // раскладка «3 - Monitor 15" horiz» имеет ref-width/ref-height 1726x1200,
-  // ровно work-area её 192-dpi монитора, при зонах высотой 1200). Про
-  // monitor-width/monitor-height (физические пиксели в этой же фикстуре)
-  // ничего не утверждается — калькулятор их не использует. Деление на
-  // scaleFactor превращало зону на всю высоту рабочей области в зону 80%
-  // высоты — это и был баг.
+  // Деление на scaleFactor здесь ЕСТЬ и должно быть. Геометрия мониторов —
+  // editor-parameters.json FancyZones (monBounds здесь) и координаты зон в
+  // custom-layouts.json — живёт в ФИЗИЧЕСКИХ пикселях. Координаты окон —
+  // getBounds()/setBounds() node-window-manager — в ЛОГИЧЕСКИХ,
+  // виртуализованных: процесс DPI-unaware, и Windows масштабирует для него
+  // весь экран. Это два разных пространства в одном API, и деление на
+  // scaleFactor = dpi/96 переводит зону из первого во второе. Без него окна
+  // на масштабированном мониторе получаются больше, чем зона (проверено
+  // живой правкой на popstas-pc, монитор MSI, масштаб 125%: без деления
+  // окна вылезали за пределы зоны).
+  if (scaleFactor && scaleFactor !== 1) {
+    pos.x = Math.round(pos.x / scaleFactor);
+    pos.y = Math.round(pos.y / scaleFactor);
+    pos.width = Math.round(pos.width / scaleFactor);
+    pos.height = Math.round(pos.height / scaleFactor);
+  }
 
   return pos;
 }
