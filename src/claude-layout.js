@@ -88,12 +88,11 @@ function resolveZones(log, mode) {
  * всегда со строкой warn: без неё протухший editor-parameters.json (точка
  * зоны мимо любого mon.bounds) увозит окна на другой экран молча.
  *
- * Исключение — плитка с уже разрешёнными зонами (`mode === 'tile'` и
- * `rects.length`): результат этой функции тогда вообще не используется,
- * tileByZones() кладёт окна прямо в зоны. Если точка первой зоны мимо
- * любого монитора, писать «считаю по главному» было бы враньём того же
- * рода, что чинит resolveZones(), — по главному ничего считаться не будет,
- * поэтому строка тут не пишется вовсе.
+ * У плитки с уже разрешёнными зонами результат этой функции вообще не нужен
+ * — tileByZones() кладёт окна прямо в зоны, а не в рабочую область. Поэтому
+ * эту функцию для такого случая не зовут вовсе (см. arrangeClaudeWindows()):
+ * иначе даже безобидный промах мимо монитора писал бы сюда ложные строки
+ * warn про «главный», хотя по главному ничего бы не считалось.
  *
  * Возврат не только `null`, но и вырожденный прямоугольник — самостоятельная
  * дыра: `{width:0,height:0}` истинный, внешняя проверка на `!work` его
@@ -102,9 +101,7 @@ function resolveZones(log, mode) {
  * единой строки warn — ровно то молчание, которое проект запрещает. Поэтому
  * здесь же, при выходе, проверяются оба измерения.
  */
-function layoutWorkArea(rects, log, mode) {
-  // Плитка по уже разрешённым зонам не читает то, что вернёт эта функция.
-  const zoneDrivesLayout = mode === 'tile' && rects.length > 0;
+function layoutWorkArea(rects, log) {
   let mon;
   try {
     mon = rects[0] && getMonitorByPoint(rects[0]);
@@ -113,7 +110,7 @@ function layoutWorkArea(rects, log, mode) {
     mon = null;
   }
   if (!mon) {
-    if (rects[0] && !zoneDrivesLayout) {
+    if (rects[0]) {
       log('claude-place: монитор по зоне не найден — считаю по главному', 'warn');
     }
     try {
@@ -199,7 +196,13 @@ function pickWindows(ids, log) {
  */
 async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
   const zones = resolveZones(log, mode);
-  const work = layoutWorkArea(zones, log, mode);
+  // Плитка с уже разрешёнными зонами не читает рабочую область вовсе —
+  // tileByZones() кладёт окна прямо в зоны. Звать layoutWorkArea() здесь всё
+  // равно означало бы рисковать ложными строками warn про «главный монитор»
+  // и «рабочая область вырождена», хотя ни один из этих исходов ни на что не
+  // повлияет — раскладка пройдёт по зонам. Поэтому для этой комбинации
+  // функция не зовётся вовсе, а не «зовётся, но её warn приглушаются».
+  const work = (mode === 'tile' && zones.length) ? null : layoutWorkArea(zones, log);
   if (!work && (mode === 'cascade' || !zones.length)) {
     return { ok: false, reason: 'не найден монитор для раскладки' };
   }
