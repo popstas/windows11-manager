@@ -18,19 +18,24 @@ import { arrange } from './claude-layout-helpers.js';
 /**
  * Зоны из `claudeWt.tileZones`, разрешённые в прямоугольники.
  *
- * Пусто значит «считай своей сеткой», и об этом всегда есть строка warn:
+ * Пусто значит «считай своей сеткой», и об этом всегда есть строка warn (кроме
+ * каскада — там своей сетки нет вовсе, и эта строка была бы враньём):
  * протухший editor-parameters.json — известная болезнь этого проекта
  * (AGENTS.md, «Known issues»), и тихий откат спрятал бы её — окна просто
  * встали бы не туда, а человек искал бы причину в зонах.
  *
- * `fancyZonesToPos()` зовётся под try: при ненайденной раскладке
- * `getFancyZoneInfo()` возвращает false, и разбор его на месте бросает
- * TypeError вместо ответа «не нашлось».
+ * `fancyZonesToPos()` зовётся под try: сам разбор `false` в деструктуризации
+ * не бросает (боксится как булево), но `getFancyZoneInfo()` внутри читает и
+ * парсит `applied-layouts.json`/`custom-layouts.json`, а `getFancyZoneMonitor()`
+ * — `editor-parameters.json`; отсутствующий или битый файл роняет JSON.parse
+ * или fs.readFileSync, и вот это как раз бросает.
  */
-function resolveZones(log) {
+function resolveZones(log, mode) {
   const list = getConfig()?.claudeWt?.tileZones;
   if (!Array.isArray(list) || !list.length) {
-    log('claude-place: claudeWt.tileZones не задан — считаю своей сеткой', 'warn');
+    if (mode !== 'cascade') {
+      log('claude-place: claudeWt.tileZones не задан — считаю своей сеткой', 'warn');
+    }
     return [];
   }
   const rects = [];
@@ -58,9 +63,34 @@ function resolveZones(log) {
  * editor-parameters.json), а getMons() нумерует по config.monitors. Это две
  * разные нумерации, и сводить их здесь — заводить третье место, где они
  * разойдутся.
+ *
+ * Обёрнуто в try: getMonitorByPoint() зовёт getMons(), а тот лезет в
+ * config.monitors[n] без защиты — если в конфиге задан monitorsSize без
+ * monitors, это TypeError, а не «не нашёл». Не поймать его здесь — значит
+ * уронить всю команду unhandled rejection вместо контрактного { ok: false }.
+ * Откат на главный монитор — как и откат на свою сетку в resolveZones() —
+ * всегда со строкой warn: без неё протухший editor-parameters.json (точка
+ * зоны мимо любого mon.bounds) увозит окна на другой экран молча.
  */
-function layoutWorkArea(rects) {
-  const mon = (rects[0] && getMonitorByPoint(rects[0])) || getPrimaryMonitor();
+function layoutWorkArea(rects, log) {
+  let mon;
+  try {
+    mon = rects[0] && getMonitorByPoint(rects[0]);
+  } catch (e) {
+    log(`claude-place: определить монитор по зоне не удалось — считаю по главному (${e.message})`, 'warn');
+    mon = null;
+  }
+  if (!mon) {
+    if (rects[0]) {
+      log('claude-place: монитор по зоне не найден — считаю по главному', 'warn');
+    }
+    try {
+      mon = getPrimaryMonitor();
+    } catch (e) {
+      log(`claude-place: не удалось определить главный монитор — ${e.message}`, 'warn');
+      return null;
+    }
+  }
   if (!mon) return null;
   return mon.getWorkArea?.() ?? mon.bounds ?? null;
 }
@@ -122,8 +152,8 @@ function pickWindows(ids, log) {
  * отдельным проходом — в порядке списка, так что последнее оказывается сверху.
  */
 async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
-  const zones = resolveZones(log);
-  const work = layoutWorkArea(zones);
+  const zones = resolveZones(log, mode);
+  const work = layoutWorkArea(zones, log);
   if (!work && (mode === 'cascade' || !zones.length)) {
     return { ok: false, reason: 'не найден монитор для раскладки' };
   }
@@ -132,14 +162,19 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
   if (!windows.length) return { ok: false, reason: 'открытых сессий claude нет' };
 
   const rects = arrange({ mode, zones, work, n: windows.length });
+  let placed = 0;
   for (let i = 0; i < windows.length; i += 1) {
     const pos = rects[i];
     if (!pos) break;
     // Одно упавшее окно не обрывает остальные — та же сетка, что в
     // placeWindowsByConfig(): процесс окна мог умереть между перечислением и
     // расстановкой.
-    await placeWindow({ w: windows[i], rule: { pos }, isBulk: true })
-      .catch(e => log(`claude-place: ${windows[i].id} — ${e.message}`, 'error'));
+    const result = await placeWindow({ w: windows[i], rule: { pos }, isBulk: true })
+      .catch(e => { log(`claude-place: ${windows[i].id} — ${e.message}`, 'error'); return false; });
+    // placeWindow() пропускает слишком узкие окна (false), свёрнутые и уже
+    // стоящие там (skipped, changes пуст) — считаем разложенными только те,
+    // для которых реально был отдан bounds-changes, иначе «N из M» врёт.
+    if (result && result.changes?.some(c => c.name === 'bounds')) placed += 1;
   }
   if (mode === 'cascade') {
     for (const w of windows) {
@@ -150,8 +185,8 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
       }
     }
   }
-  log(`claude-place ${mode}: разложено ${windows.length} из ${asked}`);
-  return { ok: true, placed: windows.length };
+  log(`claude-place ${mode}: разложено ${placed} из ${asked}`);
+  return { ok: true, placed };
 }
 
 export { arrangeClaudeWindows };

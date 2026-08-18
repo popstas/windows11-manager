@@ -211,7 +211,11 @@ async function start() {
       }
       const res = await winMan.arrangeClaudeWindows({
         mode: parsed.mode,
-        log: (message) => console.log(message),
+        log: (message, level = 'info') => {
+          if (level === 'error') console.error(message);
+          else if (level === 'warn') console.warn(message);
+          else console.log(message);
+        },
       });
       if (!res.ok) {
         console.log(res.reason);
