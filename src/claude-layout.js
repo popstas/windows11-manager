@@ -163,18 +163,27 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
 
   const rects = arrange({ mode, zones, work, n: windows.length });
   let placed = 0;
+  // Без изменений — окно дошло до placeWindow(), но bounds не поменялись:
+  // слишком узкое, свёрнутое или уже стоящее ровно на месте. Различать
+  // «свёрнуто» и «уже на месте» нельзя — placeWindow() отдаёт для обеих
+  // веток одинаковый skipped. Упавшие (бросили) сюда не попадают: они не
+  // «без изменений», а настоящий отказ, и про них уже есть строка error.
+  let unchanged = 0;
   for (let i = 0; i < windows.length; i += 1) {
     const pos = rects[i];
     if (!pos) break;
     // Одно упавшее окно не обрывает остальные — та же сетка, что в
     // placeWindowsByConfig(): процесс окна мог умереть между перечислением и
     // расстановкой.
-    const result = await placeWindow({ w: windows[i], rule: { pos }, isBulk: true })
-      .catch(e => { log(`claude-place: ${windows[i].id} — ${e.message}`, 'error'); return false; });
-    // placeWindow() пропускает слишком узкие окна (false), свёрнутые и уже
-    // стоящие там (skipped, changes пуст) — считаем разложенными только те,
-    // для которых реально был отдан bounds-changes, иначе «N из M» врёт.
+    let result;
+    try {
+      result = await placeWindow({ w: windows[i], rule: { pos }, isBulk: true });
+    } catch (e) {
+      log(`claude-place: ${windows[i].id} — ${e.message}`, 'error');
+      continue;
+    }
     if (result && result.changes?.some(c => c.name === 'bounds')) placed += 1;
+    else unchanged += 1;
   }
   if (mode === 'cascade') {
     for (const w of windows) {
@@ -185,7 +194,10 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
       }
     }
   }
-  log(`claude-place ${mode}: разложено ${placed} из ${asked}`);
+  // Ноль без изменений — обычный случай, хвост не нужен: «разложено 2 из 3»
+  // короче и не менее честно, чем «разложено 2, без изменений 0 из 3».
+  const unchangedTail = unchanged ? `, без изменений ${unchanged}` : '';
+  log(`claude-place ${mode}: разложено ${placed}${unchangedTail} из ${asked}`);
   return { ok: true, placed };
 }
 
