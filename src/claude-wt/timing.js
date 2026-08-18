@@ -16,8 +16,12 @@
  * Строка несёт оба числа: `+N` — сколько занял сам шаг, `(M)` — сколько
  * прошло от начала просьбы. Без первого не видно виновника, без второго — не
  * сходится с тем, что человек чувствует.
+ *
+ * `console.log`, а не `console.error`: трей раскладывает вывод детей по
+ * потокам, и stderr попадает в журнал уровнем WARN. Замер — не жалоба, а
+ * помеченный так, он превращает `findstr WARN` в бесполезное занятие.
  */
-function startTiming(label, { now = Date.now, log = (m) => console.error(m) } = {}) {
+function startTiming(label, { now = Date.now, log = (m) => console.log(m) } = {}) {
   const t0 = now();
   let prev = t0;
   return function mark(step) {

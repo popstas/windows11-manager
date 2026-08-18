@@ -7,7 +7,7 @@
  * ccfzf-picker пропадала молча — тот же случай, что уже описан в комментарии
  * windows.js:1088-1093 про claude-focus.
  */
-import { chooseAction, resolveDesktopSwitch } from '../claude-wt/ha/session-groups.js';
+import { chooseAction } from '../claude-wt/ha/session-groups.js';
 import { sessionIdForSlot } from '../claude-wt/ha/session-slots.js';
 import { basenameOfCwd } from '../claude-wt/project-helpers.js';
 import { parseRestorePayload } from './restore-payload.js';
