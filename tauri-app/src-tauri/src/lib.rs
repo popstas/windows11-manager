@@ -1,11 +1,13 @@
 mod children;
 mod logging;
+mod tray_windows;
 mod updater;
 
 use children::{next_restart_attempt, pump_output, restart_delay_secs, ChildKind};
 use chrono::{Local, NaiveDate, NaiveDateTime, TimeZone};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -441,6 +443,146 @@ struct TrayMenuItems {
     claude_wt: MenuItem<tauri::Wry>,
     mqtt_status: MenuItem<tauri::Wry>,
     mqtt_toggle: MenuItem<tauri::Wry>,
+}
+
+/// Часть меню, занятая списком отслеживаемых окон.
+///
+/// Длина списка меняется вместе с числом открытых сессий, а `set_text` умеет
+/// только переписать готовый пункт — поэтому строки вставляются в меню и
+/// убираются из него на ходу (`Menu::insert`/`Menu::remove`). Само меню лежит
+/// здесь же: без него фоновой задаче не во что вставлять.
+struct TrackedTray {
+    menu: Menu<tauri::Wry>,
+    /// Строка-итог над списком. Она в меню постоянно и только переписывается.
+    count: MenuItem<tauri::Wry>,
+    /// Строки, вставленные в меню прямо сейчас, — их же и убирать.
+    rows: Mutex<Vec<MenuItem<tauri::Wry>>>,
+    /// Позиция первой строки списка, посчитанная при сборке меню.
+    base: usize,
+    /// Путь к файлу окон надо спросить у node заново: конфиг перечитали.
+    path_dirty: AtomicBool,
+}
+
+/// Как часто перечитывается файл окон.
+///
+/// Демон пишет его своим тактом (секунда), так что чаще смысла нет, а реже —
+/// заметно глазом: человек открывает трей сразу после того, как запустил
+/// сессию. Само чтение стоит одного `read_to_string` небольшого файла, и на
+/// такте ничего не происходит, пока содержимое не изменилось.
+const TRACKED_TICK_SECS: u64 = 3;
+
+/// Через сколько тактов повторять попытку узнать путь к файлу окон.
+///
+/// Спрашивается он у node запуском процесса, и на машине без настроенного
+/// `claudeWt.windowsFile` эта попытка не удастся никогда — дёргать node каждые
+/// три секунды до конца дней ради заведомого отказа незачем.
+const TRACKED_PATH_RETRY_TICKS: u32 = 100;
+
+/// Спросить у node путь к файлу окон. YAML-конфиг Rust не разбирает.
+async fn resolve_windows_path(app: &tauri::AppHandle) -> Option<String> {
+    let project_path = get_project_path(app);
+    if project_path.is_empty() {
+        return None;
+    }
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        app.shell()
+            .command("node")
+            .args(["src/index.js", "claude-wt", "windows-path"])
+            .current_dir(&project_path)
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+    if !output.status.success() {
+        // Не error: пустой `claudeWt.windowsFile` — законная настройка машины,
+        // которая ничего никуда не публикует, и ошибкой в логе она не является.
+        warn!(
+            "claude-wt windows-path: {}",
+            describe_node_failure(&output)
+        );
+        return None;
+    }
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!path.is_empty()).then_some(path)
+}
+
+/// Переписать список окон в меню.
+///
+/// Зовётся только когда вид изменился: перевставлять те же пункты каждые три
+/// секунды значило бы разбирать и собирать меню под открытым курсором.
+fn apply_tracked_windows(app: &tauri::AppHandle, view: &tray_windows::TrayWindows) {
+    let Some(tray) = app.try_state::<TrackedTray>() else {
+        return;
+    };
+    let _ = tray.count.set_text(&view.count_label);
+    let Ok(mut rows) = tray.rows.lock() else {
+        return;
+    };
+    for item in rows.drain(..) {
+        let _ = tray.menu.remove(&item);
+    }
+    for (i, label) in view.rows.iter().enumerate() {
+        // Пункты неактивные: это подписи, а не действия. Поднять окно отсюда
+        // было бы можно, но поднимает их служба MQTT и по своим правилам —
+        // второй, тихо расходящийся с ней путь заводить не за чем.
+        match MenuItem::with_id(app, format!("tracked_{i}"), label, false, None::<&str>) {
+            Ok(item) => {
+                if let Err(e) = tray.menu.insert(&item, tray.base + i) {
+                    warn!("Failed to insert tracked window item: {}", e);
+                    continue;
+                }
+                rows.push(item);
+            }
+            Err(e) => warn!("Failed to create tracked window item: {}", e),
+        }
+    }
+}
+
+/// Следить за файлом окон и держать список в меню в согласии с ним.
+fn spawn_tracked_windows_watch(app: &tauri::AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut path: Option<String> = None;
+        let mut retry_in: u32 = 0;
+        let mut shown: Option<tray_windows::TrayWindows> = None;
+        // Имя машины спрашивается один раз: оно не меняется, пока приложение
+        // живо. На не-Windows переменной нет — тогда чужой файл отличить
+        // нечем, и проверка не делается вовсе.
+        let local_host = std::env::var("COMPUTERNAME").ok();
+        loop {
+            if app
+                .try_state::<TrackedTray>()
+                .map(|t| t.path_dirty.swap(false, Ordering::Relaxed))
+                .unwrap_or(false)
+            {
+                path = None;
+                retry_in = 0;
+            }
+            if path.is_none() {
+                if retry_in == 0 {
+                    path = resolve_windows_path(&app).await;
+                    if path.is_none() {
+                        retry_in = TRACKED_PATH_RETRY_TICKS;
+                    }
+                } else {
+                    retry_in -= 1;
+                }
+            }
+            let raw = path.as_ref().and_then(|p| std::fs::read_to_string(p).ok());
+            let view = tray_windows::tray_windows(
+                raw.as_deref(),
+                local_host.as_deref(),
+                Local::now().timestamp(),
+            );
+            if shown.as_ref() != Some(&view) {
+                apply_tracked_windows(&app, &view);
+                shown = Some(view);
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(TRACKED_TICK_SECS)).await;
+        }
+    });
 }
 
 fn update_tray_label(app: &tauri::AppHandle, kind: ChildKind, running: bool) {
@@ -1617,6 +1759,16 @@ pub fn run() {
                 true,
                 None::<&str>,
             )?;
+            // Строка-итог стоит прямо под пунктом демона: она рассказывает
+            // именно про него, и читается так же, как «MQTT: running» ниже про
+            // свою службу. Подпись, а не действие — как и строки окон под ней.
+            let tracked_count_i = MenuItem::with_id(
+                app,
+                "tracked_count",
+                tray_windows::INITIAL_COUNT_LABEL,
+                false,
+                None::<&str>,
+            )?;
             let sep1 = PredefinedMenuItem::separator(app)?;
             let mqtt_status_i =
                 MenuItem::with_id(app, "mqtt_status", "MQTT: stopped", false, None::<&str>)?;
@@ -1641,43 +1793,62 @@ pub fn run() {
                 MenuItem::with_id(app, "open_log", "Open Log Location", true, None::<&str>)?;
             let exit_i = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
 
+            // Список меню разрезан надвое ровно там, куда фоновая задача
+            // вставляет подписи отслеживаемых окон: позиция вставки считается
+            // длиной первой половины, а не написана числом. Число разъехалось
+            // бы с меню от любого нового пункта выше — и подписи полезли бы в
+            // середину чужой группы.
+            let before_tracked: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![
+                &version_info_i,
+                &download_update_i,
+                &sep_update,
+                &place_i,
+                &store_i,
+                &restore_i,
+                &clear_i,
+                &open_default_i,
+                &sep0,
+                &auto_i,
+                &claude_wt_i,
+                &tracked_count_i,
+                &claude_wt_restore_i,
+                &claude_wt_place_tile_i,
+                &claude_wt_place_cascade_i,
+            ];
+            let tracked_base = before_tracked.len();
+            let after_tracked: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![
+                &sep1,
+                &mqtt_status_i,
+                &mqtt_toggle_i,
+                &sep2,
+                &restart_store_i,
+                &restart_i,
+                &sleep_i,
+                &shutdown_i,
+                &wallpapers_i,
+                &sep3,
+                &reload_i,
+                &settings_i,
+                &open_log_i,
+                &exit_i,
+            ];
             let menu = Menu::with_items(
                 app,
-                &[
-                    &version_info_i,
-                    &download_update_i,
-                    &sep_update,
-                    &place_i,
-                    &store_i,
-                    &restore_i,
-                    &clear_i,
-                    &open_default_i,
-                    &sep0,
-                    &auto_i,
-                    &claude_wt_i,
-                    &claude_wt_restore_i,
-                    &claude_wt_place_tile_i,
-                    &claude_wt_place_cascade_i,
-                    &sep1,
-                    &mqtt_status_i,
-                    &mqtt_toggle_i,
-                    &sep2,
-                    &restart_store_i,
-                    &restart_i,
-                    &sleep_i,
-                    &shutdown_i,
-                    &wallpapers_i,
-                    &sep3,
-                    &reload_i,
-                    &settings_i,
-                    &open_log_i,
-                    &exit_i,
-                ],
+                &[before_tracked, after_tracked].concat(),
             )?;
 
             // Пункты, чью подпись меняют и обработчик меню, и фоновый надзор за
             // детьми, живут в состоянии приложения — иначе фоновая задача не
             // смогла бы погасить «running» у умершего процесса.
+            app.manage(TrackedTray {
+                menu: menu.clone(),
+                count: tracked_count_i.clone(),
+                rows: Mutex::new(Vec::new()),
+                base: tracked_base,
+                path_dirty: AtomicBool::new(false),
+            });
+            spawn_tracked_windows_watch(app.handle());
+
             app.manage(TrayMenuItems {
                 autoplacer: auto_i.clone(),
                 claude_wt: claude_wt_i.clone(),
@@ -1727,6 +1898,12 @@ pub fn run() {
                     }
                     "reload" => {
                         run_node_command(app, &["src/index.js", "reload"], "Reload Configs");
+                        // Путь к файлу окон живёт в том же перечитанном
+                        // конфиге: без этого список отслеживаемых окон остался
+                        // бы смотреть на прежний файл до перезапуска.
+                        if let Some(tray) = app.try_state::<TrackedTray>() {
+                            tray.path_dirty.store(true, Ordering::Relaxed);
+                        }
                     }
                     "autoplacer" => {
                         // Подписи пунктов меняет сам toggle: они же меняются,

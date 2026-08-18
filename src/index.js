@@ -275,6 +275,24 @@ async function start() {
     });
 
   claudeWt
+    .command('windows-path')
+    .description('print the path of the published windows file')
+    // Спрашивает трей, один раз при запуске и по «Reload Configs»: список
+    // отслеживаемых окон он читает из этого файла сам, а путь к нему лежит в
+    // YAML-конфиге, который Rust не разбирает вовсе (как и tileZones рядом).
+    // На stdout — только путь, без пометок: его читает программа.
+    .action(async () => {
+      const mod = await import('./claude-wt/index.js');
+      const { windowsFile } = mod.getClaudeWtConfig();
+      if (!windowsFile) {
+        console.error('claudeWt.windowsFile не задан в конфиге');
+        process.exit(1);
+      }
+      console.log(windowsFile);
+      process.exit(0);
+    });
+
+  claudeWt
     .command('windows-clear')
     .description('remove the published windows file of a daemon that is no longer running')
     .action(async () => {

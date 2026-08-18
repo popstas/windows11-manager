@@ -1,0 +1,29 @@
+{
+  "host": "POPSTAS-PC",
+  "pid": 4242,
+  "generated": 1700000000,
+  "windows": {
+    "a1": {
+      "title": "claude-wt",
+      "desktop": 1,
+      "lastSeen": 1000,
+      "focusedAt": 900,
+      "app": "WindowsTerminal"
+    },
+    "b2": {
+      "title": "ccfzf-picker",
+      "desktop": 2,
+      "lastSeen": 1010,
+      "focusedAt": 0,
+      "app": "WezTerm"
+    }
+  },
+  "snapshots": [],
+  "projects": [
+    {
+      "cwd": "/p",
+      "name": "p",
+      "hotkey": "F1"
+    }
+  ]
+}
