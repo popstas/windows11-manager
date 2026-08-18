@@ -14,6 +14,7 @@ import { claudeWtSessions } from './claude-wt/view.js';
 import { orderSessions } from './claude-wt/ha/session-slots.js';
 import { normalizeSort } from './claude-wt/ha/session-groups.js';
 import { arrange, pickFocusTarget, toWindowSpace } from './claude-layout-helpers.js';
+import { startTiming } from './claude-wt/timing.js';
 
 /**
  * Зоны из `claudeWt.tileZones`, разрешённые в прямоугольники.
@@ -174,11 +175,19 @@ function layoutWorkArea(rects, log) {
  * ждёт, что раскладка ляжет его чередой. Ненайденный id пропускается со
  * строкой в журнал: сессия закрыта или живёт на другой машине, и отменять из-за
  * неё всю просьбу незачем.
+ *
+ * Оттуда же и `brief`. Со своим порядком (`ids` задан — а его задаёт пикер,
+ * то есть почти всегда) список нужен лишь затем, чтобы перевести id в hwnd, и
+ * состояние агента в этом не участвует; читается же оно с сетевого диска
+ * файлом на сессию и стоит больше секунды. Без `ids` порядок считает эта
+ * машина, а `compareSessions` сортирует по `lastActivity` — та берётся из
+ * прогресса, и краткое чтение переставило бы окна. Поэтому не «всегда
+ * кратко», а «кратко там, где порядок пришёл готовым».
  */
-function pickWindows(ids, log) {
+function pickWindows(ids, log, mark = () => 0) {
   let res;
   try {
-    res = claudeWtSessions();
+    res = claudeWtSessions({ mark, brief: ids.length > 0 });
   } catch (e) {
     return { error: e.message };
   }
@@ -225,7 +234,9 @@ function pickWindows(ids, log) {
  * зовётся, чтобы увидеть сессии, а стоят они за чужими окнами.
  */
 async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
+  const mark = startTiming(`place ${mode}`);
   const zones = resolveZones(log, mode);
+  mark('zones');
   // Плитка с уже разрешёнными зонами не читает рабочую область вовсе —
   // tileByZones() кладёт окна прямо в зоны. Звать layoutWorkArea() здесь всё
   // равно означало бы рисковать ложными строками warn про «главный монитор»
@@ -236,7 +247,7 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
   if (!work && (mode === 'cascade' || !zones.length)) {
     return { ok: false, reason: 'не найден монитор для раскладки' };
   }
-  const { error, windows, asked } = pickWindows(ids, log);
+  const { error, windows, asked } = pickWindows(ids, log, mark);
   if (error) return { ok: false, reason: error };
   if (!windows.length) {
     // Про ненайденные id уже есть строка warn в pickWindows(); здесь — точный
@@ -252,6 +263,7 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
   const activeBefore = getActiveWindowId();
 
   const rects = arrange({ mode, zones, work, n: windows.length });
+  mark('arrange');
   let placed = 0;
   // Без изменений — окно дошло до placeWindow(), но bounds не поменялись:
   // слишком узкое, свёрнутое или уже стоящее ровно на месте. Различать
@@ -281,6 +293,7 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
     if (result && result.changes?.some(c => c.name === 'bounds')) placed += 1;
     else unchanged += 1;
   }
+  mark('place');
   for (const w of windows) {
     try {
       w.bringToTop();
@@ -293,10 +306,12 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
   // решает pickFocusTarget(); отказ не рушит раскладку — окна уже стоят и
   // подняты, а фокус мог не дойти до окна, свёрнутого или ушедшего на другой
   // стол между подъёмом и этой строкой.
+  mark('raise');
   const focusId = pickFocusTarget(windows.map(w => w.id), activeBefore);
   if (focusId !== null && !focusWindowById(focusId)) {
     log(`claude-place: фокус не дошёл до окна ${focusId}`, 'warn');
   }
+  mark('focus');
   // Ноль без изменений — обычный случай, хвост не нужен: «разложено 2 из 3»
   // короче и не менее честно, чем «разложено 2, без изменений 0 из 3».
   const unchangedTail = unchanged ? `, без изменений ${unchanged}` : '';
