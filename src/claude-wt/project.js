@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { focusWindowById, getWindowById, getWindows } from '../windows.js';
+import { focusWindowById, getActiveWindowId, getWindowById, getWindows } from '../windows.js';
 import { placeWindowByConfig } from '../placement.js';
 import { virtualDesktop } from '../virtual-desktop.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
@@ -13,9 +13,33 @@ import { chooseTerminal } from './terminal-helpers.js';
 import { waitForNewWindow } from './restore.js';
 import { startTiming, noTiming } from './timing.js';
 
-async function focusTerminalWindow(windowId, mark = noTiming) {
+/**
+ * Сфокусировать окно терминала, заплатив за столы только если пришлось.
+ *
+ * Раньше порядок был обратный: спросить у `VirtualDesktop11.exe` стол окна,
+ * перейти на него, потом фокус. Два запуска процесса на каждый перевод фокуса —
+ * 208 мс замером на popstas-pc, и платились они всегда, даже когда окно и так
+ * на текущем столе, то есть почти всегда.
+ *
+ * Здесь сначала пробуется сам фокус, а потом проверяется, вышло ли: окно стало
+ * передним — делать больше нечего, и ни одного процесса не запущено. Проверка
+ * бесплатная, и в этом весь трюк: `getActiveWindowId()` — это
+ * `GetForegroundWindow()` и ничего больше, тогда как любой вопрос про столы
+ * стоит запуска exe. Не вышло — окно на другом столе (фокус на такое Windows
+ * отдаёт молча и без результата), и вот тогда переход оправдан.
+ *
+ * `knownDesktop` (1-based, как хранит слот) снимает и оставшийся вопрос: стол
+ * знает тот, кто только что сам поставил туда окно, и спрашивать его у Windows
+ * незачем.
+ */
+async function focusTerminalWindow(windowId, mark = noTiming, knownDesktop = null) {
+  if (focusWindowById(windowId) && getActiveWindowId() === windowId) {
+    mark('focus');
+    return true;
+  }
   try {
-    const current = await virtualDesktop.GetWindowDesktopNumber(windowId);
+    const known = Number.isFinite(knownDesktop) && knownDesktop > 0 ? knownDesktop - 1 : null;
+    const current = known ?? await virtualDesktop.GetWindowDesktopNumber(windowId);
     if (current !== undefined && current !== null && current !== '') {
       const target = Number(current);
       if (!Number.isNaN(target)) await virtualDesktop.GoToDesktopNumber(target);
@@ -23,9 +47,6 @@ async function focusTerminalWindow(windowId, mark = noTiming) {
   } catch {
     // Focus still worth trying if the desktop query fails.
   }
-  // Отдельной меткой, потому что это не одна операция, а два запуска
-  // VirtualDesktop11.exe: спросить стол окна и перейти на него. Процесс на
-  // каждый запуск — звено, которое легко недооценить на глаз.
   mark('desktop');
   const ok = focusWindowById(windowId);
   mark('focus');
@@ -63,16 +84,23 @@ const WINDOW_POLL_MS = 250;
 // стол. Ждать их приходилось потому, что переход на другой стол оставляет
 // передним что придётся, и фокус, взятый раньше переноса, у человека отбирали.
 //
-// Ждать больше нечего: демон, уйдя за окном на его стол, сам делает это окно
-// передним (см. `claudeWtTick`, ветка `follow`). Переносу теперь всё равно,
-// был фокус до него или нет, и пауза осталась только тем, чем должна быть, —
-// временем на отрисовку самого терминала. Замер на popstas-pc: окно находится
-// по заголовку через 277 мс после `spawn`, то есть заголовок ставит уже
-// поднявшийся `claude`, а не пустая рама.
+// Ждать больше нечего, и потому умолчание — ноль. Демон, уйдя за окном на его
+// стол, сам делает это окно передним (см. `claudeWtTick`, ветка `follow`), а
+// геометрию слота окно получает здесь же, до фокуса. Ждать «на всякий случай»
+// нечего: окно найдено по точному заголовку, а его ставит уже поднявшийся
+// `claude`, а не пустая рама, — то есть терминал к этому моменту нарисован.
+// Всякое другое число здесь было бы тем же гаданием, от которого эта правка и
+// уходит: прежние 4000 мс никто не измерял, а стоили они две трети всей
+// задержки.
 //
-// Настройкой, а не константой: цена ошибки в меньшую сторону — отобранный у
-// человека фокус, и чинить это перевыкаткой кода на живой машине незачем.
-const PLACEMENT_SETTLE_MS = 400;
+// Страховка на случай, если терминал всё-таки переставит себя после нас,
+// двойная и обе не наши: `placeWindow()` повторяет промах, а тик демона
+// поставит окно на место, как ставил всегда.
+//
+// Настройкой, а не константой: цена ошибки — отобранный у человека фокус или
+// вернувшийся прыжок окна, и чинить это перевыкаткой кода на живой машине
+// незачем.
+const PLACEMENT_SETTLE_MS = 0;
 
 /**
  * Пауза из конфига, с откатом на константу.
@@ -114,6 +142,10 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
  * Отказ здесь ничего не отменяет: слота может не быть вовсе (сессия с этим
  * именем открывается впервые), состояние может не прочитаться — окно всё
  * равно откроется и получит фокус, просто там, куда его поставил терминал.
+ *
+ * Ответ — номер стола, на который окно поставлено (1-based, как в слоте), либо
+ * `null`. Зовущий передаёт его фокусу, и тот не спрашивает у Windows то, что
+ * мы только что сами и сделали.
  */
 async function placeSpawnedWindow(win, title, mark = noTiming) {
   let slot = null;
@@ -127,17 +159,17 @@ async function placeSpawnedWindow(win, title, mark = noTiming) {
     console.error(`[claude-wt] no remembered place for ${title}: ${e.message}`);
   }
   mark('slot');
-  if (!slot?.bounds) return false;
+  if (!slot?.bounds) return null;
   const rule = { window: win.id, ...slot.bounds };
   if (slot.desktop) rule.desktop = slot.desktop;
   try {
     await placeWindowByConfig(rule);
   } catch (e) {
     console.error(`[claude-wt] failed to place ${title}: ${e.message}`);
-    return false;
+    return null;
   }
   mark('place');
-  return true;
+  return rule.desktop ?? null;
 }
 
 /**
@@ -188,8 +220,8 @@ async function focusSpawnedWindow(title, deps = {}) {
   // Место — раньше фокуса: окно, которое сначала получает ввод, а через
   // секунду прыгает в свою геометрию, человек читает как «открылось только
   // сейчас», и вся экономия предыдущих звеньев пропадает зря.
-  await place(w, title, mark);
-  return focus(w.id, mark);
+  const desktop = await place(w, title, mark);
+  return focus(w.id, mark, desktop);
 }
 
 /**
@@ -387,4 +419,4 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
   return { ok: true, action: 'spawn', cwd, name: sessionName, sessionName };
 }
 
-export { openClaudeProject, resumeClaudeSession, focusSpawnedWindow, focusNewTerminalWindow };
+export { openClaudeProject, resumeClaudeSession, focusSpawnedWindow, focusNewTerminalWindow, focusTerminalWindow };

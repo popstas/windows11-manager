@@ -72,8 +72,15 @@ function claudeCommands({ winMan, log, notify, slots }) {
   /**
    * Живое окно поднимаем, мёртвую сессию восстанавливаем.
    *
-   * Переход на её рабочий стол идёт первым: фокус на окне с чужого стола
-   * Windows отдаёт молча и без результата.
+   * Стол трогается только если пришлось: `focusTerminalWindow` сперва пробует
+   * сам фокус и бесплатно проверяет, стал ли hwnd передним, и лишь потом
+   * платит за запуск `VirtualDesktop11.exe`. Окно на текущем столе — обычный
+   * случай, и он теперь не стоит ничего.
+   *
+   * Известный номер стола сюда не передаётся намеренно, хотя слот его помнит:
+   * память слота может отстать от жизни (окно увели вручную), и переход по ней
+   * увёл бы человека не туда. Живой ответ спрашивается только тогда, когда
+   * дешёвая попытка уже не удалась, — то есть редко.
    *
    * `terminal` доходит только досюда с дорогой session-open: у claude-focus
    * его в просьбе не бывает, и вызов оттуда просто не передаёт третий
@@ -84,10 +91,7 @@ function claudeCommands({ winMan, log, notify, slots }) {
       await restoreOne(id, terminal);
       return;
     }
-    const current = await winMan.virtualDesktop.GetWindowDesktopNumber(session.windowId);
-    const target = resolveDesktopSwitch(current);
-    if (target !== null) await winMan.virtualDesktop.GoToDesktopNumber(target);
-    if (!winMan.focusWindowById(session.windowId)) log(`claude-wt: ${id} is not on screen`, 'warn');
+    if (!(await winMan.focusTerminalWindow(session.windowId))) log(`claude-wt: ${id} is not on screen`, 'warn');
   }
 
   /**

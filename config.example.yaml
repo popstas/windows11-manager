@@ -136,14 +136,14 @@ claudeWt:
   enabled: true
   interval: 1000
   stableTicks: 2
-  # How long to wait between a new session's window showing up and focusing
-  # it — time for the terminal to draw itself, nothing more. Was 4000 ms, to
-  # outsit the autoplacer and the daemon: moving a window to another desktop
-  # leaves an arbitrary window in front, so focus taken before the move was
-  # lost. The daemon now refocuses the window it follows, so the wait is back
-  # to what it should be. Lower it only with the timing log in front of you
-  # (grep the app log for `timing open`).
-  focusSettleMs: 400
+  # How long to wait between a new session's window showing up and focusing it.
+  # Zero: by the time the window matches its exact title the terminal is drawn,
+  # and the slot geometry plus focus are handed out right there. Was 4000 ms —
+  # two thirds of the whole delay — to outsit the autoplacer and the daemon,
+  # back when moving a window to another desktop cost the focus taken before
+  # the move. Raise it only if your terminal repositions itself after launch
+  # (watch the app log: grep for `timing open`).
+  focusSettleMs: 0
   sessionsFile: 'V:\.ccfzf.sessions.json'
   statePath: 'C:\Users\popstas\AppData\Local\windows11-manager\claude-wt.json'
   # Published for readers on the agent's side: which session has a window
