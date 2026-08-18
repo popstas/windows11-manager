@@ -117,6 +117,35 @@ describe('writeTileZonesText', () => {
     expect(readTileZonesText()).toBe('2,1\n2,2');
   });
 
+  // Ревью нашло это не на уровне функции патча, а сквозным прогоном — тест на
+  // одну строку патча пропустил бы поломку. Здесь тот же путь целиком: файл
+  // на диске с элементами tileZones на уровне ключа (частый ручной стиль,
+  // прежде разъезжавшийся на втором элементе и дальше), запись через
+  // writeTileZonesText, и чтение назад через readTileZonesText — оба должны
+  // отработать на валидном YAML.
+  it('A: элементы tileZones на уровне ключа переживают запись сквозным прогоном', async () => {
+    write([
+      'claudeWt:',
+      '  tileZones:',
+      '  - { monitor: 9, position: 9 }',
+      '  - { monitor: 9, position: 8 }',
+      '  terminal: wt',
+      '',
+    ].join('\n'));
+    const { writeTileZonesText, readTileZonesText } = await loadModule();
+    writeTileZonesText('1,6\n2,3');
+
+    // Файл всё ещё валиден: следующее чтение (тот же путь, каким пользуется
+    // CLI `claude-wt tile-zones get` и Rust-команда get_tile_zones) не падает
+    // и видит именно то, что записали.
+    expect(readTileZonesText()).toBe('1,6\n2,3');
+    // И элементы списка не разъехались по колонкам — сам файл разбирается
+    // библиотекой yaml без ошибок.
+    const out = read();
+    expect(out).toContain('  - { monitor: 1, position: 6 }');
+    expect(out).toContain('  - { monitor: 2, position: 3 }');
+  });
+
   it('запись атомарна: временный файл не остаётся рядом после успеха', async () => {
     write('claudeWt:\n  enabled: true\n');
     const { writeTileZonesText } = await loadModule();

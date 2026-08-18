@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import { parse } from 'yaml';
-import { patchTileZonesText } from './tile-zones-patch.js';
+import { patchTileZonesText, verifyPatch } from './tile-zones-patch.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXAMPLE_CONFIG = path.resolve(__dirname, '../../config.example.yaml');
@@ -137,5 +137,104 @@ describe('patchTileZonesText: синтетические случаи', () => {
   it('битый YAML: ошибка разбора по-русски, с местом', () => {
     const raw = 'mqtt: {host: a: b}\n';
     expect(() => patchTileZonesText(raw, [])).toThrow(/не разбирается/);
+  });
+});
+
+describe('patchTileZonesText: A — отступ элементов берётся из исходника, а не из соглашения', () => {
+  it('элементы на уровне ключа (без доп. отступа) — второй и следующие не разъезжаются', () => {
+    // Воспроизведение из ревью: очень частый ручной стиль, элементы списка
+    // на том же отступе, что и сам ключ, а не на "отступ ключа + 2".
+    const raw = [
+      'claudeWt:',
+      '  tileZones:',
+      '  - { monitor: 9, position: 9 }',
+      '  - { monitor: 9, position: 8 }',
+      '',
+    ].join('\n');
+    const out = patchTileZonesText(raw, [{ monitor: 1, position: 6 }, { monitor: 2, position: 3 }]);
+    expect(out).toBe([
+      'claudeWt:',
+      '  tileZones:',
+      '  - { monitor: 1, position: 6 }',
+      '  - { monitor: 2, position: 3 }',
+      '',
+    ].join('\n'));
+    // Результат обязан оставаться разбираемым YAML с ровно теми зонами.
+    expect(parse(out).claudeWt.tileZones).toEqual([
+      { monitor: 1, position: 6 },
+      { monitor: 2, position: 3 },
+    ]);
+  });
+
+  it('элементы отступлены глубже соглашения — тоже не разъезжаются', () => {
+    const raw = 'claudeWt:\n  tileZones:\n        - { monitor: 9, position: 9 }\n        - { monitor: 9, position: 8 }\n  terminal: wt\n';
+    const out = patchTileZonesText(raw, [{ monitor: 1, position: 1 }, { monitor: 2, position: 2 }, { monitor: 3, position: 3 }]);
+    expect(out).toBe('claudeWt:\n  tileZones:\n        - { monitor: 1, position: 1 }\n        - { monitor: 2, position: 2 }\n        - { monitor: 3, position: 3 }\n  terminal: wt\n');
+    expect(parse(out).claudeWt.tileZones.length).toBe(3);
+  });
+
+  it('4-пробельный отступ файла целиком — элементы на уровне ключа тоже держатся', () => {
+    const raw = 'claudeWt:\n    tileZones:\n    - { monitor: 9, position: 9 }\n    terminal: wt\n';
+    const out = patchTileZonesText(raw, [{ monitor: 1, position: 1 }, { monitor: 2, position: 2 }]);
+    expect(parse(out).claudeWt.tileZones).toEqual([{ monitor: 1, position: 1 }, { monitor: 2, position: 2 }]);
+  });
+});
+
+describe('patchTileZonesText: B — claudeWt как flow-карта', () => {
+  it('непустая flow-карта claudeWt: { ... } — честный отказ, файл не тронут смыслово', () => {
+    const raw = 'claudeWt: { terminal: wt }\n';
+    expect(() => patchTileZonesText(raw, [{ monitor: 1, position: 1 }])).toThrow(/flow-стиль/);
+  });
+
+  it('пустая flow-карта claudeWt: {} — работает и не оставляет висячий пробел после двоеточия', () => {
+    const raw = 'claudeWt: {}\nother: 1\n';
+    const out = patchTileZonesText(raw, [{ monitor: 1, position: 1 }]);
+    expect(out).toBe('claudeWt:\n  tileZones:\n    - { monitor: 1, position: 1 }\n\nother: 1\n');
+    expect(out).not.toMatch(/claudeWt: +\n/); // не "claudeWt: \n" (висячий пробел перед переносом)
+  });
+});
+
+describe('verifyPatch: C — страховка перед записью', () => {
+  it('пропускает совпавший результат', () => {
+    const zones = [{ monitor: 1, position: 6 }];
+    expect(() => verifyPatch('claudeWt:\n  tileZones:\n    - { monitor: 1, position: 6 }\n', zones)).not.toThrow();
+  });
+
+  it('ловит неразбираемый результат (тот самый прежний баг: элементы на разных колонках)', () => {
+    const brokenByOldBug = 'claudeWt:\n  tileZones:\n  - { monitor: 1, position: 6 }\n    - { monitor: 2, position: 3 }\n';
+    expect(() => verifyPatch(brokenByOldBug, [{ monitor: 1, position: 6 }, { monitor: 2, position: 3 }]))
+      .toThrow(/не разбирается/);
+  });
+
+  it('ловит результат, где claudeWt.tileZones не совпадает с тем, что просили', () => {
+    const wrong = 'claudeWt:\n  tileZones:\n    - { monitor: 9, position: 9 }\n';
+    expect(() => verifyPatch(wrong, [{ monitor: 1, position: 1 }])).toThrow(/не совпадает/);
+  });
+
+  it('ловит отсутствие ключа целиком (например, если правка промахнулась мимо claudeWt)', () => {
+    expect(() => verifyPatch('debug: true\n', [{ monitor: 1, position: 1 }])).toThrow(/не совпадает/);
+  });
+});
+
+describe('patchTileZonesText: матрица граничных случаев (ревью)', () => {
+  const zones = [{ monitor: 1, position: 6 }, { monitor: 2, position: 3 }];
+  const cases = [
+    ['ключ в конце файла без перевода строки', 'claudeWt:\n  enabled: true'],
+    ['flow-вид tileZones: [{...}]', 'claudeWt:\n  tileZones: [{ monitor: 9, position: 9 }]\n  terminal: wt\n'],
+    ['claudeWt отсутствует', 'debug: true\n'],
+    ['claudeWt: {}', 'claudeWt: {}\nother: 1\n'],
+    ['пустой файл', ''],
+    ['BOM в начале файла', '﻿claudeWt:\n  enabled: true\n'],
+    ['CRLF', 'claudeWt:\r\n  enabled: true\r\n'],
+    ['хвостовой комментарий на строке ключа', 'claudeWt:\n  tileZones: [{ monitor: 9, position: 9 }]  # zones\n  terminal: wt\n'],
+    ['хвостовой комментарий у последнего поля (вставка)', 'claudeWt:\n  enabled: true  # comment\n'],
+    ['фолдед-скаляр последним полем (вставка)', "claudeWt:\n  enabled: true\n  cmd: >-\n    exec foo\n"],
+    ['merge-ключ <<: *b', 'x-anchors:\n  b: &b\n    enabled: true\nclaudeWt:\n  <<: *b\n  terminal: wt\n'],
+    ['4-пробельный отступ файла', 'claudeWt:\n    tileZones:\n    - { monitor: 9, position: 9 }\n    terminal: wt\n'],
+  ];
+
+  it.each(cases)('%s — остаётся валидным YAML с ровно теми зонами', (_name, raw) => {
+    const out = patchTileZonesText(raw, zones);
+    expect(parse(out).claudeWt.tileZones).toEqual(zones);
   });
 });

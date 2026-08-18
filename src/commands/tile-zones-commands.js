@@ -36,7 +36,11 @@ function readTileZonesText() {
  *
  * Право доступа временного файла берётся у оригинала явно: `fs.writeFileSync`
  * создал бы его по umask, а в этом конфиге лежит `mqtt_password` — сужать
- * права записи молча нельзя.
+ * права записи молча нельзя. Права проставляются через `fchmodSync` уже
+ * после открытия, а не через параметр `mode` у `openSync`: тот режется тем же
+ * umask при создании файла (076 при `umask 077` стало бы 600 и здесь не
+ * страшно, но узость не гарантирована — `fchmodSync` её не оставляет на
+ * волю системных умолчаний).
  *
  * При любой неудаче между открытием и переименованием временный файл
  * убирается, а не остаётся мусором `*.tmp-<pid>` рядом с конфигом.
@@ -45,8 +49,9 @@ function writeFileAtomic(filePath, text) {
   const mode = fs.existsSync(filePath) ? fs.statSync(filePath).mode & 0o777 : 0o644;
   const tmpPath = `${filePath}.tmp-${process.pid}`;
   try {
-    const fd = fs.openSync(tmpPath, 'w', mode);
+    const fd = fs.openSync(tmpPath, 'w');
     try {
+      fs.fchmodSync(fd, mode);
       fs.writeSync(fd, text, null, 'utf8');
       fs.fsyncSync(fd);
     } finally {
