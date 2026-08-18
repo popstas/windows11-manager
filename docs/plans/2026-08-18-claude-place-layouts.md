@@ -48,7 +48,7 @@
 - Consumes: ничего
 - Produces: `parseArrangePayload(payload) → { mode: 'tile'|'cascade', ids: string[] } | null`
 
-- [ ] **Step 1: Написать падающий тест**
+- [x] **Step 1: Написать падающий тест**
 
 Создать `src/claude-layout-helpers.test.js`:
 
@@ -109,12 +109,12 @@ describe('parseArrangePayload', () => {
 });
 ```
 
-- [ ] **Step 2: Запустить тест и убедиться, что он падает**
+- [x] **Step 2: Запустить тест и убедиться, что он падает**
 
 Run: `npx vitest run src/claude-layout-helpers.test.js`
 Expected: FAIL — `Failed to resolve import "./claude-layout-helpers.js"`
 
-- [ ] **Step 3: Написать минимальную реализацию**
+- [x] **Step 3: Написать минимальную реализацию**
 
 Создать `src/claude-layout-helpers.js`:
 
@@ -187,12 +187,12 @@ function parseArrangePayload(payload) {
 export { layoutFromName, normalizeIds, parseArrangePayload };
 ```
 
-- [ ] **Step 4: Запустить тест и убедиться, что он проходит**
+- [x] **Step 4: Запустить тест и убедиться, что он проходит**
 
 Run: `npx vitest run src/claude-layout-helpers.test.js`
 Expected: PASS, 11 тестов
 
-- [ ] **Step 5: Коммит**
+- [x] **Step 5: Коммит**
 
 ```bash
 git add src/claude-layout-helpers.js src/claude-layout-helpers.test.js
