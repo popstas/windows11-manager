@@ -35,14 +35,14 @@ describe('claude-focus', () => {
   it('поднимает окно живой сессии', async () => {
     const d = deps();
     await claudeCommands(d)['claude-focus']({ id: 'abc' });
-    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledWith(42);
+    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledWith(42, expect.any(Function));
     expect(d.winMan.restoreClaudeSessions).not.toHaveBeenCalled();
   });
 
   it('принимает голый id строкой', async () => {
     const d = deps();
     await claudeCommands(d)['claude-focus']('abc');
-    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledWith(42);
+    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledWith(42, expect.any(Function));
   });
 
   it('восстанавливает сессию, у которой окна больше нет', async () => {
@@ -72,6 +72,18 @@ describe('claude-focus', () => {
   // с самой логикой: этот модуль больше не спрашивает у VirtualDesktop11.exe
   // ничего, а запуск того процесса стоил 208 мс на каждый перевод фокуса — по
   // два на окно, которое чаще всего и так на текущем столе.
+  it('список сессий читается кратким — состояние агента фокусу не нужно', async () => {
+    // Прогресс и мета лежат на сетевом диске, файл на сессию: 1.43 с замером
+    // на popstas-pc против 19 мс на всё остальное. Решается здесь «открыто ли
+    // окно», и на это они не влияют никак — а ждал их человек на каждом
+    // выборе уже открытой сессии.
+    const d = deps();
+    await claudeCommands(d)['claude-focus']({ id: 'abc' });
+    expect(d.winMan.claudeWtSessions).toHaveBeenCalledWith(
+      expect.objectContaining({ brief: true }),
+    );
+  });
+
   it('сам столов не трогает — за него это делает focusTerminalWindow', async () => {
     const d = deps();
     await claudeCommands(d)['claude-focus']({ id: 'abc' });
@@ -90,13 +102,13 @@ describe('claude-focus-slot', () => {
   it('переводит номер строки в id по последней раскладке', async () => {
     const d = deps();
     await claudeCommands(d)['claude-focus-slot']('1');
-    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledWith(42);
+    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledWith(42, expect.any(Function));
   });
 
   it('принимает {slot: N}', async () => {
     const d = deps();
     await claudeCommands(d)['claude-focus-slot']({ slot: 1 });
-    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledWith(42);
+    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledWith(42, expect.any(Function));
   });
 
   it('молчит на пустой строке', async () => {
@@ -141,7 +153,7 @@ describe('claude-session-open', () => {
   it('действие terminal поднимает окно, а не открывает второе', async () => {
     const d = deps();
     await claudeCommands(d)['claude-session-open']({ id: 'abc', action: 'terminal' });
-    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledWith(42);
+    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledWith(42, expect.any(Function));
     expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
   });
 
@@ -152,7 +164,7 @@ describe('claude-session-open', () => {
     // переднее», ради которой запуск VirtualDesktop11.exe чаще всего не нужен.
     const d = deps();
     await claudeCommands(d)['claude-session-open']({ id: 'abc', action: 'terminal' });
-    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledWith(42);
+    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledWith(42, expect.any(Function));
     expect(d.winMan.virtualDesktop.GetWindowDesktopNumber).not.toHaveBeenCalled();
   });
 
