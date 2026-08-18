@@ -32,6 +32,37 @@
 
 
 
+## [4.1.0](https://github.com/popstas/windows11-manager/compare/windows11-manager-v4.0.0...windows11-manager-v4.1.0) (2026-08-18)
+
+
+### Features
+
+* **claude-place:** запасная сетка, каскад и общая точка входа ([a44394d](https://github.com/popstas/windows11-manager/commit/a44394df060f7f0c2692ff5d145efb58afcdfa88))
+* **claude-place:** зоны, рабочая область и движение окон ([d552d12](https://github.com/popstas/windows11-manager/commit/d552d122cc68fc4de08c5cff5ca9153bccd5255f))
+* **claude-place:** плитка по зонам FancyZones ([3333bab](https://github.com/popstas/windows11-manager/commit/3333bab86dc0064b7e5d496ebf095c3f97291de9))
+* **claude-place:** просьба claude-place по MQTT ([3e79293](https://github.com/popstas/windows11-manager/commit/3e79293cfd1ae7615129d83aecf6d3de682ab39b))
+* **claude-place:** разбор тела просьбы о раскладке ([d8dc041](https://github.com/popstas/windows11-manager/commit/d8dc041e6e7f96e9e30c1d0888de0f41940782e1))
+* **claude-place:** раскладки tile и cascade для терминалов Claude ([743f996](https://github.com/popstas/windows11-manager/commit/743f9963c4a789b72aef9b6458d37b0a6e2c6ea6))
+* tileZones в настройках, версия трея в заголовке, предупреждение о совпавших хоткеях ([cac17de](https://github.com/popstas/windows11-manager/commit/cac17de4244b6f9156945650a8f70f36c130a97b))
+* добавить в трей пункты и хоткеи для раскладок Claude (плитка/каскад) ([473a0c7](https://github.com/popstas/windows11-manager/commit/473a0c75fc5d05eb9b77e0973999df81f587af99))
+
+
+### Bug Fixes
+
+* **ci:** CLAUDE.md записан обычным файлом, а не симлинком ([f32f433](https://github.com/popstas/windows11-manager/commit/f32f433aca289c3908fb820d3cf8ddf3fe174f44))
+* **ci:** CLAUDE.md записан обычным файлом, а не симлинком ([e7d428d](https://github.com/popstas/windows11-manager/commit/e7d428df183376687070205642237d160065ec9d))
+* **claude-place:** не терять «без изменений» в итоговой строке журнала ([2dc2cf7](https://github.com/popstas/windows11-manager/commit/2dc2cf705fae8c12d0d66477ab78748af43da85c))
+* **claude-place:** предупреждать об откате на монитор и не завышать счётчик разложенных ([b098018](https://github.com/popstas/windows11-manager/commit/b098018a2f2f3f1926883ef6fba724ea94e30914))
+* **claude-place:** предупреждать, если главный монитор не определился ([fa5bce8](https://github.com/popstas/windows11-manager/commit/fa5bce833466cbfeed614f6c3d15306d6f821441))
+* вернуть деление зон FancyZones на DPI, починить рабочую область раскладок claude ([84dbf0e](https://github.com/popstas/windows11-manager/commit/84dbf0ee8cd3e075aa6662acb4e14943b0c67755))
+* закрыть замечания ревью по правке DPI FancyZones (d5f95b6) ([4b8156b](https://github.com/popstas/windows11-manager/commit/4b8156be42fa7f1ebfcf7b894368f90a1a33f7fe))
+* не делить координаты зон FancyZones на scaleFactor DPI ([d5f95b6](https://github.com/popstas/windows11-manager/commit/d5f95b6871919fa7e846d330ff444a2a6cbf5ab4))
+* не звать layoutWorkArea для плитки по уже разрешённым зонам ([433c655](https://github.com/popstas/windows11-manager/commit/433c6558afd3d1a6078597aca08d67fe099fd4d1))
+* отступ элементов tileZones из файла, отказ на flow-карте claudeWt, страховка перед записью ([3da08d7](https://github.com/popstas/windows11-manager/commit/3da08d73cf8f0725674a45d64dc572c2f2cc19a6))
+* точечная правка tileZones вместо перезаписи всего конфига, fsync и битовые хоткеи ([7cc39bd](https://github.com/popstas/windows11-manager/commit/7cc39bd55d48994f4e4d08a7d02251aa1e275db3))
+* точные строки warn в claude-place — каскад, вырожденная область, чужой отказ ([dfeb035](https://github.com/popstas/windows11-manager/commit/dfeb0351d709850ccddab9f05f3a3e55c540aba8))
+* убрать неиспользуемый diffLines из теста патчера зон ([613aec4](https://github.com/popstas/windows11-manager/commit/613aec4e9e10915614f4cba9ea0b7eb8d6f0ae5f))
+
 ## [4.0.0](https://github.com/popstas/windows11-manager/compare/windows11-manager-v3.1.0...windows11-manager-v4.0.0) (2026-08-17)
 
 
