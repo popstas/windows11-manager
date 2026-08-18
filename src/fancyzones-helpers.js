@@ -12,16 +12,18 @@ function calcFancyZonePos({ zone, monBounds, monitorGaps, monitorsOffset }) {
   applyMonitorGaps({ pos, monBounds, monitorGaps });
   applyMonitorsOffset({ pos, offset: monitorsOffset });
 
-  // Деления на DPI/scaleFactor здесь намеренно нет. editor-parameters.json
-  // FancyZones хранит координаты и размеры зон уже в логических пикселях —
-  // в том же пространстве, где работают node-window-manager getBounds()/
-  // setBounds(). Проверено на живой машине (popstas-pc, 2026-08-18,
-  // монитор MSI, масштаб Windows 125%, dpi 120): getScaleFactor() там даёт
-  // 1.25, а monitor-width/work-area-width/height из editor-parameters.json
-  // побайтово совпадают с bounds/work из node-window-manager (3072x1728,
-  // work 2893x1728). Деление на scaleFactor превращало зону на всю высоту
-  // рабочей области в зону 80% высоты — это и был баг. Поле dpi в файле
-  // осталось, но использовать его для пересчёта координат зон не нужно.
+  // Деления на DPI/scaleFactor здесь намеренно нет. Зоны и work-area из
+  // editor-parameters.json/custom-layouts.json живут в том же пространстве,
+  // что getBounds()/setBounds() node-window-manager — то есть уже в логических
+  // пикселях (проверено на popstas-pc, 2026-08-18, монитор MSI, 125%/dpi 120:
+  // work-area совпала с getWorkArea() node-window-manager; независимо
+  // подтверждено фикстурой data/FancyZonesProfile/custom-layouts.json —
+  // раскладка «3 - Monitor 15" horiz» имеет ref-width/ref-height 1726x1200,
+  // ровно work-area её 192-dpi монитора, при зонах высотой 1200). Про
+  // monitor-width/monitor-height (физические пиксели в этой же фикстуре)
+  // ничего не утверждается — калькулятор их не использует. Деление на
+  // scaleFactor превращало зону на всю высоту рабочей области в зону 80%
+  // высоты — это и был баг.
 
   return pos;
 }

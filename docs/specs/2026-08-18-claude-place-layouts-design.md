@@ -157,8 +157,9 @@ claudeWt:
 
 Форма пары — та же, что у `rule.fancyZones` в правилах размещения
 (`{monitor, position}`, позиции с единицы), и разрешается тем же
-`fancyZonesToPos()`: он уже чинит DPI, `monitorsGaps` и `monitorsOffset`, и
-второй такой же расчёт здесь заводить нельзя.
+`fancyZonesToPos()`: зоны там уже в логических пикселях (без деления на DPI),
+функция лишь применяет `monitorsGaps` и `monitorsOffset` — второй такой же
+расчёт здесь заводить нельзя.
 
 `tileByZones(rects, n)` — раскладка `n` окон по готовым прямоугольникам зон:
 

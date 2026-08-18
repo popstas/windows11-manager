@@ -42,6 +42,15 @@ function fancyZonesToPos(opts) {
     console.log(`Zone not found: ${JSON.stringify(opts)}`);
     return;
   }
+  // left-coordinate/top-coordinate: на проверенной установке (popstas-pc,
+  // 2026-08-18, PowerToys текущей версии, мониторы 100% и 125%) они логические
+  // и совпадают с node-window-manager bounds/work, включая origin неосновного
+  // монитора. Но в зафиксированной фикстуре data/FancyZonesProfile/
+  // editor-parameters.json (дамп PowerToys 0.95) те же поля физические
+  // (left-coordinate: -3840 у монитора, логически стоящего на -1920) — то
+  // есть инвариант зависит от версии PowerToys и на старом формате не
+  // проверен. Если он всё же попадётся: зону на неосновном мониторе унесёт
+  // на left-coordinate × (1 − 1/масштаб) пикселей.
   const monBounds = {
     x: monitor['left-coordinate'],
     y: monitor['top-coordinate'],

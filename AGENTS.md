@@ -45,12 +45,22 @@ This repository contains a Node.js tool for managing window placement on Windows
 
 ## FancyZones coordinate system & DPI gotchas
 
-FancyZones `editor-parameters.json` stores monitor data with **mixed coordinate spaces** for high-DPI monitors:
-- `left-coordinate`, `top-coordinate`: **physical pixels** (scaled by DPI). E.g., a 200% DPI monitor at logical x=-1920 stores left-coordinate=-3840
-- `monitor-width`, `monitor-height`, `work-area-width`, `work-area-height`: **logical pixels** (post-scaling)
-- Zone coordinates in `custom-layouts.json` are relative to `ref-width`/`ref-height` which matches `work-area-width` — also **logical pixels**
+`calcFancyZonePos` (`src/fancyzones-helpers.js`) does **not** divide anything by
+`scaleFactor = dpi/96`, and must not: zones (`custom-layouts.json`) and
+work-area (`work-area-width`/`work-area-height` in `editor-parameters.json`)
+are already logical pixels — the same space as `getBounds()`/`setBounds()`
+in node-window-manager. Dividing them by scaleFactor was the bug: a zone
+spanning the full work-area height came out at 80% height on a 125%-scaled
+monitor. Nothing is claimed here about `monitor-width`/`monitor-height` —
+they can be physical pixels in older PowerToys data and are unused by the
+calculator anyway.
 
-The code in `calcFancyZonePos` divides ALL values (monitor coords + zone coords) by `scaleFactor = dpi/96`. This works for monitor position (-3840/2=-1920) but **incorrectly halves zone dimensions** on high-DPI monitors (zone width 1599 becomes 800 instead of staying 1599).
+`left-coordinate`/`top-coordinate` (origin of `monBounds` in `src/fancyzones.js`)
+are logical on the machine this was verified on, but a fixture captured from
+PowerToys 0.95 (`data/FancyZonesProfile/editor-parameters.json`) stores them
+physical — so this one is version-dependent and not handled in code; see the
+comment at the `monBounds` construction in `src/fancyzones.js` for the
+possible symptom.
 
 ### Known issues
 - **Stale FZ data**: `editor-parameters.json` is only refreshed when the FancyZones editor is opened (Win+Shift+`) or after a **full system reboot**. Simply restarting PowerToys does NOT regenerate it. Stale data can have wrong DPI (192 vs 96) and wrong coordinates
