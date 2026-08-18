@@ -1,8 +1,12 @@
 import { spawn } from 'node:child_process';
 import { focusWindowById, getWindowById, getWindows } from '../windows.js';
+import { placeWindowByConfig } from '../placement.js';
 import { virtualDesktop } from '../virtual-desktop.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { claudeWtSessions } from './view.js';
+import { readState } from './state.js';
+import { loadSessionIndex } from './sessions.js';
+import { resolveSession } from './tracker-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { pickOpenProjectSession, planLaunchNew, planWtLaunch, profileForTerminal, sessionNameFor } from './project-helpers.js';
 import { chooseTerminal } from './terminal-helpers.js';
@@ -91,6 +95,52 @@ const settleMsFromConfig = () => {
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
+ * Поставить только что открытое окно туда, где эта сессия стояла раньше.
+ *
+ * Тем же слотом и той же дорогой, что и демон, — но сразу, а не через две
+ * секунды. Демону ждать приходится: заголовок при входе в сессию скачет
+ * (`shell` → `claude` → имя сессии), и он привязывает окно к слоту только
+ * после `stableTicks` одинаковых тиков, иначе окно уехало бы в слот
+ * промежуточного заголовка. Здесь ждать нечего: окно найдено по точному
+ * заголовку, который мы сами и задали при запуске, — сомнений, чья это
+ * сессия, нет вовсе.
+ *
+ * Ради этого всё и затевалось. Замер на popstas-pc: фокус доходил до окна за
+ * 947 мс, а демон двигал и растягивал его на 1.9 с — и вот этот прыжок из
+ * терминальской геометрии в свою человек и видел как «окно наконец
+ * открылось». Поставленное заранее окно демон на своём тике уже не двигает:
+ * `placeWindow()` пропускает то, что и так стоит на месте.
+ *
+ * Отказ здесь ничего не отменяет: слота может не быть вовсе (сессия с этим
+ * именем открывается впервые), состояние может не прочитаться — окно всё
+ * равно откроется и получит фокус, просто там, куда его поставил терминал.
+ */
+async function placeSpawnedWindow(win, title, mark = noTiming) {
+  let slot = null;
+  try {
+    const cfg = getClaudeWtConfig();
+    const state = readState(cfg.statePath);
+    const sessionIndex = loadSessionIndex(cfg.sessionsFile, cfg.progressDir);
+    const resolved = resolveSession(stripTitleDecoration(title), sessionIndex, state.slots);
+    slot = resolved ? state.slots[resolved.id] : null;
+  } catch (e) {
+    console.error(`[claude-wt] no remembered place for ${title}: ${e.message}`);
+  }
+  mark('slot');
+  if (!slot?.bounds) return false;
+  const rule = { window: win.id, ...slot.bounds };
+  if (slot.desktop) rule.desktop = slot.desktop;
+  try {
+    await placeWindowByConfig(rule);
+  } catch (e) {
+    console.error(`[claude-wt] failed to place ${title}: ${e.message}`);
+    return false;
+  }
+  mark('place');
+  return true;
+}
+
+/**
  * Дождаться окна только что запущенной сессии и сфокусировать его.
  *
  * Зачем это вообще нужно: `wt.exe` запускает фоновый процесс службы MQTT, а
@@ -119,6 +169,7 @@ async function focusSpawnedWindow(title, deps = {}) {
     waitMs = WINDOW_WAIT_MS,
     pollMs = WINDOW_POLL_MS,
     settleMs = settleMsFromConfig(),
+    place = placeSpawnedWindow,
     mark = noTiming,
   } = deps;
   const deadline = now() + waitMs;
@@ -134,6 +185,10 @@ async function focusSpawnedWindow(title, deps = {}) {
   mark('window');
   await wait(settleMs);
   mark('settle');
+  // Место — раньше фокуса: окно, которое сначала получает ввод, а через
+  // секунду прыгает в свою геометрию, человек читает как «открылось только
+  // сейчас», и вся экономия предыдущих звеньев пропадает зря.
+  await place(w, title, mark);
   return focus(w.id, mark);
 }
 
