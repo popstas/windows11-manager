@@ -45,35 +45,42 @@ describe('calcFancyZonePos', () => {
     expect(pos).toEqual({ x: 50, y: 50, width: 500, height: 400 });
   });
 
-  it('scales coordinates at 200% DPI', () => {
+  // editor-parameters.json FancyZones хранит координаты зон уже в логических
+  // пикселях (том же пространстве, что и getBounds()/setBounds()), поэтому
+  // при 125%/150%/200% DPI координаты и размеры зоны не делятся на scaleFactor —
+  // на 100% (dpi 96) поведение не меняется, а деление на других масштабах
+  // было тем самым багом.
+  it('does not scale coordinates at 200% DPI (zone data is already in logical pixels)', () => {
     const zone = { X: 100, Y: 200, width: 800, height: 600 };
-    const pos = calcFancyZonePos({ zone, monBounds, scaleFactor: 2 });
-    expect(pos).toEqual({ x: 50, y: 100, width: 400, height: 300 });
+    const pos = calcFancyZonePos({ zone, monBounds });
+    expect(pos).toEqual({ x: 100, y: 200, width: 800, height: 600 });
   });
 
-  it('scales coordinates at 150% DPI', () => {
+  it('does not scale coordinates at 150% DPI (zone data is already in logical pixels)', () => {
     const zone = { X: 300, Y: 150, width: 900, height: 600 };
-    const pos = calcFancyZonePos({ zone, monBounds, scaleFactor: 1.5 });
-    expect(pos).toEqual({ x: 200, y: 100, width: 600, height: 400 });
+    const pos = calcFancyZonePos({ zone, monBounds });
+    expect(pos).toEqual({ x: 300, y: 150, width: 900, height: 600 });
   });
 
-  it('no scaling when scaleFactor is 1', () => {
-    const zone = { X: 100, Y: 200, width: 800, height: 600 };
-    const pos = calcFancyZonePos({ zone, monBounds, scaleFactor: 1 });
-    expect(pos).toEqual({ x: 100, y: 200, width: 800, height: 600 });
-  });
-
-  it('no scaling when scaleFactor is undefined', () => {
-    const zone = { X: 100, Y: 200, width: 800, height: 600 };
-    const pos = calcFancyZonePos({ zone, monBounds, scaleFactor: undefined });
-    expect(pos).toEqual({ x: 100, y: 200, width: 800, height: 600 });
-  });
-
-  it('scales with gaps and offset at 200% DPI', () => {
+  it('does not scale with gaps and offset regardless of DPI', () => {
     const zone = { X: 0, Y: 0, width: 1920, height: 1080 };
     const monitorGaps = { position: 'bottom', gap: 48 };
     const monitorsOffset = { left: 60, right: 60 };
-    const pos = calcFancyZonePos({ zone, monBounds, monitorGaps, monitorsOffset, scaleFactor: 2 });
-    expect(pos).toEqual({ x: 30, y: 0, width: 900, height: 516 });
+    const pos = calcFancyZonePos({ zone, monBounds, monitorGaps, monitorsOffset });
+    expect(pos).toEqual({ x: 60, y: 0, width: 1800, height: 1032 });
+  });
+
+  // Числа сняты с живой машины popstas-pc (2026-08-18), монитор MSI,
+  // масштаб Windows 125% (dpi 120): editor-parameters.json даёт
+  // work-area {x:0,y:0,width:2893,height:1728}, зона 2 раскладки
+  // «1 - msi - left» — X=919 Y=0 width=1012 height=1728 (вся высота
+  // рабочей области). node-window-manager getWorkArea() на этом же
+  // мониторе возвращает те же 2893x1728 — то есть FancyZones уже хранит
+  // логические пиксели, делить на dpi/96 не нужно.
+  it('real machine numbers: monitor at 125% DPI (dpi 120), zone spans full work-area height', () => {
+    const realMonBounds = { x: 0, y: 0, width: 2893, height: 1728 };
+    const zone = { X: 919, Y: 0, width: 1012, height: 1728 };
+    const pos = calcFancyZonePos({ zone, monBounds: realMonBounds });
+    expect(pos).toEqual({ x: 919, y: 0, width: 1012, height: 1728 });
   });
 });

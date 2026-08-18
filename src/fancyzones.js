@@ -49,13 +49,11 @@ function fancyZonesToPos(opts) {
     height: monitor['work-area-height'],
   };
   const config = getConfig();
-  const scaleFactor = monitor.dpi ? monitor.dpi / 96 : 1;
   return calcFancyZonePos({
     zone,
     monBounds,
     monitorGaps: config?.monitorsGaps?.[opts.monitor],
     monitorsOffset: config?.monitorsOffset?.[opts.monitor],
-    scaleFactor,
   });
 }
 
