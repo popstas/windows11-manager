@@ -516,6 +516,13 @@ fn apply_tracked_windows(app: &tauri::AppHandle, view: &tray_windows::TrayWindow
     let Some(tray) = app.try_state::<TrackedTray>() else {
         return;
     };
+    // Единственный след списка в логе — и он нужен: файл окон обычно лежит на
+    // подключённом диске (`V:`), а тот виден только в сессии залогиненного
+    // человека. Из ssh, которым идёт выкатка, его нет вовсе, и проверить, что
+    // трей вправду читает файл, больше нечем. Строка редкая: пишется на
+    // изменение вида, а не на такт, — сердцебиение файла и переходы фокуса
+    // подписей не меняют.
+    info!("tracked windows: {} ({} rows)", view.count_label, view.rows.len());
     let _ = tray.count.set_text(&view.count_label);
     let Ok(mut rows) = tray.rows.lock() else {
         return;
