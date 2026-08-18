@@ -99,6 +99,39 @@ Window titles are compared in decoration-stripped form (`title-helpers.js`): Cla
 
 **There is a second poller now, and it is fine.** `placeWindowOnOpen` (`src/mqtt/autoplacer.js`, gated by `config.placeWindowOnOpen`) runs inside the `mqtt` process, not the daemon, and it polls too -- `getVisibleWindowIds()` every 1500ms, same call the daemon uses, same rule respected: `getWindows()` (~21-31ms) only fires once a new hwnd shows up among the visible ones, never in the loop, and the desktop number is never read in the loop either. So two processes now each poll `getVisibleWindowIds()` on their own timer (daemon at 1000ms, MQTT service at 1500ms) -- a few ms/s per process, not the pattern this rule exists to forbid.
 
+## Раскладки claude-place
+
+Просьба `claude-place` раскладывает окна сессий Claude плиткой или каскадом.
+Имена команды, форма тела (`{"mode": "tile"|"cascade", "ids": [...]}`, json-строка,
+голое слово) и правила раскладок взяты у `macos-windows-manager` **как есть** —
+кнопки в ccfzf-picker и на панели openHASP одни на все хосты, и разойтись с
+маком в разборе одного топика значит отлаживать сразу на двух машинах. Меняя
+что-то здесь, меняйте и там (`crates/mwm-core/src/{layout,request}.rs`).
+
+- Вся арифметика — `src/claude-layout-helpers.js`, чистая и с юнит-тестами.
+  Там же правятся `COL_PX` (ширина знака) и `CHROME_PX` (рамка и полоса
+  прокрутки): оба заведомо приблизительны и меряются на живой машине.
+- Всё, что ходит наружу, — `src/claude-layout.js`: зоны, мониторы, сессии,
+  движение окон через `placeWindow()`. Команда зарегистрирована в общей карте
+  (`src/commands/claude-commands.js`, `src/commands/build.js`), поэтому её
+  видят и MQTT, и HTTP-транспорт разом; отладка без брокера —
+  `node src/index.js claude-wt place tile|cascade`.
+- **Плитка идёт по зонам FancyZones**, а не по своей сетке: зоны уже нарисованы
+  человеком, и делить монитор второй раз — значит спорить с ним. Список зон —
+  `claudeWt.tileZones` (номера зон FancyZones), порядок списка задаёт порядок
+  окон. Окон больше, чем зон, — лишние достаются последним зонам и делятся в
+  них по высоте; окон меньше — хвост зон остаётся пуст.
+- Своя сетка (порт маковской, колонки по 80–120 знаков) — запасной путь на
+  случай любой осечки: зоны не заданы, зона не разрешилась в прямоугольник или
+  монитор по ней не нашёлся. Откат **всегда** пишет строку `warn` с причиной —
+  тихий откат прятал бы протухший `editor-parameters.json` (известная болезнь,
+  см. «Known issues» выше), и окна вставали бы не туда без единого следа в
+  журнале. Если раскладка выглядит протухшей — сюда и смотреть первым делом:
+  `editor-parameters.json` обновляется только при открытии редактора зон
+  (Win+Shift+`) или после полной перезагрузки, перезапуска PowerToys не хватает.
+- Каскад считает от рабочей области (`MONITORINFO.rcWork`, монитор первой зоны,
+  иначе главный), зон он не касается.
+
 ## Getting started
 
 1. Run `npm install` to install dependencies.

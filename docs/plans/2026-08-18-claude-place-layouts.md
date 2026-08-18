@@ -1076,7 +1076,7 @@ git commit -m "feat(claude-place): просьба claude-place по MQTT"
 **Files:**
 - Modify: `AGENTS.md` (новый раздел после «claude-wt polling budget»)
 
-- [ ] **Step 1: Дописать раздел в `AGENTS.md`**
+- [x] **Step 1: Дописать раздел в `AGENTS.md`**
 
 ```markdown
 ## Раскладки claude-place
@@ -1105,12 +1105,12 @@ git commit -m "feat(claude-place): просьба claude-place по MQTT"
 - Отладка без брокера: `node src/index.js claude-wt place tile|cascade`.
 ```
 
-- [ ] **Step 2: Проверить, что ссылки в тексте не врут**
+- [x] **Step 2: Проверить, что ссылки в тексте не врут**
 
 Run: `ls src/claude-layout-helpers.js src/claude-layout.js && grep -n "COL_PX\|CHROME_PX" src/claude-layout-helpers.js && grep -nF "place <mode>" src/index.js`
 Expected: все три находятся
 
-- [ ] **Step 3: Коммит**
+- [x] **Step 3: Коммит**
 
 ```bash
 git add AGENTS.md
