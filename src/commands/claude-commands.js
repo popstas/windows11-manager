@@ -9,7 +9,7 @@
  */
 import { chooseAction } from '../claude-wt/ha/session-groups.js';
 import { sessionIdForSlot } from '../claude-wt/ha/session-slots.js';
-import { basenameOfCwd } from '../claude-wt/project-helpers.js';
+import { basenameOfCwd, parseCursorPoint } from '../claude-wt/project-helpers.js';
 import { parseRestorePayload } from './restore-payload.js';
 import { parseArrangePayload } from '../claude-layout-helpers.js';
 import { startTiming, noTiming } from '../claude-wt/timing.js';
@@ -118,7 +118,7 @@ function claudeCommands({ winMan, log, notify, slots }) {
    * из каталога — ровно так же его считает сам `openClaudeProject`, и так же
    * называет новую сессию ccfzf.
    */
-  async function openProject(cwd, name, { reuseOpen = true, terminal = '' } = {}) {
+  async function openProject(cwd, name, { reuseOpen = true, terminal = '', cursor = null } = {}) {
     const opts = { cwd, name: name || basenameOfCwd(cwd) };
     // Ключа `reuseOpen: true` в обычной просьбе нет: у `openClaudeProject` это
     // и так умолчание, а лишний ключ пришлось бы дописать в каждый
@@ -127,6 +127,10 @@ function claudeCommands({ winMan, log, notify, slots }) {
     // сам реестр терминалов, а не пустой ключ здесь.
     if (!reuseOpen) opts.reuseOpen = false;
     if (terminal) opts.terminal = terminal;
+    // Ключа нет, когда пикер точки не назвал: окно тогда встаёт туда, куда его
+    // поставит терминал, — ровно как было до появления галки. То же правило,
+    // что у `terminal` выше.
+    if (cursor) opts.cursor = cursor;
     let res;
     try {
       res = await winMan.openClaudeProject(opts);
@@ -154,13 +158,14 @@ function claudeCommands({ winMan, log, notify, slots }) {
    * набором строк, что `openProject`: у публикации в MQTT ответа нет, и
    * единственный способ узнать исход — журнал и уведомление.
    */
-  async function resumeSession(id, cwd, terminal) {
+  async function resumeSession(id, cwd, terminal, cursor = null) {
     // Пустых ключей в просьбе нет по тому же правилу, что у `openProject`:
     // отсутствие каталога и отсутствие имени терминала — это ответы («профиль
     // брать неоткуда», «дефолт машины»), а не пустые строки.
     const opts = { id };
     if (cwd) opts.cwd = cwd;
     if (terminal) opts.terminal = terminal;
+    if (cursor) opts.cursor = cursor;
     let res;
     try {
       res = await winMan.resumeClaudeSession(opts);
@@ -308,7 +313,7 @@ function claudeCommands({ winMan, log, notify, slots }) {
      *     Молчание здесь было бы неотличимо от успеха.
      */
     async 'claude-session-open'(payload) {
-      const { id, action, cwd, name, terminal } = parseIdPayload(payload);
+      const { id, action, cwd, name, terminal, cursor } = parseIdPayload(payload);
       if (!action) return;
       if (action !== 'terminal' && action !== 'terminal-new') {
         // Незнакомое действие не делает хотя бы ничего и жалуется — тем же
@@ -325,6 +330,12 @@ function claudeCommands({ winMan, log, notify, slots }) {
       // пусто — берётся дефолт машины. Проверять имя здесь нечем и незачем:
       // реестр знает менеджер, и он же скажет в лог, если имя чужое.
       const wantedTerminal = typeof terminal === 'string' ? terminal.trim() : '';
+      // Точка курсора: пикер просит поставить новое окно на тот экран, где
+      // сейчас смотрит человек. Экран называется точкой, а не номером —
+      // нумераций мониторов у нас три, и общий словарь на два репозитория
+      // разошёлся бы молча. Просеивается здесь же (`parseCursorPoint`): тело
+      // пишет чужая машина, а мусор доехал бы до `setBounds`.
+      const at = parseCursorPoint(cursor);
       // Секундомер заводится здесь, а не в ветке подъёма: считать надо с
       // прихода просьбы, иначе разбор тела и поиск сессии выпадут из отчёта —
       // а именно поиск и оказался тем, что стоило больше секунды.
@@ -340,7 +351,7 @@ function claudeCommands({ winMan, log, notify, slots }) {
           notify(`claude-wt: ${reason}`);
           return;
         }
-        await openProject(dir, asked, { reuseOpen: false, terminal: wantedTerminal });
+        await openProject(dir, asked, { reuseOpen: false, terminal: wantedTerminal, cursor: at });
         return;
       }
       const found = id ? findSession(id, mark) : null;
@@ -353,11 +364,11 @@ function claudeCommands({ winMan, log, notify, slots }) {
       // списка, шаблон возобновления лежит в конфиге.
       if (found && !found.unknown) log(`claude-wt session-open: ${found.error}`, 'warn');
       if (id) {
-        await resumeSession(id, dir, wantedTerminal);
+        await resumeSession(id, dir, wantedTerminal, at);
         return;
       }
       if (dir) {
-        await openProject(dir, asked, { terminal: wantedTerminal });
+        await openProject(dir, asked, { terminal: wantedTerminal, cursor: at });
         return;
       }
       const reason = 'session-open: нужен id сессии или cwd проекта';

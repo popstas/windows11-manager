@@ -238,6 +238,57 @@ describe('claude-session-open', () => {
     expect(d.winMan.openClaudeProject).toHaveBeenCalledWith({ cwd: '/p/home', name: 'home' });
   });
 
+  it('точка курсора доезжает до всех трёх дорог, кончающихся новым окном', async () => {
+    // Экран для нового окна называет пикер: он один знает, где сейчас смотрит
+    // человек. Забудь любую из трёх дорог — галка работала бы через раз, и
+    // объяснить это было бы нечем: ответа у публикации нет.
+    const cursor = { x: 2560, y: 300 };
+    const project = deps();
+    await claudeCommands(project)['claude-session-open']({ action: 'terminal', cwd: '/p/home', cursor });
+    expect(project.winMan.openClaudeProject).toHaveBeenCalledWith({ cwd: '/p/home', name: 'home', cursor });
+
+    const fresh = deps();
+    await claudeCommands(fresh)['claude-session-open']({
+      action: 'terminal-new', cwd: '/p/site', name: 'site-2', cursor,
+    });
+    expect(fresh.winMan.openClaudeProject).toHaveBeenCalledWith({
+      cwd: '/p/site', name: 'site-2', reuseOpen: false, cursor,
+    });
+
+    const resumed = deps();
+    await claudeCommands(resumed)['claude-session-open']({ ...PROJECT, cursor });
+    expect(resumed.winMan.resumeClaudeSession).toHaveBeenCalledWith({
+      id: 'zzz', cwd: '/p/site', cursor,
+    });
+  });
+
+  it('без точки ключа в просьбе нет вовсе — прежнее поведение', async () => {
+    // Выключенная галка и пикер прежней версии обязаны выглядеть одинаково:
+    // окно встаёт туда, куда его поставит терминал.
+    const d = deps();
+    await claudeCommands(d)['claude-session-open']({ action: 'terminal', cwd: '/p/home' });
+    expect(d.winMan.openClaudeProject).toHaveBeenCalledWith({ cwd: '/p/home', name: 'home' });
+  });
+
+  it('мусор вместо точки не доезжает до окна', async () => {
+    // Тело пишет чужая машина. Строка или NaN здесь означали бы окно,
+    // поставленное неизвестно куда, — а сказать об этом было бы некому.
+    const d = deps();
+    await claudeCommands(d)['claude-session-open']({
+      action: 'terminal', cwd: '/p/home', cursor: { x: '10', y: 20 },
+    });
+    expect(d.winMan.openClaudeProject).toHaveBeenCalledWith({ cwd: '/p/home', name: 'home' });
+  });
+
+  it('поднятое окно точка не двигает: просьба про новые окна', async () => {
+    const d = deps();
+    await claudeCommands(d)['claude-session-open']({
+      id: 'abc', action: 'terminal', cursor: { x: 2560, y: 300 },
+    });
+    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledWith(42, expect.any(Function));
+    expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
+  });
+
   it('terminal-new заводит сессию, не поднимая открытую', async () => {
     // `^N` в пикере нажимают именно потому, что сессия уже есть: искать её
     // здесь значило бы поднять ту самую, рядом с которой просили открыть новую.

@@ -115,8 +115,16 @@ function boundsEqual(a, b) {
  * caller instead would leave the guard waiting for a position the window can
  * never reach, and the timeout would then record the clamped position as if
  * the user had chosen it — destroying the original.
+ *
+ * `noAutoplace` — hwnd окон, которые кто-то поставил намеренно (сегодня это
+ * просьба пикера открыть сессию на экране под курсором). Такое окно демон **не
+ * двигает, но и не забывает**: слот перезаписывается его сегодняшним местом.
+ * Только пропускать перенос было бы полумерой — пометка живёт минуту, а слот
+ * вечно, и по истечении срока окно всё равно уехало бы туда, где сессия жила
+ * вчера. Перезапись же кончает спор совсем: со следующего тика запомненное и
+ * настоящее совпадают, и двигать нечего.
  */
-function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, options = {}, monitors = [] }) {
+function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, options = {}, monitors = [], noAutoplace = new Set() }) {
   const { stableTicks, moveTimeoutMs, minimizedX } = { ...DEFAULTS, ...options };
   // `now` stays in ms because pendingMove.since/moveTimeoutMs need that resolution;
   // everything persisted to state (lastSeen, updated) is stamped in epoch seconds.
@@ -170,7 +178,17 @@ function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, o
       if (tracked.sessionId) {
         const known = slots[tracked.sessionId];
         const common = { title: tracked.stableTitle, cwd: resolved.cwd, now: nowSec };
-        if (known?.bounds) {
+        if (known?.bounds && noAutoplace.has(win.id)) {
+          // Окно поставлено намеренно: запоминаем новое место вместо того,
+          // чтобы тащить окно на старое. У свёрнутого записывать нечего —
+          // его координаты это -32000, и такой слот испортил бы память о
+          // сессии; то же условие и по той же причине стоит на заведении
+          // слота ниже.
+          slots[tracked.sessionId] = upsertSlot(known, minimized ? common : { ...common, bounds: win.bounds });
+          if (known.desktop == null && !minimized) {
+            bindings.push({ windowId: win.id, sessionId: tracked.sessionId });
+          }
+        } else if (known?.bounds) {
           slots[tracked.sessionId] = upsertSlot(known, common);
           const target = clampBoundsToMonitors(known.bounds, monitors);
           // Уже стоит там, где нужно — не дёргаем окно. Иначе перезапуск демона
