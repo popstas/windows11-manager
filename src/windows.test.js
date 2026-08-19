@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { matchRules, isWindowExcluded } from './windows-helpers.js';
+import { matchRules, isWindowExcluded, isMinimized } from './windows-helpers.js';
 
 describe('matchRules', () => {
   const rules = [
@@ -107,5 +107,28 @@ describe('isWindowExcluded', () => {
       excludedTitles,
       excludedPaths,
     })).toBe(false);
+  });
+});
+
+describe('isMinimized', () => {
+  // Windows паркует свёрнутое окно на x = -32000, и это единственный признак,
+  // по которому его видно снаружи: размеры остаются прежними.
+  it('припаркованное окно свёрнуто', () => {
+    expect(isMinimized({ x: -32000, y: -32000, width: 1200, height: 800 })).toBe(true);
+  });
+
+  it('обычное окно не свёрнуто', () => {
+    expect(isMinimized({ x: 0, y: 0, width: 1200, height: 800 })).toBe(false);
+  });
+
+  // Второй монитор слева от главного даёт честные отрицательные координаты, и
+  // окно на нём свёрнутым считать нельзя.
+  it('окно на левом мониторе не свёрнуто', () => {
+    expect(isMinimized({ x: -1920, y: 0, width: 1200, height: 800 })).toBe(false);
+  });
+
+  it('без границ решать не о чем', () => {
+    expect(isMinimized(null)).toBe(false);
+    expect(isMinimized({})).toBe(false);
   });
 });

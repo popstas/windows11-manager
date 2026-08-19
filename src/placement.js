@@ -2,6 +2,7 @@ import { getConfig } from './config.js';
 import { getMons, getSortedMonitors, getMonitorByPoint } from './monitors.js';
 import { fancyZonesToPos, addFancyZoneHistory } from './fancyzones.js';
 import { getWindows, getVisibleWindowIds, getMatchedRules, getWindowInfo, getWindow } from './windows.js';
+import { isMinimized } from './windows-helpers.js';
 import { virtualDesktop } from './virtual-desktop.js';
 import { adjustBoundsForScale } from './scale.js';
 import { isBoundsMatch } from './geometry.js';
@@ -81,8 +82,7 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
   const isPlaced = () => isBoundsMatch(oldPos, finalBounds);
   const placed = isPlaced();
   if (pos && !placed) {
-    const MINIMIZED_THRESHOLD = -10000;
-    if (w.getBounds()['x'] < MINIMIZED_THRESHOLD) {
+    if (isMinimized(w.getBounds())) {
       verboseLogFileOnly(`Skip minimized ${winName}: x=${w.getBounds().x}`);
       skipped.push({ name: 'bounds' });
     } else {

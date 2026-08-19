@@ -9,6 +9,7 @@ import { getConfig } from './config.js';
 import { fancyZonesToPos } from './fancyzones.js';
 import { getMonitorByPoint, getPrimaryMonitor } from './monitors.js';
 import { focusWindowById, getActiveWindowId, getWindowById } from './windows.js';
+import { isMinimized } from './windows-helpers.js';
 import { placeWindow } from './placement.js';
 import { claudeWtSessions } from './claude-wt/view.js';
 import { virtualDesktop } from './virtual-desktop.js';
@@ -213,6 +214,23 @@ function pickWindows(ids, log, mark = () => 0) {
     const w = getWindowById(session.windowId);
     if (!w) {
       log(`claude-place: окно сессии ${session.id} исчезло — пропущено`, 'warn');
+      continue;
+    }
+    // Свёрнутое окно зоны не занимает. placeWindow() его и так пропустит, но
+    // прямоугольник ему уже будет отдан — из четырёх сессий, где одна
+    // свёрнута, три видимых раскладывались бы по четырём зонам, оставляя
+    // дыру. Так же поступает macos-windows-manager.
+    // getBounds() бросает, если процесс окна умер между перечислением сессий и
+    // этой строкой; такое окно всё равно расставить не выйдет.
+    let bounds;
+    try {
+      bounds = w.getBounds();
+    } catch (e) {
+      log(`claude-place: границы окна сессии ${session.id} не прочитались — пропущено (${e.message})`, 'warn');
+      continue;
+    }
+    if (isMinimized(bounds)) {
+      log(`claude-place: окно сессии ${session.id} свёрнуто — пропущено`);
       continue;
     }
     // Номер стола едет рядом с окном: он уже прочитан вместе со слотом, и

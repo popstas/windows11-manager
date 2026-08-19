@@ -19,4 +19,18 @@ function isWindowExcluded({ title, path, excludedTitles, excludedPaths }) {
   return false;
 }
 
-export { matchRules, isWindowExcluded };
+/**
+ * Свёрнуто ли окно.
+ *
+ * Windows паркует свёрнутое окно далеко за пределами всех экранов (x = -32000),
+ * и снаружи это единственный признак: размеры остаются прежними, а флага, по
+ * которому node-window-manager отличил бы свёрнутое от обычного, нет. Порог
+ * -10000 берёт запас на честные отрицательные координаты монитора слева от
+ * главного: -1920 у соседнего экрана и -32000 у свёрнутого не спутать.
+ */
+function isMinimized(bounds) {
+  const x = bounds?.x;
+  return typeof x === 'number' && x < -10000;
+}
+
+export { matchRules, isWindowExcluded, isMinimized };
