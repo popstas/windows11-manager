@@ -269,4 +269,35 @@ function arrange({ mode, zones = [], work, n }) {
   return tileGrid(work, n);
 }
 
-export { layoutFromName, normalizeIds, parseArrangePayload, pickFocusTarget, splitCounts, stackInCell, tileByZones, columns, tileGrid, cascade, arrange, toWindowSpace };
+/**
+ * Окна по рабочим столам, текущий стол первым.
+ *
+ * Плитка на разбросанных сессиях прежде шла одним списком: окна с чужого
+ * стола делили зоны с окнами текущего, и на каждом столе оставались дыры, а
+ * подъём чужого окна утаскивал человека на его стол. Группа — это отдельная
+ * раскладка: своя сетка зон с нуля и свой проход подъёма.
+ *
+ * Стол у окна — из слота claude-wt, а он бывает пуст (claudeWt.desktop
+ * выключён, слот записан до того, как демон научился спрашивать номер). Такое
+ * окно идёт в текущую группу: «стол неизвестен» — это не «стол чужой», и
+ * молча не поднимать его было бы хуже, чем поднять лишнее.
+ *
+ * `current` пуст, когда текущий стол не удалось узнать вовсе; тогда им
+ * считается стол первого окна — пикер ставит первой ту сессию, ради которой
+ * раскладку и просят.
+ */
+function groupByDesktop(items = [], current = null) {
+  if (!items.length) return [];
+  const desk = items.map(it => it?.desktop ?? null);
+  const cur = current ?? desk.find(d => d !== null) ?? null;
+  const numbers = [...new Set(desk.filter(d => d !== null && d !== cur))].sort((a, b) => a - b);
+  const order = [cur, ...numbers];
+  return order.map(desktop => ({
+    desktop,
+    isCurrent: desktop === cur,
+    // Стол не задан — окно к текущей группе: см. заголовок.
+    items: items.filter((it, i) => (desk[i] === null ? desktop === cur : desk[i] === desktop)),
+  })).filter(g => g.items.length);
+}
+
+export { groupByDesktop, layoutFromName, normalizeIds, parseArrangePayload, pickFocusTarget, splitCounts, stackInCell, tileByZones, columns, tileGrid, cascade, arrange, toWindowSpace };

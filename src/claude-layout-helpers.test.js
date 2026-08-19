@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseArrangePayload, pickFocusTarget, splitCounts, stackInCell, tileByZones, columns, tileGrid, cascade, arrange, toWindowSpace } from './claude-layout-helpers.js';
+import { groupByDesktop, parseArrangePayload, pickFocusTarget, splitCounts, stackInCell, tileByZones, columns, tileGrid, cascade, arrange, toWindowSpace } from './claude-layout-helpers.js';
 
 describe('parseArrangePayload', () => {
   it('разбирает объект с режимом и списком', () => {
@@ -268,5 +268,55 @@ describe('pickFocusTarget', () => {
   it('окон нет — фокусировать нечего', () => {
     expect(pickFocusTarget([], 22)).toBeNull();
     expect(pickFocusTarget()).toBeNull();
+  });
+});
+
+describe('groupByDesktop', () => {
+  const items = (...list) => list.map(([id, desktop]) => ({ id, desktop }));
+
+  it('один стол — одна группа, и она текущая', () => {
+    expect(groupByDesktop(items(['a', 2], ['b', 2]), 2)).toEqual([
+      { desktop: 2, isCurrent: true, items: items(['a', 2], ['b', 2]) },
+    ]);
+  });
+
+  it('текущий стол идёт первым, остальные по возрастанию', () => {
+    const list = items(['a', 1], ['b', 3], ['c', 2], ['d', 3]);
+    expect(groupByDesktop(list, 3).map(g => g.desktop)).toEqual([3, 1, 2]);
+  });
+
+  it('порядок окон внутри группы сохраняется', () => {
+    const list = items(['a', 1], ['b', 2], ['c', 1]);
+    expect(groupByDesktop(list, 1)[0].items.map(i => i.id)).toEqual(['a', 'c']);
+  });
+
+  // Стол сессии берётся из слота claude-wt, а он бывает пуст: claudeWt.desktop
+  // выключён либо слот записан до того, как демон научился спрашивать номер.
+  // Считать такое окно «на чужом столе» значило бы не поднимать его вовсе.
+  it('окно без стола попадает в текущую группу', () => {
+    const list = items(['a', null], ['b', 2]);
+    const groups = groupByDesktop(list, 2);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].items.map(i => i.id)).toEqual(['a', 'b']);
+  });
+
+  it('все окна без стола — одна текущая группа', () => {
+    const groups = groupByDesktop(items(['a', null], ['b', null]), null);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].isCurrent).toBe(true);
+  });
+
+  // Текущий стол неизвестен: активное окно не сессия и VirtualDesktop11.exe
+  // промолчал. Первое окно в порядке раскладки — лучшая догадка: пикер ставит
+  // первой ту сессию, ради которой раскладку и просят.
+  it('без текущего стола текущим считается стол первого окна', () => {
+    const groups = groupByDesktop(items(['a', 2], ['b', 1]), null);
+    expect(groups.map(g => g.desktop)).toEqual([2, 1]);
+    expect(groups[0].isCurrent).toBe(true);
+    expect(groups[1].isCurrent).toBe(false);
+  });
+
+  it('пустой список — пустой результат', () => {
+    expect(groupByDesktop([], 1)).toEqual([]);
   });
 });
