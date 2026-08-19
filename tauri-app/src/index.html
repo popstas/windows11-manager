@@ -133,6 +133,133 @@
         <textarea id="tile_zones" rows="4" placeholder="1,6&#10;1,7&#10;1,8&#10;1,9"></textarea>
         <small>FancyZones zones for "Place Claude: tile", in window order. Lives in the node config (claudeWt.tileZones), not in this store — saved separately from the rest of this form. Empty = tile its own grid.</small>
       </div>
+
+      <!--
+        Ниже — поля живого YAML-конфига node-части (claudeWt.* и claude-wt
+        слоты панели из homeassistant.*), а не tauri-plugin-store. Читаются и
+        пишутся отдельными вызовами (get_claude_config/save_claude_config),
+        поштучно и только изменённые — см. settings.js. Пустое поле значит
+        «убрать ключ, вернуть умолчание»; умолчание показано плейсхолдером.
+        Атрибут data-cfg несёт имя ключа и тип: список полей на стороне node
+        (src/commands/claude-config-fields.js) — тот же самый.
+      -->
+      <p class="tab-note">Fields below live in the node YAML config, not in the tray store. Empty = key removed, the default (shown as placeholder) applies. Only fields you change are written.</p>
+
+      <h3 class="group">Daemon</h3>
+
+      <div class="field checkbox">
+        <label>
+          <input type="checkbox" id="cfg_claude_wt_enabled" data-cfg="claudeWt.enabled" data-cfg-default="true" data-cfg-type="boolean">
+          claudeWt.enabled — daemon allowed to run
+        </label>
+        <small>Config master switch. Off: <code>claude-wt watch</code> refuses to start at all. Not the same as "Start claude-wt watcher on launch" above — that one only decides whether the tray auto-starts it.</small>
+      </div>
+
+      <div class="field">
+        <label for="cfg_claude_wt_interval">claudeWt.interval (ms)</label>
+        <input type="number" id="cfg_claude_wt_interval" data-cfg="claudeWt.interval" data-cfg-default="1000" data-cfg-type="number" min="0" placeholder="1000">
+        <small>Window poll tick of the daemon.</small>
+      </div>
+
+      <div class="field">
+        <label for="cfg_claude_wt_stable_ticks">claudeWt.stableTicks</label>
+        <input type="number" id="cfg_claude_wt_stable_ticks" data-cfg="claudeWt.stableTicks" data-cfg-default="2" data-cfg-type="number" min="0" placeholder="2">
+        <small>How many identical ticks a terminal title must hold before it counts as settled.</small>
+      </div>
+
+      <div class="field">
+        <label for="cfg_claude_wt_focus_settle_ms">claudeWt.focusSettleMs</label>
+        <input type="number" id="cfg_claude_wt_focus_settle_ms" data-cfg="claudeWt.focusSettleMs" data-cfg-default="0" data-cfg-type="number" min="0" placeholder="0">
+        <small>Pause between a new session's window appearing and focusing it. Raise only if your terminal repositions itself after launch.</small>
+      </div>
+
+      <div class="field checkbox">
+        <label>
+          <input type="checkbox" id="cfg_claude_wt_desktop" data-cfg="claudeWt.desktop" data-cfg-default="true" data-cfg-type="boolean">
+          claudeWt.desktop — return the window to its virtual desktop too
+        </label>
+      </div>
+
+      <div class="field checkbox">
+        <label>
+          <input type="checkbox" id="cfg_claude_wt_debug" data-cfg="claudeWt.debug" data-cfg-default="false" data-cfg-type="boolean">
+          claudeWt.debug — log terminal titles that matched no session
+        </label>
+      </div>
+
+      <h3 class="group">Files &amp; terminal</h3>
+
+      <div class="field">
+        <label for="cfg_claude_wt_sessions_file">claudeWt.sessionsFile</label>
+        <input type="text" id="cfg_claude_wt_sessions_file" data-cfg="claudeWt.sessionsFile" data-cfg-default="" data-cfg-type="string" placeholder="(not set)">
+        <small>Session list written by the picker on the agent side.</small>
+      </div>
+
+      <div class="field">
+        <label for="cfg_claude_wt_state_path">claudeWt.statePath</label>
+        <input type="text" id="cfg_claude_wt_state_path" data-cfg="claudeWt.statePath" data-cfg-default="" data-cfg-type="string" placeholder="(not set)">
+        <small>Where remembered window slots are stored.</small>
+      </div>
+
+      <div class="field">
+        <label for="cfg_claude_wt_windows_file">claudeWt.windowsFile</label>
+        <input type="text" id="cfg_claude_wt_windows_file" data-cfg="claudeWt.windowsFile" data-cfg-default="" data-cfg-type="string" placeholder="(not set — do not publish)">
+        <small>Published list of open session windows. The tray reads its own tracked-windows menu from here; empty = not written at all.</small>
+      </div>
+
+      <div class="field">
+        <label for="cfg_claude_wt_progress_dir">claudeWt.progressDir</label>
+        <input type="text" id="cfg_claude_wt_progress_dir" data-cfg="claudeWt.progressDir" data-cfg-default="" data-cfg-type="string" placeholder="(not set)">
+        <small>Where the agent-side hook writes <code>&lt;id&gt;.state.json</code>. Empty = the picker's status dot stays two-coloured.</small>
+      </div>
+
+      <div class="field">
+        <label for="cfg_claude_wt_terminal">claudeWt.terminal</label>
+        <input type="text" id="cfg_claude_wt_terminal" data-cfg="claudeWt.terminal" data-cfg-default="wt" data-cfg-type="string" placeholder="wt">
+        <small>Terminal used when the request does not name one. Must be a key of <code>claudeWt.terminals</code> (built-ins: wt, wezterm).</small>
+      </div>
+
+      <div class="field">
+        <label for="cfg_claude_wt_profile">claudeWt.profile</label>
+        <input type="text" id="cfg_claude_wt_profile" data-cfg="claudeWt.profile" data-cfg-default="" data-cfg-type="string" placeholder="(not set — no -p)">
+        <small>Windows Terminal profile. Empty = launched without <code>-p</code>.</small>
+      </div>
+
+      <h3 class="group">Session slots on the Home Assistant panel</h3>
+      <p class="tab-note">Lives in the root <code>homeassistant</code> key of the node config, but these are claude-wt session slots — hence this tab.</p>
+
+      <div class="field">
+        <label for="cfg_ha_slots">homeassistant.slots</label>
+        <input type="number" id="cfg_ha_slots" data-cfg="homeassistant.slots" data-cfg-default="10" data-cfg-type="number" min="0" placeholder="10">
+        <small>How many session rows to export. More slots than buttons on the panel = entities nothing ever shows.</small>
+      </div>
+
+      <div class="field">
+        <label for="cfg_ha_interval">homeassistant.interval (seconds)</label>
+        <input type="number" id="cfg_ha_interval" data-cfg="homeassistant.interval" data-cfg-default="15" data-cfg-type="number" min="1" placeholder="15">
+        <small>Polling windows is not cheap and the panel does not need second-level accuracy.</small>
+      </div>
+
+      <div class="field checkbox">
+        <label>
+          <input type="checkbox" id="cfg_ha_open_only" data-cfg="homeassistant.openOnly" data-cfg-default="true" data-cfg-type="boolean">
+          homeassistant.openOnly — live sessions only
+        </label>
+        <small>Closed sessions stay in the picker, where there is room for them.</small>
+      </div>
+
+      <div class="field">
+        <label for="cfg_ha_sessions_sort">homeassistant.sessionsSort</label>
+        <select id="cfg_ha_sessions_sort" data-cfg="homeassistant.sessionsSort" data-cfg-default="recent" data-cfg-type="string">
+          <option value="">(default — recent)</option>
+          <option value="cost">cost</option>
+          <option value="oldest">oldest</option>
+          <option value="newest">newest</option>
+          <option value="recent">recent</option>
+          <option value="name">name</option>
+        </select>
+        <small>Slot order on the panel. Independent of the picker's own sort.</small>
+      </div>
     </section>
 
     <section data-tab="mqtt">

@@ -879,36 +879,50 @@ fn describe_node_failure(output: &tauri_plugin_shell::process::Output) -> String
     }
 }
 
-/// Прочитать `claudeWt.tileZones` из живого YAML-конфига node-части.
+/// Позвать node-команду правки конфига и вернуть её stdout.
 ///
-/// Трей хранилище YAML не разбирает вовсе — ни зависимости, ни кода для
-/// этого нет, — поэтому чтение и запись идут через node-команду
-/// `claude-wt tile-zones`, тем же приёмом, что `get_dashboard_data`.
-#[tauri::command]
-async fn get_tile_zones(app: tauri::AppHandle) -> Result<String, String> {
-    let project_path = get_project_path(&app);
+/// Трей хранилище YAML не разбирает вовсе — ни зависимости, ни кода для этого
+/// нет, — поэтому и чтение, и запись полей конфига идут через node-команды
+/// (`claude-wt tile-zones`, `claude-wt config`), тем же приёмом, что
+/// `get_dashboard_data`. Общая обёртка, а не четыре копии подряд: у всех
+/// четырёх один и тот же таймаут, одна и та же проверка project_path и один и
+/// тот же разбор неудачи в текст для статуса окна настроек.
+///
+/// Таймаут обязателен: окно настроек ждёт ответа, и повисший node оставил бы
+/// форму пустой навсегда, без единой строки о причине.
+async fn node_config_command(app: &tauri::AppHandle, args: &[&str]) -> Result<String, String> {
+    let project_path = get_project_path(app);
     if project_path.is_empty() {
         return Err("Project path not configured".to_string());
     }
 
+    // Ярлык для таймаута — без `src/index.js`: в статусе окна человеку нужна
+    // команда, а не путь к точке входа.
+    let label = args.iter().skip(1).cloned().collect::<Vec<_>>().join(" ");
     let shell = app.shell();
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(10),
         shell
             .command("node")
-            .args(["src/index.js", "claude-wt", "tile-zones", "get"])
+            .args(args)
             .current_dir(&project_path)
             .output(),
     )
     .await
-    .map_err(|_| "tile-zones get timed out after 10s".to_string())?
+    .map_err(|_| format!("{label} timed out after 10s"))?
     .map_err(|e| e.to_string())?;
 
     if !output.status.success() {
-        return Err(format!("tile-zones get failed: {}", describe_node_failure(&output)));
+        return Err(describe_node_failure(&output));
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Прочитать `claudeWt.tileZones` из живого YAML-конфига node-части.
+#[tauri::command]
+async fn get_tile_zones(app: tauri::AppHandle) -> Result<String, String> {
+    node_config_command(&app, &["src/index.js", "claude-wt", "tile-zones", "get"]).await
 }
 
 /// Записать `claudeWt.tileZones` в живой YAML-конфиг node-части.
@@ -918,29 +932,30 @@ async fn get_tile_zones(app: tauri::AppHandle) -> Result<String, String> {
 /// (неразборчивая строка) человеку в статус окна настроек, а не в лог.
 #[tauri::command]
 async fn save_tile_zones(app: tauri::AppHandle, text: String) -> Result<(), String> {
-    let project_path = get_project_path(&app);
-    if project_path.is_empty() {
-        return Err("Project path not configured".to_string());
-    }
+    node_config_command(&app, &["src/index.js", "claude-wt", "tile-zones", "set", &text]).await?;
+    Ok(())
+}
 
-    let shell = app.shell();
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        shell
-            .command("node")
-            .args(["src/index.js", "claude-wt", "tile-zones", "set"])
-            .arg(&text)
-            .current_dir(&project_path)
-            .output(),
-    )
-    .await
-    .map_err(|_| "tile-zones set timed out after 10s".to_string())?
-    .map_err(|e| e.to_string())?;
+/// Прочитать скалярные поля вкладки Claude из живого YAML-конфига node-части.
+///
+/// Отдаётся сырая строка JSON: разбирать её здесь незачем — трей в эти поля не
+/// смотрит вовсе, они целиком дело окна настроек, и лишний тип на стороне Rust
+/// пришлось бы держать в согласии со списком полей в node (см.
+/// `src/commands/claude-config-fields.js`).
+#[tauri::command]
+async fn get_claude_config(app: tauri::AppHandle) -> Result<String, String> {
+    node_config_command(&app, &["src/index.js", "claude-wt", "config", "get"]).await
+}
 
-    if !output.status.success() {
-        return Err(describe_node_failure(&output));
-    }
-
+/// Записать изменённые поля вкладки Claude в живой YAML-конфиг node-части.
+///
+/// `json` — объект только из тех полей, что человек тронул (дифф считает окно
+/// настроек): нетронутая форма не должна дописывать в конфиг ключи, которых
+/// там не было. Проверка значений, точечная правка и отказ на негодном — на
+/// стороне node, здесь текст отказа только доносится до статуса окна.
+#[tauri::command]
+async fn save_claude_config(app: tauri::AppHandle, json: String) -> Result<(), String> {
+    node_config_command(&app, &["src/index.js", "claude-wt", "config", "set", &json]).await?;
     Ok(())
 }
 
@@ -1639,7 +1654,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(Mutex::new(AppState::new()))
-        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version, read_log, save_store_match_list, get_tile_zones, save_tile_zones])
+        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version, read_log, save_store_match_list, get_tile_zones, save_tile_zones, get_claude_config, save_claude_config])
         .setup(|app| {
             let project_path = get_project_path(app.handle());
             logging::init(&project_path);

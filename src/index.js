@@ -334,6 +334,37 @@ async function start() {
     });
 
   claudeWt
+    .command('config <action> [json]')
+    .description('read/write скалярные поля claudeWt/homeassistant в живом конфиге: get | set <json>')
+    // Спрашивает и пишет окно настроек трея (вкладка Claude): YAML Rust не
+    // разбирает вовсе, как и в случае с tile-zones рядом. На stdout у `get` —
+    // только JSON, без пометок: его читает программа.
+    .action(async (action, json) => {
+      const mod = await import('./commands/claude-config-commands.js');
+      try {
+        if (action === 'get') {
+          console.log(JSON.stringify(mod.readClaudeConfig()));
+        } else if (action === 'set') {
+          let patch;
+          try {
+            patch = JSON.parse(json ?? '{}');
+          } catch (e) {
+            throw new Error(`аргумент не разбирается как JSON: ${e.message}`);
+          }
+          const names = mod.writeClaudeConfig(patch);
+          console.log(`[claude-wt] config сохранён: ${names.length ? names.join(', ') : 'менять было нечего'}`);
+        } else {
+          console.error(`unknown action: ${action} (ожидается get или set)`);
+          process.exit(1);
+        }
+      } catch (e) {
+        console.error(e.message);
+        process.exit(1);
+      }
+      process.exit(0);
+    });
+
+  claudeWt
     .command('open-project')
     .description('focus the last open session for a project cwd, or spawn a fresh named Claude')
     .requiredOption('--cwd <path>', 'Linux project directory')

@@ -26,20 +26,7 @@
  * на диск битым.
  */
 import { parseDocument, parse, isMap, isScalar } from 'yaml';
-
-/** Перевод строки исходного файла — угадывается по первому найденному \r\n,
- *  чтобы наши собственные новые строки не сбивали CRLF-файл на LF. */
-function detectEol(raw) {
-  return raw.includes('\r\n') ? '\r\n' : '\n';
-}
-
-/** Отступ (число пробелов) строки, на которой лежит символ `offset`. */
-function indentAt(text, offset) {
-  const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
-  let i = lineStart;
-  while (i < offset && text[i] === ' ') i++;
-  return i - lineStart;
-}
+import { detectEol, eolConverter, indentAt } from './yaml-patch-helpers.js';
 
 function renderFlow(zones) {
   if (!zones.length) return '[]';
@@ -162,7 +149,7 @@ function verifyPatch(result, zones) {
 function patchTileZonesText(raw, zones) {
   const target = findTileZonesTarget(raw);
   const eol = detectEol(raw);
-  const toEol = (s) => (eol === '\n' ? s : s.replace(/\n/g, eol));
+  const toEol = eolConverter(eol);
 
   let result;
 
