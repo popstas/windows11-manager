@@ -57,7 +57,7 @@ async function loadSettings() {
     // Не в console.error и молчок: человек должен увидеть в самом окне,
     // почему поле пустое и почему сабмит его не тронет.
     status.style.color = '#f9e2af';
-    status.textContent = `Tile zones не загрузились (${tileZonesResult.reason}) — поле не будет сохранено, пока окно не откроют заново`;
+    status.textContent = `Tile zones failed to load (${tileZonesResult.reason}) — the field will not be saved until you reopen this window`;
   }
 
   if (versionResult.status === 'fulfilled') {
@@ -111,7 +111,7 @@ form.addEventListener('submit', async (e) => {
     // ошибки ниже, показанный в статусе окна, а не только в логе.
     let tileZonesError = '';
     if (tileZonesLoadFailed) {
-      tileZonesError = 'не сохранены — поле не подтянулось при открытии окна, откройте настройки заново';
+      tileZonesError = 'not saved — the field did not load when the window opened, reopen settings';
     } else {
       try {
         await invoke('save_tile_zones', { text: tileZonesText });

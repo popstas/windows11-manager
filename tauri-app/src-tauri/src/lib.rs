@@ -874,8 +874,8 @@ fn describe_node_failure(output: &tauri_plugin_shell::process::Output) -> String
         return stderr;
     }
     match output.status.code() {
-        Some(code) => format!("команда узла завершилась с кодом {code}, без сообщения в stderr"),
-        None => "команда узла прервана сигналом, без сообщения в stderr".to_string(),
+        Some(code) => format!("node command exited with code {code}, nothing in stderr"),
+        None => "node command killed by a signal, nothing in stderr".to_string(),
     }
 }
 
