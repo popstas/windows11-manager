@@ -1,6 +1,7 @@
 /** Pure helper functions for the claude-wt tracker. No external I/O. */
 import { upsertSlot } from './state-helpers.js';
 import { clampBoundsToMonitors } from '../geometry.js';
+import { isMinimized as isMinimizedBounds } from '../windows-helpers.js';
 
 /**
  * Follow one window's title across ticks. A title becomes "stable" only after
@@ -69,22 +70,21 @@ function resolveSession(title, sessionIndex, slots) {
 const DEFAULTS = { stableTicks: 2, moveTimeoutMs: 5000, minimizedX: -10000 };
 
 /**
- * Свёрнуто ли окно.
+ * Свёрнуто ли окно — то же правило, что у расстановки, фокуса и раскладки.
  *
- * Windows не сообщает этого полем — свёрнутое окно уезжает координатами за
- * левый край мира (обычно -32000), и признак у нас всегда был именно такой.
- * Правило вынесено из `step` ради второго читателя: публикуемый файл окон
- * тоже обязан называть свёрнутость, а вторая копия сравнения разошлась бы с
- * первой молча — тик продолжал бы пропускать окно при расстановке, а читатель
- * на той стороне показывал бы его обычным.
+ * Обёртка, а не копия: само сравнение живёт в `windows-helpers.js`, здесь
+ * только развёртка окна в границы, потому что тик и файл окон держат окно
+ * целиком, а те трое — одни границы. Второй экземпляр сравнения разошёлся бы
+ * с первым молча — тик продолжал бы пропускать окно при расстановке, а
+ * читатель на той стороне показывал бы его обычным; ровно так и сломался
+ * фокус, когда в windows.js стоял свой порог.
  *
  * Окно без границ читается как обычное: «не знаю» дороже ошибиться в сторону
  * гашения — погашенная строка у открытого окна заметнее, чем негашёная у
  * свёрнутого.
  */
 function isMinimized(win, minimizedX = DEFAULTS.minimizedX) {
-  const x = win?.bounds?.x;
-  return Number.isFinite(x) && x < minimizedX;
+  return isMinimizedBounds(win?.bounds, minimizedX);
 }
 
 // A window never comes back from setBounds() at exactly the size it was asked

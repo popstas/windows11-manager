@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { trackTitle, titleWinnerIds, resolveSession } from './tracker-helpers.js';
+import { trackTitle, titleWinnerIds, resolveSession, isMinimized } from './tracker-helpers.js';
+import { isMinimized as isMinimizedBounds } from '../windows-helpers.js';
 
 const win = (over = {}) => ({ id: 1, title: 'ccfzf', bounds: { x: 0, y: 0, width: 800, height: 600 }, ...over });
 
@@ -532,5 +533,34 @@ describe('step lastLayout', () => {
     ];
     const out = run([w, w], { state, sessionIndex: {} });
     expect(out.nextState.lastLayout).toEqual(['a1']);
+  });
+});
+
+describe('isMinimized (обёртка трекера)', () => {
+  // Сторож против второго экземпляра правила. Здесь их и было два: трекер
+  // сравнивал сам, расстановка — своей функцией, и разъезд был бы молчаливым.
+  // Ровно так сломался фокус: в windows.js стоял свой порог -30000 против
+  // измеренной парковки -20480, и restore() не звался никогда.
+  it('отвечает то же, что общая проверка границ', () => {
+    const cases = [
+      { x: -20480, y: -20480, width: 127, height: 21 },
+      { x: -32000, y: -32000, width: 1200, height: 800 },
+      { x: -1920, y: 0, width: 1200, height: 800 },
+      { x: 0, y: 0, width: 1200, height: 800 },
+    ];
+    for (const bounds of cases) {
+      expect(isMinimized({ id: 1, bounds })).toBe(isMinimizedBounds(bounds));
+    }
+  });
+
+  it('окно без границ обычное с обеих сторон', () => {
+    expect(isMinimized({ id: 1 })).toBe(false);
+    expect(isMinimizedBounds(undefined)).toBe(false);
+  });
+
+  it('порог можно задать, и он доезжает до общей проверки', () => {
+    const bounds = { x: -15000, y: 0, width: 100, height: 100 };
+    expect(isMinimized({ id: 1, bounds }, -30000)).toBe(false);
+    expect(isMinimized({ id: 1, bounds }, -10000)).toBe(true);
   });
 });
