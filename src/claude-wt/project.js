@@ -3,6 +3,7 @@ import { focusWindowById, getActiveWindowId, getWindowById, getWindows } from '.
 import { placeWindowByConfig } from '../placement.js';
 import { getMonitorByPoint } from '../monitors.js';
 import { toWindowSpace } from '../claude-layout-helpers.js';
+import { markNoAutoplace } from '../no-autoplace.js';
 import { virtualDesktop } from '../virtual-desktop.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { claudeWtSessions } from './view.js';
@@ -181,6 +182,10 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
  */
 function cursorRule({ win, cursor, slot, monitorAt = getMonitorByPoint }) {
   const mon = monitorAt(cursor);
+  // `isPrimary()` есть у настоящего монитора; отсутствие метода читается как
+  // «главный», то есть как отказ от пометки — сторона осторожная: лишняя
+  // пометка выключила бы человеку расстановку там, где он её ждёт.
+  const primary = !mon?.isPrimary || mon.isPrimary();
   const area = mon && toWindowSpace(
     mon.getWorkArea ? mon.getWorkArea() : mon.bounds,
     mon.getScaleFactor ? mon.getScaleFactor() : 1,
@@ -194,7 +199,30 @@ function cursorRule({ win, cursor, slot, monitorAt = getMonitorByPoint }) {
   const at = centerOnMonitor(area, size);
   const rule = { window: win.id, x: at.x, y: at.y, width: size.width, height: size.height };
   console.log(`[claude-wt] cursor ${cursor.x},${cursor.y} -> ${JSON.stringify(rule)}`);
-  return rule;
+  return { rule, primary };
+}
+
+/**
+ * Поставить окно по правилу и, если экран не главный, закрыть его от автоматики.
+ *
+ * Пометка только для неглавного экрана — так просил человек, и оговорка не
+ * лишняя: на главном экране правила из `config.windows` и память слотов делают
+ * ровно то, чего от них ждут, а выключенная там расстановка выглядела бы
+ * поломкой конфига.
+ *
+ * Ставится **после** удачной постановки: помеченное, но не переехавшее окно
+ * осталось бы и на прежнем месте, и без расстановки — худшее из двух.
+ */
+async function placeByCursor(target, place, what) {
+  if (!target) return false;
+  try {
+    await place(target.rule);
+  } catch (e) {
+    console.error(`[claude-wt] failed to place ${what}: ${e.message}`);
+    return false;
+  }
+  if (!target.primary) markNoAutoplace(target.rule.window);
+  return true;
 }
 
 /**
@@ -205,15 +233,7 @@ function cursorRule({ win, cursor, slot, monitorAt = getMonitorByPoint }) {
  */
 async function placeAtCursor(win, cursor, deps = {}) {
   const { place = placeWindowByConfig, monitorAt = getMonitorByPoint } = deps;
-  const rule = cursorRule({ win, cursor, slot: null, monitorAt });
-  if (!rule) return false;
-  try {
-    await place(rule);
-  } catch (e) {
-    console.error(`[claude-wt] failed to place a new window: ${e.message}`);
-    return false;
-  }
-  return true;
+  return placeByCursor(cursorRule({ win, cursor, slot: null, monitorAt }), place, 'a new window');
 }
 
 async function placeSpawnedWindow(win, title, mark = noTiming, cursor = null, deps = {}) {
@@ -237,19 +257,14 @@ async function placeSpawnedWindow(win, title, mark = noTiming, cursor = null, de
   //
   // Размер при этом остаётся от слота, если слот есть: переезд на соседний
   // экран — это про экран, а не про то, чтобы забыть, каким окно было.
-  const rule = cursor
+  const target = cursor
     ? cursorRule({ win, cursor, slot, monitorAt })
-    : slot?.bounds && { window: win.id, ...slot.bounds };
-  if (!rule) return null;
-  if (slot?.desktop) rule.desktop = slot.desktop;
-  try {
-    await place(rule);
-  } catch (e) {
-    console.error(`[claude-wt] failed to place ${title}: ${e.message}`);
-    return null;
-  }
+    : slot?.bounds && { rule: { window: win.id, ...slot.bounds }, primary: true };
+  if (!target) return null;
+  if (slot?.desktop) target.rule.desktop = slot.desktop;
+  if (!(await placeByCursor(target, place, title))) return null;
   mark('place');
-  return rule.desktop ?? null;
+  return target.rule.desktop ?? null;
 }
 
 /**

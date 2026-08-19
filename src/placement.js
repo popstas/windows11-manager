@@ -7,6 +7,7 @@ import { virtualDesktop } from './virtual-desktop.js';
 import { adjustBoundsForScale } from './scale.js';
 import { isBoundsMatch } from './geometry.js';
 import { parsePosFromRule, desktopPolicy } from './placement-helpers.js';
+import { noAutoplaceIds } from './no-autoplace.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -283,7 +284,12 @@ let placeNewWindowsIntervalId = null;
  * поднял бы заново только демона, но не эту службу.
  */
 async function placeNewWindowIds(newIds) {
-  const newIdSet = new Set(newIds);
+  // Окно, поставленное по просьбе с точкой курсора, правилам из `config.windows`
+  // не отдаётся: правило подобрано по заголовку или пути, то есть про «человек
+  // просил именно этот экран» оно не знает ничего, а приходит позже нас —
+  // таймер тикает раз в 1500 мс с задержкой ещё в секунду.
+  const pinned = noAutoplaceIds();
+  const newIdSet = new Set(newIds.filter(id => !pinned.has(id)));
   const winsToPlace = getWindows().filter(w => newIdSet.has(w.id));
   if (winsToPlace.length === 0) return;
   verboseLogFileOnly(`Autoplacer: placing ${winsToPlace.length} window(s): ${winsToPlace.map(w => w.title || path.basename(w.path)).join(', ')}`);

@@ -2,6 +2,7 @@ import os from 'node:os';
 import { getConfig } from '../config.js';
 import { getVisibleWindowIds, getWindowById, getActiveWindowId, focusWindowById } from '../windows.js';
 import { placeWindowByConfig } from '../placement.js';
+import { noAutoplaceIds } from '../no-autoplace.js';
 import { getWindowsMonitors } from '../monitors.js';
 import { virtualDesktop } from '../virtual-desktop.js';
 import { loadSessionIndex, loadBackgroundAgents } from './sessions.js';
@@ -166,6 +167,10 @@ async function claudeWtTick(tickGen = null) {
     state: liveState,
     monitors,
     now: Date.now(),
+    // Окна, поставленные намеренно (просьба открыть сессию на экране под
+    // курсором). Читается каждый тик, а не запоминается: пишет пометки другой
+    // процесс — служба MQTT, — и запомненный список не узнал бы о новой.
+    noAutoplace: noAutoplaceIds(),
     options: { stableTicks: cfg.stableTicks },
   });
   prevWindows = nextWindows;

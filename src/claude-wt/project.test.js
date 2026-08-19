@@ -175,7 +175,7 @@ describe('cursorRule', () => {
       cursor: { x: 2000, y: 100 },
       slot: null,
       monitorAt: () => MON,
-    })).toEqual({ window: 77, x: 1920 + 780, y: 320, width: 1000, height: 800 });
+    }).rule).toEqual({ window: 77, x: 1920 + 780, y: 320, width: 1000, height: 800 });
   });
 
   it('слот отдаёт размер, но не место: экран называет курсор', () => {
@@ -188,7 +188,7 @@ describe('cursorRule', () => {
       slot: { bounds: { x: -1920, y: 0, width: 1200, height: 900 } },
       monitorAt: () => MON,
     });
-    expect(rule).toEqual({ window: 77, x: 1920 + 680, y: 270, width: 1200, height: 900 });
+    expect(rule.rule).toEqual({ window: 77, x: 1920 + 680, y: 270, width: 1200, height: 900 });
   });
 
   it('размер назван всегда — иначе переезд между экранами потерял бы масштаб', () => {
@@ -199,8 +199,8 @@ describe('cursorRule', () => {
       slot: null,
       monitorAt: () => MON,
     });
-    expect(rule.width).toBe(1000);
-    expect(rule.height).toBe(800);
+    expect(rule.rule.width).toBe(1000);
+    expect(rule.rule.height).toBe(800);
   });
 
   it('рабочая область переводится в пространство окна, а не берётся как есть', () => {
@@ -215,7 +215,7 @@ describe('cursorRule', () => {
       monitorAt: () => mon({ x: 0, y: 0, width: 2893, height: 1728 }, 1.25),
     });
     // 2893/1.25 = 2314, 1728/1.25 = 1382 — и центр считается уже в них.
-    expect(rule).toEqual({ window: 77, x: 657, y: 291, width: 1000, height: 800 });
+    expect(rule.rule).toEqual({ window: 77, x: 657, y: 291, width: 1000, height: 800 });
   });
 
   it('центр считается по рабочей области, а не по полным границам', () => {
@@ -231,7 +231,28 @@ describe('cursorRule', () => {
         getScaleFactor: () => 1,
       }),
     });
-    expect(rule.y).toBe(100);
+    expect(rule.rule.y).toBe(100);
+  });
+
+  it('главный экран отличается от прочих — на нём пометки не будет', () => {
+    // Пометка выключает окну автоматику, и на главном экране это выглядело бы
+    // поломкой конфига: правила из `config.windows` там делают ровно то, чего
+    // от них ждут. Отсутствие `isPrimary` читается как «главный» — сторона
+    // осторожная.
+    const at = (isPrimary) => cursorRule({
+      win: win({ x: 0, y: 0, width: 1000, height: 800 }),
+      cursor: { x: 2000, y: 100 },
+      slot: null,
+      monitorAt: () => ({ ...MON, isPrimary: () => isPrimary }),
+    }).primary;
+    expect(at(true)).toBe(true);
+    expect(at(false)).toBe(false);
+    expect(cursorRule({
+      win: win({ x: 0, y: 0, width: 1000, height: 800 }),
+      cursor: { x: 2000, y: 100 },
+      slot: null,
+      monitorAt: () => MON,
+    }).primary).toBe(true);
   });
 
   it('точка вне известных мониторов не ставит окно наугад', () => {

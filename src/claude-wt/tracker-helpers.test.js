@@ -94,11 +94,11 @@ const bounds = (x, y) => ({ x, y, width: 800, height: 600 });
 const index = { ccfzf: { id: 'a1', cwd: '/p', title: 'ccfzf', ambiguous: false } };
 
 // Прогоняет тики, пока заголовок не станет стабильным, и отдаёт последний результат.
-function run(ticks, { state = emptyState(), sessionIndex = index, options, monitors } = {}) {
+function run(ticks, { state = emptyState(), sessionIndex = index, options, monitors, noAutoplace } = {}) {
   let prevWindows = [];
   let out = { nextWindows: [], actions: [], bindings: [], nextState: state };
   ticks.forEach((windows, i) => {
-    out = step({ prevWindows, windows, sessionIndex, state: out.nextState, now: 1000 + i * 1000, options, monitors });
+    out = step({ prevWindows, windows, sessionIndex, state: out.nextState, now: 1000 + i * 1000, options, monitors, noAutoplace });
     prevWindows = out.nextWindows;
   });
   return out;
@@ -119,6 +119,46 @@ describe('step', () => {
     const session = [{ id: 1, title: 'ccfzf', bounds: bounds(0, 0) }];
     const out = run([shell, shell, session, session], { state });
     expect(out.actions).toEqual([{ windowId: 1, bounds: bounds(500, 500), desktop: 2 }]);
+  });
+
+  it('окно, поставленное намеренно, не тащится на запомненное место', () => {
+    // Пикер попросил открыть сессию на экране под курсором, менеджер окно туда
+    // и поставил. Тик, увидев знакомую сессию со слотом, утащил бы его назад —
+    // человек видел бы прыжок через секунду после открытия.
+    const state = { ...emptyState(), slots: { a1: upsertSlot(undefined, { title: 'ccfzf', bounds: bounds(500, 500), desktop: 2, now: 1 }) } };
+    const shell = [{ id: 1, title: 'popstas@pc-virt: ~', bounds: bounds(0, 0) }];
+    const session = [{ id: 1, title: 'ccfzf', bounds: bounds(3000, 100) }];
+    const out = run([shell, shell, session, session], { state, noAutoplace: new Set([1]) });
+    expect(out.actions).toEqual([]);
+  });
+
+  it('и слот у такого окна переписывается сегодняшним местом', () => {
+    // Только пропустить перенос было бы полумерой: пометка живёт минуту, слот
+    // вечно, и по истечении срока окно уехало бы туда же, откуда его спасали.
+    const state = { ...emptyState(), slots: { a1: upsertSlot(undefined, { title: 'ccfzf', bounds: bounds(500, 500), desktop: 2, now: 1 }) } };
+    const shell = [{ id: 1, title: 'popstas@pc-virt: ~', bounds: bounds(0, 0) }];
+    const session = [{ id: 1, title: 'ccfzf', bounds: bounds(3000, 100) }];
+    const out = run([shell, shell, session, session], { state, noAutoplace: new Set([1]) });
+    expect(out.nextState.slots.a1.bounds).toEqual(bounds(3000, 100));
+  });
+
+  it('пометка на чужом hwnd ничего не меняет', () => {
+    // Windows переиспользует hwnd, и пометка обязана действовать адресно.
+    const state = { ...emptyState(), slots: { a1: upsertSlot(undefined, { title: 'ccfzf', bounds: bounds(500, 500), desktop: 2, now: 1 }) } };
+    const shell = [{ id: 1, title: 'popstas@pc-virt: ~', bounds: bounds(0, 0) }];
+    const session = [{ id: 1, title: 'ccfzf', bounds: bounds(0, 0) }];
+    const out = run([shell, shell, session, session], { state, noAutoplace: new Set([42]) });
+    expect(out.actions).toEqual([{ windowId: 1, bounds: bounds(500, 500), desktop: 2 }]);
+  });
+
+  it('свёрнутое помеченное окно не портит слот своими координатами', () => {
+    // У свёрнутого x = -32000, и такой слот стал бы памятью ни о чём.
+    const state = { ...emptyState(), slots: { a1: upsertSlot(undefined, { title: 'ccfzf', bounds: bounds(500, 500), desktop: 2, now: 1 }) } };
+    const shell = [{ id: 1, title: 'popstas@pc-virt: ~', bounds: bounds(0, 0) }];
+    const session = [{ id: 1, title: 'ccfzf', bounds: bounds(-32000, -32000) }];
+    const out = run([shell, shell, session, session], { state, noAutoplace: new Set([1]) });
+    expect(out.actions).toEqual([]);
+    expect(out.nextState.slots.a1.bounds).toEqual(bounds(500, 500));
   });
 
   it('records a position the user dragged the window to', () => {
