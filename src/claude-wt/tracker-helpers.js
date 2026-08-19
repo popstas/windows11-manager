@@ -68,6 +68,25 @@ function resolveSession(title, sessionIndex, slots) {
 
 const DEFAULTS = { stableTicks: 2, moveTimeoutMs: 5000, minimizedX: -10000 };
 
+/**
+ * Свёрнуто ли окно.
+ *
+ * Windows не сообщает этого полем — свёрнутое окно уезжает координатами за
+ * левый край мира (обычно -32000), и признак у нас всегда был именно такой.
+ * Правило вынесено из `step` ради второго читателя: публикуемый файл окон
+ * тоже обязан называть свёрнутость, а вторая копия сравнения разошлась бы с
+ * первой молча — тик продолжал бы пропускать окно при расстановке, а читатель
+ * на той стороне показывал бы его обычным.
+ *
+ * Окно без границ читается как обычное: «не знаю» дороже ошибиться в сторону
+ * гашения — погашенная строка у открытого окна заметнее, чем негашёная у
+ * свёрнутого.
+ */
+function isMinimized(win, minimizedX = DEFAULTS.minimizedX) {
+  const x = win?.bounds?.x;
+  return Number.isFinite(x) && x < minimizedX;
+}
+
 // A window never comes back from setBounds() at exactly the size it was asked
 // for on a scaled monitor: node-window-manager multiplies by the scale factor
 // and floors going in, divides and floors coming out, so 602 px at 125% is read
@@ -113,7 +132,7 @@ function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, o
   for (const win of windows) {
     const before = prev.get(win.id);
     const tracked = trackTitle(before, win, stableTicks);
-    const minimized = win.bounds.x < minimizedX;
+    const minimized = isMinimized(win, minimizedX);
     const titleChanged = tracked.stableTitle !== (before?.stableTitle ?? null);
     // Twin titles: only the largest hwnd may own the session. An older window
     // that was already bound must release — otherwise both would rewrite one slot.
@@ -246,4 +265,4 @@ function step({ prevWindows = [], windows = [], sessionIndex = {}, state, now, o
   };
 }
 
-export { trackTitle, titleWinnerIds, resolveSession, step, boundsEqual };
+export { trackTitle, titleWinnerIds, resolveSession, step, boundsEqual, isMinimized };

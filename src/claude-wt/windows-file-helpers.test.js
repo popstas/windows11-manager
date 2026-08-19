@@ -33,7 +33,7 @@ describe('buildWindowsFile', () => {
     });
     expect(out.windows.aaa).toEqual({
       title: 'ccfzf-picker', desktop: 2, lastSeen: 1700, focusedAt: 1650,
-      app: 'WindowsTerminal.exe',
+      app: 'WindowsTerminal.exe', minimized: false,
     });
   });
 
@@ -63,6 +63,32 @@ describe('buildWindowsFile', () => {
     expect(older.windows.aaa.app).toBe('');
   });
 
+  // Свёрнутость окна знает только трекер: у читателя окон нет вовсе, а нужна
+  // она ему затем, чтобы гасить строку и не звать её в раскладку. Правило
+  // свёрнутости здесь не своё, а то же самое, по которому её пропускает сам
+  // тик (`isMinimized` в tracker-helpers): вторая копия разошлась бы с первой
+  // молча — трекер продолжал бы игнорировать окно при расстановке, а список у
+  // читателя показывал бы его обычным.
+  it('publishes whether the window is minimized, by the tracker rule', () => {
+    const windows = [
+      { title: 'hidden', sessionId: 'aaa', bounds: { x: -32000, y: -32000, width: 800, height: 600 } },
+      { title: 'shown', sessionId: 'bbb', bounds: { x: 100, y: 100, width: 800, height: 600 } },
+    ];
+    const out = buildWindowsFile({ windows, slots: SLOTS, host: 'pc', pid: 1, nowMs: 0 });
+    expect(out.windows.aaa.minimized).toBe(true);
+    expect(out.windows.bbb.minimized).toBe(false);
+  });
+
+  // Окно без границ приходит из тестов и из старого состояния; «не знаю» обязано
+  // читаться как «окно обычное»: гашёная строка у открытого окна дороже, чем
+  // негашёная у свёрнутого.
+  it('reads a window without bounds as an ordinary one', () => {
+    const out = buildWindowsFile({
+      windows: [{ title: 'x', sessionId: 'aaa' }], slots: SLOTS, host: 'pc', pid: 1, nowMs: 0,
+    });
+    expect(out.windows.aaa.minimized).toBe(false);
+  });
+
   it('carries host, pid and a generated stamp in seconds', () => {
     const out = buildWindowsFile({
       windows: [], slots: {}, host: 'pc', pid: 42, nowMs: 1_800_500,
@@ -75,7 +101,7 @@ describe('buildWindowsFile', () => {
       windows: [{ title: 'fresh', sessionId: 'zzz' }], slots: {}, host: 'pc', pid: 1, nowMs: 0,
     });
     expect(out.windows.zzz).toEqual({
-      title: 'fresh', desktop: null, lastSeen: 0, focusedAt: 0, app: '',
+      title: 'fresh', desktop: null, lastSeen: 0, focusedAt: 0, app: '', minimized: false,
     });
   });
 
@@ -105,6 +131,15 @@ describe('windowsFingerprint', () => {
   it('notices a fresh focus stamp', () => {
     const base = { one: { desktop: 1, title: 'x', focusedAt: 100 } };
     expect(windowsFingerprint({ one: { desktop: 1, title: 'x', focusedAt: 200 } }))
+      .not.toBe(windowsFingerprint(base));
+  });
+
+  // Без этого свёрнутое окно доезжало бы до читателя только сердцебиением, до
+  // тридцати секунд: человек убрал окно в панель задач, а строка в чужом
+  // списке ещё полминуты стоит яркой.
+  it('notices a window that has just been minimized', () => {
+    const base = { one: { desktop: 1, title: 'x', minimized: false } };
+    expect(windowsFingerprint({ one: { desktop: 1, title: 'x', minimized: true } }))
       .not.toBe(windowsFingerprint(base));
   });
 
