@@ -1,7 +1,7 @@
 import { windowManager, addon, Window } from 'node-window-manager';
 import { getConfig } from './config.js';
 import { getAppFromPath, isWindowMatchRule } from './window-match.js';
-import { matchRules, isWindowExcluded } from './windows-helpers.js';
+import { matchRules, isWindowExcluded, isMinimized } from './windows-helpers.js';
 
 const EXCLUDED_TITLES = [
   'Default IME',
@@ -40,21 +40,26 @@ function getWindowById(id) {
   return w.isWindow() ? w : null;
 }
 
-// Windows parks minimized windows at x = -32000. restore() un-maximizes a
-// maximized window, so it must only be called for one that is actually
-// minimized.
-const MINIMIZED_X = -30000;
-
 /**
  * Bring a window to the foreground, un-minimizing it first if needed.
+ *
+ * Признак свёрнутого — общая isMinimized(), а не свой порог. Прежде здесь
+ * стояло -30000 «потому что Windows паркует на -32000», и это оказалось
+ * неправдой: замер на popstas-pc 19.08.2026 показал -20480, то есть условие не
+ * срабатывало никогда. restore() не звался, оставался голый bringToTop(), и
+ * свёрнутое окно выходило на передний план свёрнутым — нажатие на сессию в
+ * пикере и на панели выглядело как «ничего не происходит». Порог -10000 из
+ * isMinimized() ловит обе парковки и не задевает монитор слева от главного.
+ *
+ * Проверка нужна по-прежнему: restore() разворачивает и развёрнутое на весь
+ * экран окно, а звать его на каждый фокус значило бы отменять максимизацию.
  *
  * Consumers used to call a `focusWindow` that this package never defined.
  */
 function focusWindowById(id) {
   const w = getWindowById(id);
   if (!w) return false;
-  const bounds = w.getBounds();
-  if (bounds && bounds.x <= MINIMIZED_X) w.restore();
+  if (isMinimized(w.getBounds())) w.restore();
   w.bringToTop();
   return true;
 }
