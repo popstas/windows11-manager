@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { focusWindowById, getActiveWindowId, getWindowById, getWindows } from '../windows.js';
 import { placeWindowByConfig } from '../placement.js';
+import { getMonitorByPoint } from '../monitors.js';
 import { virtualDesktop } from '../virtual-desktop.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { claudeWtSessions } from './view.js';
@@ -8,7 +9,7 @@ import { readState } from './state.js';
 import { loadSessionIndex } from './sessions.js';
 import { resolveSession } from './tracker-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
-import { pickOpenProjectSession, planLaunchNew, planWtLaunch, profileForTerminal, sessionNameFor } from './project-helpers.js';
+import { centerOnMonitor, pickOpenProjectSession, planLaunchNew, planWtLaunch, profileForTerminal, sessionNameFor } from './project-helpers.js';
 import { chooseTerminal } from './terminal-helpers.js';
 import { waitForNewWindow } from './restore.js';
 import { startTiming, noTiming } from './timing.js';
@@ -147,7 +148,57 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
  * `null`. Зовущий передаёт его фокусу, и тот не спрашивает у Windows то, что
  * мы только что сами и сделали.
  */
-async function placeSpawnedWindow(win, title, mark = noTiming) {
+/**
+ * Правило постановки окна на экран под курсором — или `null`.
+ *
+ * Точку в монитор переводит тот же `getMonitorByPoint`, каким это делают
+ * раскладки: пикер номера экрана не называет и назвать не может — нумераций у
+ * нас три сразу (своя в конфиге, hMonitor и FancyZones), и договариваться о
+ * какой-то одной через два репозитория значило бы завести расхождение, которое
+ * не видно ниоткуда. Точка же однозначна.
+ *
+ * Незнакомая точка — `null`, а не главный монитор: она означает, что конфиг
+ * мониторов разошёлся с тем, что видит пикер, и ставить окно наугад тут хуже,
+ * чем оставить его там, куда его положил терминал.
+ *
+ * Размер: от слота, если тот помнит, иначе тот, с которым окно открылось. Без
+ * `width`/`height` в правиле `placeWindow` подставил бы их сам из старых
+ * границ, но тогда переезд между экранами с разным масштабом остался бы без
+ * поправки (`adjustBoundsForScale` смотрит на то, назван ли размер).
+ */
+function cursorRule({ win, cursor, slot, monitorAt = getMonitorByPoint }) {
+  const mon = monitorAt(cursor);
+  if (!mon?.bounds) {
+    console.error(`[claude-wt] no monitor at ${cursor.x},${cursor.y}`);
+    return null;
+  }
+  const size = slot?.bounds ?? win.getBounds();
+  if (!size?.width || !size?.height) return null;
+  const at = centerOnMonitor(mon.bounds, size);
+  return { window: win.id, x: at.x, y: at.y, width: size.width, height: size.height };
+}
+
+/**
+ * Поставить окно на экран под курсором — без всякой памяти о прежнем месте.
+ *
+ * Отдельно от `placeSpawnedWindow` ровно потому, что та начинает с поиска
+ * слота, а здесь искать нечего.
+ */
+async function placeAtCursor(win, cursor, deps = {}) {
+  const { place = placeWindowByConfig, monitorAt = getMonitorByPoint } = deps;
+  const rule = cursorRule({ win, cursor, slot: null, monitorAt });
+  if (!rule) return false;
+  try {
+    await place(rule);
+  } catch (e) {
+    console.error(`[claude-wt] failed to place a new window: ${e.message}`);
+    return false;
+  }
+  return true;
+}
+
+async function placeSpawnedWindow(win, title, mark = noTiming, cursor = null, deps = {}) {
+  const { place = placeWindowByConfig, monitorAt = getMonitorByPoint } = deps;
   let slot = null;
   try {
     const cfg = getClaudeWtConfig();
@@ -159,11 +210,21 @@ async function placeSpawnedWindow(win, title, mark = noTiming) {
     console.error(`[claude-wt] no remembered place for ${title}: ${e.message}`);
   }
   mark('slot');
-  if (!slot?.bounds) return null;
-  const rule = { window: win.id, ...slot.bounds };
-  if (slot.desktop) rule.desktop = slot.desktop;
+  // Курсор главнее памяти о месте, и это решение. Слот — где окно этой сессии
+  // стояло когда-то; курсор — куда человек попросил прямо сейчас, включив
+  // галку и поставив мышь. Явная сегодняшняя просьба обязана перебивать
+  // вчерашнюю неявную, иначе галка работала бы только у сессий, которых эта
+  // машина ещё не видела, — то есть через раз и необъяснимо.
+  //
+  // Размер при этом остаётся от слота, если слот есть: переезд на соседний
+  // экран — это про экран, а не про то, чтобы забыть, каким окно было.
+  const rule = cursor
+    ? cursorRule({ win, cursor, slot, monitorAt })
+    : slot?.bounds && { window: win.id, ...slot.bounds };
+  if (!rule) return null;
+  if (slot?.desktop) rule.desktop = slot.desktop;
   try {
-    await placeWindowByConfig(rule);
+    await place(rule);
   } catch (e) {
     console.error(`[claude-wt] failed to place ${title}: ${e.message}`);
     return null;
@@ -203,6 +264,7 @@ async function focusSpawnedWindow(title, deps = {}) {
     settleMs = settleMsFromConfig(),
     place = placeSpawnedWindow,
     mark = noTiming,
+    cursor = null,
   } = deps;
   const deadline = now() + waitMs;
   let w = findWindow(title);
@@ -220,7 +282,7 @@ async function focusSpawnedWindow(title, deps = {}) {
   // Место — раньше фокуса: окно, которое сначала получает ввод, а через
   // секунду прыгает в свою геометрию, человек читает как «открылось только
   // сейчас», и вся экономия предыдущих звеньев пропадает зря.
-  const desktop = await place(w, title, mark);
+  const desktop = await place(w, title, mark, cursor);
   return focus(w.id, mark, desktop);
 }
 
@@ -245,6 +307,8 @@ async function focusNewTerminalWindow(knownIds, deps = {}) {
     waitMs = WINDOW_WAIT_MS,
     settleMs = settleMsFromConfig(),
     mark = noTiming,
+    cursor = null,
+    placeAt = placeAtCursor,
   } = deps;
   const win = await waitForWindow(knownIds, waitMs);
   if (!win) {
@@ -254,6 +318,12 @@ async function focusNewTerminalWindow(knownIds, deps = {}) {
   mark('window');
   await wait(settleMs);
   mark('settle');
+  // Не `placeSpawnedWindow`: та начинает с поиска слота по заголовку, а
+  // заголовка здесь нет вовсе (его ставит уже сам `claude` на той стороне
+  // ssh) — и поиск сходил бы на сетевой диск за списком сессий ради
+  // заведомого промаха. Слота у такой сессии и не бывает: эта машина видит
+  // её впервые.
+  if (cursor) await placeAt(win, cursor);
   return focus(win.id, mark);
 }
 
@@ -282,7 +352,7 @@ async function focusNewTerminalWindow(knownIds, deps = {}) {
  * Зависимости — вторым аргументом: без них проверять пришлось бы настоящим
  * запуском терминала.
  */
-async function resumeClaudeSession({ id, cwd = '', terminal } = {}, deps = {}) {
+async function resumeClaudeSession({ id, cwd = '', terminal, cursor = null } = {}, deps = {}) {
   const {
     cfg = getClaudeWtConfig(),
     spawnProcess = spawn,
@@ -317,7 +387,7 @@ async function resumeClaudeSession({ id, cwd = '', terminal } = {}, deps = {}) {
   // Хвостом, как у `openClaudeProject`, и `.catch()` по той же причине:
   // необработанное отклонение роняет процесс, в котором живут экспорт в Home
   // Assistant и сторож демона.
-  focusNew(known, { ...deps, mark }).catch((e) => {
+  focusNew(known, { ...deps, mark, cursor }).catch((e) => {
     console.error(`[claude-wt] failed to focus ${sessionId}: ${e.message}`);
   });
   return { ok: true, action: 'resume', sessionId };
@@ -340,10 +410,10 @@ async function resumeClaudeSession({ id, cwd = '', terminal } = {}, deps = {}) {
  * или свёрнутым. Найденное окно (обе ветки `focus*`) поднимается на месте:
  * там ждать нечего, окно уже стоит там, где стояло.
  *
- * @param {{ cwd: string, name: string, profile?: string, reuseOpen?: boolean, terminal?: string }} opts
+ * @param {{ cwd: string, name: string, profile?: string, reuseOpen?: boolean, terminal?: string, cursor?: {x: number, y: number} | null }} opts
  * @returns {Promise<{ ok: boolean, action?: string, reason?: string, sessionId?: string, sessionName?: string }>}
  */
-async function openClaudeProject({ cwd, name, profile, reuseOpen = true, terminal } = {}) {
+async function openClaudeProject({ cwd, name, profile, reuseOpen = true, terminal, cursor = null } = {}) {
   if (typeof cwd !== 'string' || !cwd || typeof name !== 'string' || !name) {
     return { ok: false, reason: 'cwd and name are required' };
   }
@@ -413,10 +483,16 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
   // вернуться сразу — её ждёт обработчик MQTT, который пишет в журнал исход.
   // `.catch()` обязателен: необработанное отклонение в node 22 роняет процесс
   // целиком, а в нём же живут экспорт в Home Assistant и сторож демона.
-  focusSpawnedWindow(sessionName, { mark }).catch((e) => {
+  // Курсор доезжает сюда из тела просьбы: экран для нового окна называет
+  // пикер — он один знает, где сейчас смотрит человек. Ветки подъёма выше его
+  // не касаются вовсе: просьба про новое окно, а уже открытое никуда не едет.
+  focusSpawnedWindow(sessionName, { mark, cursor }).catch((e) => {
     console.error(`[claude-wt] failed to focus ${sessionName}: ${e.message}`);
   });
   return { ok: true, action: 'spawn', cwd, name: sessionName, sessionName };
 }
 
-export { openClaudeProject, resumeClaudeSession, focusSpawnedWindow, focusNewTerminalWindow, focusTerminalWindow };
+// `cursorRule` вынесена в экспорт ради сторожа: поведением её не поймать —
+// правило уходит в `setBounds`, а окно на неверном экране видно только
+// глазами и только на машине с двумя мониторами.
+export { openClaudeProject, resumeClaudeSession, focusSpawnedWindow, focusNewTerminalWindow, focusTerminalWindow, cursorRule };

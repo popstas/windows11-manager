@@ -3,6 +3,8 @@ import {
   basenameOfCwd,
   sessionNameFor,
   pickOpenProjectSession,
+  parseCursorPoint,
+  centerOnMonitor,
   escapeForSingleQuoted,
   planWtLaunch,
   planLaunchNew,
@@ -302,5 +304,51 @@ describe('sessionNameFor', () => {
   it('без каталога остаётся имя — иначе сессия была бы безымянной', () => {
     // Безымянную сессию оконный трекер не найдёт по заголовку вовсе.
     expect(sessionNameFor({ cwd: '', name: 'site-2' })).toBe('site-2');
+  });
+});
+
+describe('parseCursorPoint', () => {
+  it('берёт точку, включая нуль и минус', () => {
+    // Начало координат у главного монитора: экран слева от него весь в минусе,
+    // и отбрось мы отрицательные, галка не работала бы ровно на той половине
+    // стола, ради которой её и заводили.
+    expect(parseCursorPoint({ x: 2560, y: 300 })).toEqual({ x: 2560, y: 300 });
+    expect(parseCursorPoint({ x: -1920, y: 0 })).toEqual({ x: -1920, y: 0 });
+  });
+
+  it('мусор из чужого тела не доезжает до setBounds', () => {
+    // Тело пишет пикер на другой машине. Строка или NaN здесь означали бы окно,
+    // поставленное неизвестно куда, и сказать об этом было бы некому: ответа у
+    // публикации нет.
+    expect(parseCursorPoint({ x: '10', y: 20 })).toBe(null);
+    expect(parseCursorPoint({ x: NaN, y: 20 })).toBe(null);
+    expect(parseCursorPoint({ x: Infinity, y: 0 })).toBe(null);
+    expect(parseCursorPoint({ x: 10 })).toBe(null);
+    expect(parseCursorPoint(null)).toBe(null);
+    expect(parseCursorPoint('10,20')).toBe(null);
+    expect(parseCursorPoint(undefined)).toBe(null);
+  });
+});
+
+describe('centerOnMonitor', () => {
+  it('ставит окно посреди названного экрана, а не в углу', () => {
+    // Угол — место, куда уже мог встать прошлый терминал, и стопка окон друг на
+    // друге читается как «ничего не открылось».
+    expect(centerOnMonitor({ x: 0, y: 0, width: 1920, height: 1080 }, { width: 920, height: 580 }))
+      .toEqual({ x: 500, y: 250 });
+  });
+
+  it('второй монитор начинается там, где начинается', () => {
+    expect(centerOnMonitor({ x: 1920, y: 0, width: 2560, height: 1440 }, { width: 1000, height: 800 }))
+      .toEqual({ x: 1920 + 780, y: 320 });
+    // И слева от главного — тоже: координаты там отрицательные.
+    expect(centerOnMonitor({ x: -1920, y: 0, width: 1920, height: 1080 }, { width: 920, height: 580 }))
+      .toEqual({ x: -1920 + 500, y: 250 });
+  });
+
+  it('окно больше экрана прижимается к его началу, а не уезжает за край', () => {
+    // За краем у окна терминала нечего хватать мышью.
+    expect(centerOnMonitor({ x: 0, y: 0, width: 1920, height: 1080 }, { width: 2400, height: 1200 }))
+      .toEqual({ x: 0, y: 0 });
   });
 });

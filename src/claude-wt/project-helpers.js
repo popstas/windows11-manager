@@ -145,8 +145,48 @@ function planLaunchNew({ launchNew, cwd, name, profile, terminal }) {
   return planWtLaunch({ launch: launchNew, vars: { cwd, name }, profile, terminal });
 }
 
+/**
+ * Точка курсора из тела просьбы — или `null`.
+ *
+ * Тело пишет чужая машина (пикер), поэтому поле просеивается, а не читается на
+ * веру: строка, `NaN` и бесконечность доехали бы до `setBounds` и поставили бы
+ * окно неизвестно куда, а сказать об этом было бы некому — ответа у публикации
+ * нет. `null` значит «ставь как ставил», и так же выглядит просьба пикера
+ * прежней версии да и просто выключенная у человека галка.
+ *
+ * Нуль и отрицательные — обычные значения, а не «пусто»: начало координат у
+ * главного монитора, и экран слева от него весь в минусе.
+ */
+function parseCursorPoint(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const { x, y } = raw;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
+}
+
+/**
+ * Где встать окну размера `size` на мониторе `monBounds`.
+ *
+ * Посередине, а не в углу: угол — это место, куда уже могли поставить прошлое
+ * окно, и стопка терминалов друг на друге читается как «ничего не открылось».
+ * Центр же виден сразу и не зависит от того, что на экране уже стоит.
+ *
+ * Окно шире или выше монитора прижимается к его началу: отрицательная доля
+ * увела бы его за край, а у окна терминала там нечего хватать мышью. То же
+ * правило и по той же причине, что у `center_axis` в пикере.
+ */
+function centerOnMonitor(monBounds, size) {
+  const axis = (start, span, want) => start + Math.max(0, Math.round((span - want) / 2));
+  return {
+    x: axis(monBounds.x, monBounds.width, size.width),
+    y: axis(monBounds.y, monBounds.height, size.height),
+  };
+}
+
 export {
   basenameOfCwd,
+  parseCursorPoint,
+  centerOnMonitor,
   sessionNameFor,
   pickOpenProjectSession,
   escapeForSingleQuoted,

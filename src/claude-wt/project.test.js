@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { focusSpawnedWindow, resumeClaudeSession } from './project.js';
+import { focusSpawnedWindow, focusNewTerminalWindow, resumeClaudeSession, cursorRule } from './project.js';
 
 /**
  * Часы и ожидание — подставные: настоящие четыре секунды паузы проверяли бы
@@ -152,5 +152,101 @@ describe('resumeClaudeSession', () => {
     });
     await resumeClaudeSession({ id: 'abc' }, h.deps);
     expect(h.spawned).toEqual([{ command: 'wt.exe', args: ['-w', '-1', 'ssh', 'abc'] }]);
+  });
+});
+
+/**
+ * Экран для нового окна называет пикер — точкой курсора в теле просьбы.
+ * Проверяется правило, а не постановка: `setBounds` на машине без Windows не
+ * зовётся, а ошибка «окно уехало не на тот экран» видна только глазами.
+ */
+describe('cursorRule', () => {
+  const MON = { bounds: { x: 1920, y: 0, width: 2560, height: 1440 } };
+  const win = (bounds) => ({ id: 77, getBounds: () => bounds });
+
+  it('без памяти о месте берёт размер у самого окна', () => {
+    expect(cursorRule({
+      win: win({ x: 0, y: 0, width: 1000, height: 800 }),
+      cursor: { x: 2000, y: 100 },
+      slot: null,
+      monitorAt: () => MON,
+    })).toEqual({ window: 77, x: 1920 + 780, y: 320, width: 1000, height: 800 });
+  });
+
+  it('слот отдаёт размер, но не место: экран называет курсор', () => {
+    // Слот — где окно стояло когда-то, курсор — куда человек попросил сейчас.
+    // Победи слот, галка работала бы только у сессий, которых эта машина ещё не
+    // видела: через раз и необъяснимо.
+    const rule = cursorRule({
+      win: win({ x: 0, y: 0, width: 300, height: 200 }),
+      cursor: { x: 2000, y: 100 },
+      slot: { bounds: { x: -1920, y: 0, width: 1200, height: 900 } },
+      monitorAt: () => MON,
+    });
+    expect(rule).toEqual({ window: 77, x: 1920 + 680, y: 270, width: 1200, height: 900 });
+  });
+
+  it('размер назван всегда — иначе переезд между экранами потерял бы масштаб', () => {
+    // `adjustBoundsForScale` смотрит именно на то, назван ли размер в правиле.
+    const rule = cursorRule({
+      win: win({ x: 0, y: 0, width: 1000, height: 800 }),
+      cursor: { x: 2000, y: 100 },
+      slot: null,
+      monitorAt: () => MON,
+    });
+    expect(rule.width).toBe(1000);
+    expect(rule.height).toBe(800);
+  });
+
+  it('точка вне известных мониторов не ставит окно наугад', () => {
+    // Значит конфиг мониторов разошёлся с тем, что видит пикер. Главный экран
+    // тут был бы худшим ответом: окно уехало бы с того, где смотрит человек.
+    expect(cursorRule({
+      win: win({ x: 0, y: 0, width: 1000, height: 800 }),
+      cursor: { x: 99999, y: 99999 },
+      slot: null,
+      monitorAt: () => undefined,
+    })).toBe(null);
+  });
+
+  it('окно без размеров не ставится: делить нечего', () => {
+    expect(cursorRule({
+      win: win({ x: 0, y: 0, width: 0, height: 0 }),
+      cursor: { x: 2000, y: 100 },
+      slot: null,
+      monitorAt: () => MON,
+    })).toBe(null);
+  });
+});
+
+describe('focusNewTerminalWindow и курсор', () => {
+  function deps(extra = {}) {
+    return {
+      waitForWindow: async () => ({ id: 33 }),
+      focus: async () => true,
+      wait: async () => {},
+      ...extra,
+    };
+  }
+
+  it('ставит окно на экран под курсором до фокуса', async () => {
+    const calls = [];
+    await focusNewTerminalWindow([], deps({
+      placeAt: async (win, cursor) => { calls.push(`place:${win.id}:${cursor.x}`); return true; },
+      focus: async (id) => { calls.push(`focus:${id}`); return true; },
+      cursor: { x: 2000, y: 100 },
+    }));
+    // Порядок тот же и по той же причине, что у `focusSpawnedWindow`: окно,
+    // получившее ввод раньше переезда, читается как «открылось только сейчас».
+    expect(calls).toEqual(['place:33:2000', 'focus:33']);
+  });
+
+  it('без курсора не ставит ничего — прежнее поведение', async () => {
+    const calls = [];
+    await focusNewTerminalWindow([], deps({
+      placeAt: async () => { calls.push('place'); return true; },
+      focus: async (id) => { calls.push(`focus:${id}`); return true; },
+    }));
+    expect(calls).toEqual(['focus:33']);
   });
 });
