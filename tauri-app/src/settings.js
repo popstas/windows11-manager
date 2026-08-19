@@ -26,6 +26,8 @@ async function loadSettings() {
     const settings = settingsResult.value;
     document.getElementById('project_path').value = settings.project_path;
     document.getElementById('autoplacer_interval').value = settings.autoplacer_interval;
+    document.getElementById('no_move_desktop').checked = settings.no_move_desktop;
+    document.getElementById('no_follow_desktop').checked = settings.no_follow_desktop;
     document.getElementById('run_on_startup').checked = settings.run_on_startup;
     document.getElementById('show_notifications').checked = settings.show_notifications;
     document.getElementById('restore_on_start').checked = settings.restore_on_start;
@@ -74,6 +76,8 @@ form.addEventListener('submit', async (e) => {
   const settings = {
     project_path: document.getElementById('project_path').value,
     autoplacer_interval: parseInt(document.getElementById('autoplacer_interval').value, 10) || 0,
+    no_move_desktop: document.getElementById('no_move_desktop').checked,
+    no_follow_desktop: document.getElementById('no_follow_desktop').checked,
     run_on_startup: document.getElementById('run_on_startup').checked,
     show_notifications: document.getElementById('show_notifications').checked,
     restore_on_start: document.getElementById('restore_on_start').checked,

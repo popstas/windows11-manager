@@ -39,6 +39,10 @@ pub struct Settings {
     pub update_check_interval: String,
     /// Глобальный хоткей разовой расстановки окон. Пустая строка — выключен.
     pub place_hotkey: String,
+    /// Не переносить окна на рабочий стол из правила (`desktop` в конфиге).
+    pub no_move_desktop: bool,
+    /// Не переключать текущий рабочий стол вслед за переехавшим окном.
+    pub no_follow_desktop: bool,
 }
 
 impl Default for Settings {
@@ -75,6 +79,11 @@ impl Default for Settings {
             // живой машине: Win+цифра, Win+Shift+цифра и Win+Ctrl+Shift+цифра
             // заняты все, Ctrl+Alt+Win+0 свободна.
             place_hotkey: "Ctrl+Alt+Win+0".to_string(),
+            // Обе выключены: расстановка по столам — то, ради чего правила с
+            // `desktop` и заводят, и запрещать её по умолчанию значило бы
+            // выключить конфиг, который человек уже написал.
+            no_move_desktop: false,
+            no_follow_desktop: false,
         }
     }
 }
@@ -246,6 +255,8 @@ mod tests {
         assert_eq!(s.timeout_before_open, 5);
         assert_eq!(s.update_check_interval, "launch");
         assert_eq!(s.place_hotkey, "Ctrl+Alt+Win+0");
+        assert!(!s.no_move_desktop);
+        assert!(!s.no_follow_desktop);
     }
 
     #[test]
@@ -648,6 +659,14 @@ async fn get_settings(app: tauri::AppHandle) -> Result<Settings, String> {
             .get("place_hotkey")
             .and_then(|v| v.as_str().map(String::from))
             .unwrap_or(defaults.place_hotkey),
+        no_move_desktop: store
+            .get("no_move_desktop")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(defaults.no_move_desktop),
+        no_follow_desktop: store
+            .get("no_follow_desktop")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(defaults.no_follow_desktop),
     };
 
     Ok(settings)
@@ -735,6 +754,28 @@ async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<Stri
         .unwrap_or_else(|| Settings::default().place_hotkey);
     store.set("place_hotkey", serde_json::json!(settings.place_hotkey));
 
+    // Обе галочки доезжают до node переменными окружения, а те читаются на
+    // старте процесса. Автоrasстановщик живёт часами, так что без перезапуска
+    // снятая галочка не действовала бы до следующего Start Autoplacer — и
+    // выглядело бы это как «настройка не работает», а не как «настройка ждёт».
+    // Прежние значения снимаются до записи: перезапускать работающего ребёнка
+    // на каждое сохранение настроек незачем.
+    let desktop_flags_changed = store
+        .get("no_move_desktop")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+        != settings.no_move_desktop
+        || store
+            .get("no_follow_desktop")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+            != settings.no_follow_desktop;
+    store.set("no_move_desktop", serde_json::json!(settings.no_move_desktop));
+    store.set(
+        "no_follow_desktop",
+        serde_json::json!(settings.no_follow_desktop),
+    );
+
 
 
     store.save().map_err(|e| e.to_string())?;
@@ -742,6 +783,16 @@ async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<Stri
     if normalize_hotkey(&previous_hotkey) != normalize_hotkey(&settings.place_hotkey) {
         unregister_place_hotkey(&app, &previous_hotkey);
         register_place_hotkey(&app, &settings.place_hotkey);
+    }
+
+    if desktop_flags_changed {
+        let state = app.state::<Mutex<AppState>>();
+        let running = state.lock().map(|s| s.autoplacer_running).unwrap_or(false);
+        if running {
+            info!("Desktop flags changed, restarting autoplacer");
+            toggle_autoplacer(&app, &state);
+            toggle_autoplacer(&app, &state);
+        }
     }
 
     // Write store-match-list.json to project dir so Node can read it
@@ -925,7 +976,33 @@ fn load_settings_from_store(app: &tauri::AppHandle) -> Settings {
         timeout_before_open: store.get("timeout_before_open").and_then(|v| v.as_u64()).unwrap_or(5) as u32,
         update_check_interval: store.get("update_check_interval").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.update_check_interval),
         place_hotkey: store.get("place_hotkey").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.place_hotkey),
+        no_move_desktop: store.get("no_move_desktop").and_then(|v| v.as_bool()).unwrap_or(defaults.no_move_desktop),
+        no_follow_desktop: store.get("no_follow_desktop").and_then(|v| v.as_bool()).unwrap_or(defaults.no_follow_desktop),
     }
+}
+
+/// Две галочки окна настроек в виде переменных окружения для node.
+///
+/// Не флаги командной строки: автоrasстановщик поднимается как
+/// `node examples/autoplace-server.js`, аргументов не разбирает вовсе, и флаг
+/// пришлось бы протаскивать через placeWindowOnOpen() до самого placeWindow().
+/// Разбирает их desktopPolicy() в src/placement-helpers.js.
+///
+/// Пишутся всегда обе, и снятая — явным "0": пустая переменная у ребёнка,
+/// унаследовавшего окружение трея, читалась бы как «значение не задано», а не
+/// как «человек снял галочку».
+fn desktop_env(app: &tauri::AppHandle) -> [(&'static str, &'static str); 2] {
+    let settings = load_settings_from_store(app);
+    [
+        (
+            "W11M_NO_MOVE_DESKTOP",
+            if settings.no_move_desktop { "1" } else { "0" },
+        ),
+        (
+            "W11M_NO_FOLLOW_DESKTOP",
+            if settings.no_follow_desktop { "1" } else { "0" },
+        ),
+    ]
 }
 
 fn run_node_command(app: &tauri::AppHandle, args: &[&str], label: &str) {
@@ -937,13 +1014,15 @@ fn run_node_command(app: &tauri::AppHandle, args: &[&str], label: &str) {
     let app_handle = app.clone();
     let label = label.to_string();
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let env = desktop_env(app);
     tauri::async_runtime::spawn(async move {
         info!("--- {} ---", label);
         let shell = app_handle.shell();
-        let output = shell
-            .command("node")
-            .args(&args)
-            .current_dir(&project_path)
+        let mut command = shell.command("node").args(&args).current_dir(&project_path);
+        for (key, value) in env {
+            command = command.env(key, value);
+        }
+        let output = command
             .output()
             .await;
 
@@ -1260,11 +1339,14 @@ fn toggle_autoplacer(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>)
     } else {
         // Start autoplacer
         let shell = app.shell();
-        let result = shell
+        let mut command = shell
             .command("node")
             .args(["examples/autoplace-server.js"])
-            .current_dir(&project_path)
-            .spawn();
+            .current_dir(&project_path);
+        for (key, value) in desktop_env(app) {
+            command = command.env(key, value);
+        }
+        let result = command.spawn();
 
         match result {
             Ok((rx, child)) => {
