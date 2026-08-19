@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { focusSpawnedWindow, focusNewTerminalWindow, resumeClaudeSession, cursorRule } from './project.js';
+import { focusSpawnedWindow, focusNewTerminalWindow, openClaudeProject, resumeClaudeSession, cursorRule } from './project.js';
 
 /**
  * Часы и ожидание — подставные: настоящие четыре секунды паузы проверяли бы
@@ -305,5 +305,62 @@ describe('focusNewTerminalWindow и курсор', () => {
       focus: async (id) => { calls.push(`focus:${id}`); return true; },
     }));
     expect(calls).toEqual(['focus:33']);
+  });
+});
+
+/**
+ * Как `openClaudeProject` опознаёт своё окно.
+ *
+ * Поймано на живой машине 2026-08-20: просьба с курсором не срабатывала вовсе,
+ * потому что окно ждали по заголовку, а его ставит `claude -n` уже на той
+ * стороне ssh — `window:not-found +15418ms` при новом hwnd через три секунды.
+ * Выглядело это невключённой галкой, и поведением такое не поймать: обе дороги
+ * по отдельности работают, просто одна не успевает.
+ */
+describe('openClaudeProject: чем опознаётся своё окно', () => {
+  function deps(extra = {}) {
+    const calls = [];
+    return {
+      calls,
+      deps: {
+        cfg: { launchNew: { args: ['ssh', '-t', 'pc-virt', 'claude -n {name}'] }, projects: [] },
+        spawnProcess: () => ({ unref: () => {} }),
+        listWindows: () => [{ id: 11 }, { id: 22 }],
+        focusNew: async (known) => { calls.push(`byHwnd:${[...known].join(',')}`); return true; },
+        focusByTitle: async (title) => { calls.push(`byTitle:${title}`); return true; },
+        ...extra,
+      },
+    };
+  }
+
+  it('с курсором — по hwnd, которого не было до запуска', async () => {
+    const h = deps();
+    const res = await openClaudeProject(
+      { cwd: '/p/site', name: 'site-2', reuseOpen: false, cursor: { x: 4362, y: 693 } },
+      h.deps,
+    );
+    expect(res.ok).toBe(true);
+    expect(h.calls).toEqual(['byHwnd:11,22']);
+  });
+
+  it('без курсора — по заголовку, как и было', async () => {
+    // Обычная дорога ищет окно по заголовку не зря: за ним стоит слот, и слот
+    // заведён на ту же сессию, которую заголовок называет.
+    const h = deps();
+    await openClaudeProject({ cwd: '/p/site', name: 'site-2', reuseOpen: false }, h.deps);
+    expect(h.calls).toEqual(['byTitle:site-2']);
+  });
+
+  it('список окон снимается до запуска, иначе новое не отличить', async () => {
+    const seen = [];
+    const h = deps({
+      listWindows: () => { seen.push('list'); return [{ id: 11 }]; },
+      spawnProcess: () => { seen.push('spawn'); return { unref: () => {} }; },
+    });
+    await openClaudeProject(
+      { cwd: '/p/site', name: 'site-2', reuseOpen: false, cursor: { x: 1, y: 2 } },
+      h.deps,
+    );
+    expect(seen).toEqual(['list', 'spawn']);
   });
 });

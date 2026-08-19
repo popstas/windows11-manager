@@ -447,7 +447,13 @@ async function resumeClaudeSession({ id, cwd = '', terminal, cursor = null } = {
  * @param {{ cwd: string, name: string, profile?: string, reuseOpen?: boolean, terminal?: string, cursor?: {x: number, y: number} | null }} opts
  * @returns {Promise<{ ok: boolean, action?: string, reason?: string, sessionId?: string, sessionName?: string }>}
  */
-async function openClaudeProject({ cwd, name, profile, reuseOpen = true, terminal, cursor = null } = {}) {
+async function openClaudeProject({ cwd, name, profile, reuseOpen = true, terminal, cursor = null } = {}, deps = {}) {
+  const {
+    spawnProcess = spawn,
+    listWindows = terminalWindows,
+    focusNew = focusNewTerminalWindow,
+    focusByTitle = focusSpawnedWindow,
+  } = deps;
   if (typeof cwd !== 'string' || !cwd || typeof name !== 'string' || !name) {
     return { ok: false, reason: 'cwd and name are required' };
   }
@@ -488,7 +494,7 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
     }
   }
 
-  const cfg = getClaudeWtConfig();
+  const cfg = deps.cfg ?? getClaudeWtConfig();
   // Судим по launchNew, а не по launch: отсюда и собирается команда ниже, и
   // старость чужого блока (`launch`, крэш-восстановление) её не касается —
   // полумигрированный конфиг иначе давал либо удвоенные аргументы, либо
@@ -507,8 +513,12 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
     return { ok: false, reason: 'claudeWt: no terminal named by the request or the config' };
   }
   mark('plan');
+  // Список окон снимается до запуска: после него новое окно уже не отличить.
+  // Нужен он только курсорной дороге — см. ниже, — и на обычной не стоит ни
+  // одного вызова в нативный модуль.
+  const known = cursor ? new Set(listWindows().map(w => w.id)) : null;
   try {
-    spawn(command, args, { detached: true, stdio: 'ignore' }).unref();
+    spawnProcess(command, args, { detached: true, stdio: 'ignore' }).unref();
   } catch (e) {
     return { ok: false, action: 'spawn', reason: e.message };
   }
@@ -517,10 +527,23 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
   // вернуться сразу — её ждёт обработчик MQTT, который пишет в журнал исход.
   // `.catch()` обязателен: необработанное отклонение в node 22 роняет процесс
   // целиком, а в нём же живут экспорт в Home Assistant и сторож демона.
-  // Курсор доезжает сюда из тела просьбы: экран для нового окна называет
-  // пикер — он один знает, где сейчас смотрит человек. Ветки подъёма выше его
-  // не касаются вовсе: просьба про новое окно, а уже открытое никуда не едет.
-  focusSpawnedWindow(sessionName, { mark, cursor }).catch((e) => {
+  //
+  // **Своё окно опознаётся по-разному, и с курсором — только по hwnd.**
+  // Обычная дорога ищет окно по заголовку, и это верно, когда за ним стоит
+  // слот: заголовок называет сессию, а слот заведён на неё же. Но заголовок
+  // новой сессии ставит `claude -n` уже на той стороне ssh, и пятнадцати
+  // секунд ожидания ему хватает не всегда — замерено на popstas-pc
+  // 2026-08-20: `window:not-found +15418ms` при том, что новый hwnd появился
+  // через три секунды (его в тот же миг подобрал автопостановщик). Просьба про
+  // курсор от этого не срабатывала вовсе, и выглядело это невключённой галкой.
+  //
+  // «Окно, которого не было до запуска» — признак точный и мгновенный, тот же,
+  // которым живёт `resumeClaudeSession`. Слот на этой дороге не спрашивается, и
+  // это не потеря: курсор и так главнее слота (см. `cursorRule`).
+  const tail = cursor
+    ? focusNew(known, { ...deps, mark, cursor })
+    : focusByTitle(sessionName, { mark });
+  tail.catch((e) => {
     console.error(`[claude-wt] failed to focus ${sessionName}: ${e.message}`);
   });
   return { ok: true, action: 'spawn', cwd, name: sessionName, sessionName };
