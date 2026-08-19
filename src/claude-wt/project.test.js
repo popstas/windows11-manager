@@ -161,7 +161,12 @@ describe('resumeClaudeSession', () => {
  * зовётся, а ошибка «окно уехало не на тот экран» видна только глазами.
  */
 describe('cursorRule', () => {
-  const MON = { bounds: { x: 1920, y: 0, width: 2560, height: 1440 } };
+  const mon = (area, scaleFactor = 1) => ({
+    bounds: area,
+    getWorkArea: () => area,
+    getScaleFactor: () => scaleFactor,
+  });
+  const MON = mon({ x: 1920, y: 0, width: 2560, height: 1440 });
   const win = (bounds) => ({ id: 77, getBounds: () => bounds });
 
   it('без памяти о месте берёт размер у самого окна', () => {
@@ -196,6 +201,37 @@ describe('cursorRule', () => {
     });
     expect(rule.width).toBe(1000);
     expect(rule.height).toBe(800);
+  });
+
+  it('рабочая область переводится в пространство окна, а не берётся как есть', () => {
+    // Два пространства координат: Monitor.getWorkArea() отдаёт числа как есть,
+    // а Window.setBounds() умножает их на масштаб монитора. Без перевода окно
+    // на мониторе с масштабом уезжает к соседу — та же поломка, что уже была у
+    // плитки (AGENTS.md, «FancyZones coordinate system & DPI gotchas»).
+    const rule = cursorRule({
+      win: win({ x: 0, y: 0, width: 1000, height: 800 }),
+      cursor: { x: 100, y: 100 },
+      slot: null,
+      monitorAt: () => mon({ x: 0, y: 0, width: 2893, height: 1728 }, 1.25),
+    });
+    // 2893/1.25 = 2314, 1728/1.25 = 1382 — и центр считается уже в них.
+    expect(rule).toEqual({ window: 77, x: 657, y: 291, width: 1000, height: 800 });
+  });
+
+  it('центр считается по рабочей области, а не по полным границам', () => {
+    // Панель задач съедает низ экрана, и по полным границам окно уехало бы
+    // вниз на половину её высоты.
+    const rule = cursorRule({
+      win: win({ x: 0, y: 0, width: 1000, height: 800 }),
+      cursor: { x: 100, y: 100 },
+      slot: null,
+      monitorAt: () => ({
+        bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+        getWorkArea: () => ({ x: 0, y: 0, width: 1920, height: 1000 }),
+        getScaleFactor: () => 1,
+      }),
+    });
+    expect(rule.y).toBe(100);
   });
 
   it('точка вне известных мониторов не ставит окно наугад', () => {

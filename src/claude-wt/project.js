@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { focusWindowById, getActiveWindowId, getWindowById, getWindows } from '../windows.js';
 import { placeWindowByConfig } from '../placement.js';
 import { getMonitorByPoint } from '../monitors.js';
+import { toWindowSpace } from '../claude-layout-helpers.js';
 import { virtualDesktop } from '../virtual-desktop.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { claudeWtSessions } from './view.js';
@@ -165,17 +166,35 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
  * `width`/`height` в правиле `placeWindow` подставил бы их сам из старых
  * границ, но тогда переезд между экранами с разным масштабом остался бы без
  * поправки (`adjustBoundsForScale` смотрит на то, назван ли размер).
+ *
+ * **Два пространства координат, и складывать их напрямую нельзя** — раздел
+ * «FancyZones coordinate system & DPI gotchas» в AGENTS.md, где это уже дважды
+ * ломало расстановку. `Monitor.getWorkArea()` отдаёт числа как есть, а
+ * `Window.getBounds()`/`setBounds()` делят и умножают их на масштаб монитора
+ * окна. Значит рабочая область переводится в пространство окна тем же
+ * `toWindowSpace`, каким это делает `layoutWorkArea` у раскладок: без перевода
+ * окно на мониторе с масштабом считалось бы в мониторных пикселях и уезжало бы
+ * к соседу — ровно та поломка, что уже была у плитки.
+ *
+ * Область — рабочая, а не полные границы: панель задач съедает низ экрана, и
+ * центр по полным границам увёл бы окно вниз на половину её высоты.
  */
 function cursorRule({ win, cursor, slot, monitorAt = getMonitorByPoint }) {
   const mon = monitorAt(cursor);
-  if (!mon?.bounds) {
+  const area = mon && toWindowSpace(
+    mon.getWorkArea ? mon.getWorkArea() : mon.bounds,
+    mon.getScaleFactor ? mon.getScaleFactor() : 1,
+  );
+  if (!area?.width) {
     console.error(`[claude-wt] no monitor at ${cursor.x},${cursor.y}`);
     return null;
   }
   const size = slot?.bounds ?? win.getBounds();
   if (!size?.width || !size?.height) return null;
-  const at = centerOnMonitor(mon.bounds, size);
-  return { window: win.id, x: at.x, y: at.y, width: size.width, height: size.height };
+  const at = centerOnMonitor(area, size);
+  const rule = { window: win.id, x: at.x, y: at.y, width: size.width, height: size.height };
+  console.log(`[claude-wt] cursor ${cursor.x},${cursor.y} -> ${JSON.stringify(rule)}`);
+  return rule;
 }
 
 /**
