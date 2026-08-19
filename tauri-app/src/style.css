@@ -310,6 +310,23 @@ section[data-tab].active {
   line-height: 1.5;
 }
 
+/* Подзаголовок группы полей внутри вкладки. Вкладка Claude выросла до
+   полутора десятков полей, и без разбивки на «Daemon» / «Files & terminal» /
+   слоты панели она стала ровно тем, ради чего вкладки и заводили. */
+.group {
+  margin: 24px 0 12px;
+  padding-top: 12px;
+  border-top: 1px solid #45475a;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #89b4fa;
+}
+
+.group + .tab-note {
+  margin-top: -6px;
+}
+
 /* Лог показывается моноширинным и прокручивается сам: строки в нём длинные, а
    переносить их значило бы рвать записи посередине. */
 #log-view {

@@ -11,15 +11,109 @@ const status = document.getElementById('status');
 // запрещает такое сохранение, пока окно не откроют заново.
 let tileZonesLoadFailed = false;
 
+// Поля вкладки Claude, что живут в том же YAML-конфиге (claudeWt.* и слоты
+// панели из homeassistant.*): читаются get_claude_config, пишутся
+// save_claude_config. Флаг — та же страховка, что у зон рядом, и по той же
+// причине: не прочитанное при открытии окна поле не должно уехать в конфиг
+// пустым. Загруженные значения запоминаются целиком, потому что сохраняются
+// только изменённые — нетронутая форма не дописывает в конфиг ключей, которых
+// там не было (см. collectClaudeConfigPatch).
+let claudeConfigLoadFailed = false;
+let claudeConfigLoaded = {};
+
+/** Узлы полей конфига: имя ключа и тип стоят на самом узле (data-cfg*). */
+function claudeConfigNodes() {
+  return document.querySelectorAll('[data-cfg]');
+}
+
+/** Умолчание поля, записанное в разметке, в виде значения своего типа. */
+function fieldDefault(node) {
+  const raw = node.dataset.cfgDefault ?? '';
+  if (node.dataset.cfgType === 'boolean') return raw === 'true';
+  if (node.dataset.cfgType === 'number') return Number(raw);
+  return raw;
+}
+
+/**
+ * Значение поля формы. Пустой текст — `null`, «не задано»: плейсхолдер поля
+ * показывает умолчание, и пустота значит именно его, а не пустую строку.
+ *
+ * Целое приводится к числу, всё остальное остаётся строкой нарочно: `Number()`
+ * от «12abc» дал бы NaN, а тот уехал бы в JSON как `null` и молча стёр бы ключ.
+ * Пусть негодную строку отвергнет node — с именем поля и причиной в статусе.
+ */
+function fieldValue(node) {
+  if (node.dataset.cfgType === 'boolean') return node.checked;
+  const text = node.value.trim();
+  if (!text) return null;
+  if (node.dataset.cfgType === 'number' && /^-?\d+$/.test(text)) return Number(text);
+  return text;
+}
+
+function fillClaudeConfig(values) {
+  claudeConfigLoaded = values;
+  for (const node of claudeConfigNodes()) {
+    const value = values[node.dataset.cfg] ?? null;
+    if (node.dataset.cfgType === 'boolean') {
+      // Галочке «не задано» изобразить нечем — показывается умолчание. То, что
+      // ключа в конфиге нет, помнит claudeConfigLoaded, и сохранение на этом
+      // и держится.
+      node.checked = value === null ? fieldDefault(node) : value === true;
+    } else {
+      node.value = value === null ? '' : String(value);
+    }
+  }
+}
+
+/**
+ * Только изменённые поля: `{ 'claudeWt.interval': 2000 }`, где `null` значит
+ * «убрать ключ, вернуть умолчание».
+ *
+ * Сравниваются ДЕЙСТВУЮЩИЕ значения (незаданное = умолчание), а не то, что
+ * видно в поле. Иначе выходило бы одно из двух: либо пустое поле незаданного
+ * ключа читалось бы как изменение и записывало умолчание в конфиг, либо
+ * записанный в конфиг руками ключ со значением умолчания стирался бы при
+ * первом же сохранении, которого никто не просил.
+ *
+ * Возврат к умолчанию записывается удалением ключа, а не его значением: так
+ * поле продолжит следовать за умолчанием, если то изменится в коде.
+ */
+function collectClaudeConfigPatch() {
+  const patch = {};
+  for (const node of claudeConfigNodes()) {
+    const name = node.dataset.cfg;
+    const dflt = fieldDefault(node);
+    const loaded = claudeConfigLoaded[name] ?? null;
+    const current = fieldValue(node);
+    const wasEffective = loaded === null ? dflt : loaded;
+    const nowEffective = current === null ? dflt : current;
+    if (nowEffective === wasEffective) continue;
+    patch[name] = nowEffective === dflt ? null : nowEffective;
+  }
+  return patch;
+}
+
+/**
+ * Предупреждение о неудавшемся чтении — в самом окне, а не только в консоли:
+ * человек должен видеть, почему поле пустое и почему сабмит его не тронет.
+ * Строк может быть две (зоны и поля конфига читаются независимо), поэтому они
+ * копятся, а не затирают друг друга.
+ */
+function showLoadWarning(text) {
+  status.style.color = '#f9e2af';
+  status.textContent = status.textContent ? `${status.textContent} · ${text}` : text;
+}
+
 async function loadSettings() {
   // Три независимых чтения — параллельно, а не одно за другим внутри общего
   // try: последовательный await get_tile_zones() между заполнением полей
   // держал остальную форму (включая mqtt_*) пустой на время своего запроса, и
   // сабмит в этот момент сохранил бы пустые настройки MQTT.
-  const [settingsResult, tileZonesResult, versionResult] = await Promise.allSettled([
+  const [settingsResult, tileZonesResult, versionResult, claudeConfigResult] = await Promise.allSettled([
     invoke('get_settings'),
     invoke('get_tile_zones'),
     invoke('get_app_version'),
+    invoke('get_claude_config'),
   ]);
 
   if (settingsResult.status === 'fulfilled') {
@@ -56,8 +150,24 @@ async function loadSettings() {
     console.error('Failed to load tile zones:', tileZonesResult.reason);
     // Не в console.error и молчок: человек должен увидеть в самом окне,
     // почему поле пустое и почему сабмит его не тронет.
-    status.style.color = '#f9e2af';
-    status.textContent = `Tile zones failed to load (${tileZonesResult.reason}) — the field will not be saved until you reopen this window`;
+    showLoadWarning(`Tile zones failed to load (${tileZonesResult.reason}) — the field will not be saved until you reopen this window`);
+  }
+
+  if (claudeConfigResult.status === 'fulfilled') {
+    try {
+      // Разбор здесь, а не в Rust: список полей ведёт node, и лишний тип на
+      // стороне трея пришлось бы держать с ним в согласии.
+      fillClaudeConfig(JSON.parse(claudeConfigResult.value));
+      claudeConfigLoadFailed = false;
+    } catch (e) {
+      claudeConfigLoadFailed = true;
+      console.error('Failed to parse claude config:', e);
+      showLoadWarning(`Claude config failed to parse (${e}) — those fields will not be saved until you reopen this window`);
+    }
+  } else {
+    claudeConfigLoadFailed = true;
+    console.error('Failed to load claude config:', claudeConfigResult.reason);
+    showLoadWarning(`Claude config failed to load (${claudeConfigResult.reason}) — those fields will not be saved until you reopen this window`);
   }
 
   if (versionResult.status === 'fulfilled') {
@@ -120,14 +230,36 @@ form.addEventListener('submit', async (e) => {
       }
     }
 
+    // Поля YAML-конфига вкладки Claude — третье независимое хранилище в этой
+    // форме, со своим вызовом и своей неудачей. Отправляются только изменённые
+    // (см. collectClaudeConfigPatch): пустой объект не тревожит конфиг вовсе.
+    let claudeConfigError = '';
+    if (claudeConfigLoadFailed) {
+      claudeConfigError = 'not saved — the fields did not load when the window opened, reopen settings';
+    } else {
+      const patch = collectClaudeConfigPatch();
+      if (Object.keys(patch).length) {
+        try {
+          await invoke('save_claude_config', { json: JSON.stringify(patch) });
+          // Записанное становится новым исходным: иначе второй сабмит подряд
+          // отправил бы те же правки ещё раз, а возврат поля к прежнему
+          // значению не считался бы изменением вовсе.
+          for (const [name, value] of Object.entries(patch)) claudeConfigLoaded[name] = value;
+        } catch (e) {
+          claudeConfigError = String(e);
+        }
+      }
+    }
+
     // Предупреждение о хоткеях не должно потеряться за ошибкой зон (и
-    // наоборот) — оба независимы, оба показываются, если оба есть.
+    // наоборот) — все независимы, и показывается каждое, что случилось.
     const messages = [];
     if (tileZonesError) messages.push('Tile zones: ' + tileZonesError);
+    if (claudeConfigError) messages.push('Claude config: ' + claudeConfigError);
     if (warning) messages.push(warning);
 
     if (messages.length) {
-      status.style.color = tileZonesError ? '#f38ba8' : '#f9e2af';
+      status.style.color = (tileZonesError || claudeConfigError) ? '#f38ba8' : '#f9e2af';
       status.textContent = messages.join(' · ');
       setTimeout(() => { status.textContent = ''; }, 8000);
     } else {
