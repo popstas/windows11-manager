@@ -2,10 +2,11 @@ import { getConfig } from './config.js';
 import { getMons, getSortedMonitors, getMonitorByPoint } from './monitors.js';
 import { fancyZonesToPos, addFancyZoneHistory } from './fancyzones.js';
 import { getWindows, getVisibleWindowIds, getMatchedRules, getWindowInfo, getWindow } from './windows.js';
+import { isMinimized } from './windows-helpers.js';
 import { virtualDesktop } from './virtual-desktop.js';
 import { adjustBoundsForScale } from './scale.js';
 import { isBoundsMatch } from './geometry.js';
-import { parsePosFromRule } from './placement-helpers.js';
+import { parsePosFromRule, desktopPolicy } from './placement-helpers.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -81,8 +82,7 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
   const isPlaced = () => isBoundsMatch(oldPos, finalBounds);
   const placed = isPlaced();
   if (pos && !placed) {
-    const MINIMIZED_THRESHOLD = -10000;
-    if (w.getBounds()['x'] < MINIMIZED_THRESHOLD) {
+    if (isMinimized(w.getBounds())) {
       verboseLogFileOnly(`Skip minimized ${winName}: x=${w.getBounds().x}`);
       skipped.push({ name: 'bounds' });
     } else {
@@ -127,7 +127,10 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
     if (debugLog) verboseLogFileOnly(`Skip pin for ${winName}: already pinned`);
     skipped.push({ name: 'pin' });
   }
-  if (rule.desktop) {
+  if (rule.desktop && !desktopPolicy(process.env).move) {
+    if (debugLog) verboseLogFileOnly(`Skip desktop for ${winName}: перенос между столами выключен настройкой`);
+    skipped.push({ name: 'desktop' });
+  } else if (rule.desktop) {
     const num = rule.desktop - 1;
     try {
       const winDesktopNum = await virtualDesktop.GetWindowDesktopNumber(w.id);
@@ -188,7 +191,7 @@ async function placeWindowsByConfig(wins = [], opts = {}) {
       const skipped = result ? result.skipped : [];
       if (changes.length > 0) placedCount++;
       if (skipped.length > 0 && changes.length === 0) skippedCount++;
-      if (opts.changeDesktop && changes.length > 0) {
+      if (opts.changeDesktop && desktopPolicy(process.env).follow && changes.length > 0) {
         const desktopChanged = changes.find(c => c.name === 'desktop');
         if (desktopChanged) {
           console.log(`Change desktop to ${desktopChanged.value + 1}`);

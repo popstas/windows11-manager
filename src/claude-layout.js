@@ -9,11 +9,13 @@ import { getConfig } from './config.js';
 import { fancyZonesToPos } from './fancyzones.js';
 import { getMonitorByPoint, getPrimaryMonitor } from './monitors.js';
 import { focusWindowById, getActiveWindowId, getWindowById } from './windows.js';
+import { isMinimized } from './windows-helpers.js';
 import { placeWindow } from './placement.js';
 import { claudeWtSessions } from './claude-wt/view.js';
+import { virtualDesktop } from './virtual-desktop.js';
 import { orderSessions } from './claude-wt/ha/session-slots.js';
 import { normalizeSort } from './claude-wt/ha/session-groups.js';
-import { arrange, pickFocusTarget, toWindowSpace } from './claude-layout-helpers.js';
+import { arrange, groupByDesktop, pickFocusTarget, toWindowSpace } from './claude-layout-helpers.js';
 import { startTiming } from './claude-wt/timing.js';
 
 /**
@@ -214,9 +216,50 @@ function pickWindows(ids, log, mark = () => 0) {
       log(`claude-place: окно сессии ${session.id} исчезло — пропущено`, 'warn');
       continue;
     }
-    windows.push(w);
+    // Свёрнутое окно зоны не занимает. placeWindow() его и так пропустит, но
+    // прямоугольник ему уже будет отдан — из четырёх сессий, где одна
+    // свёрнута, три видимых раскладывались бы по четырём зонам, оставляя
+    // дыру. Так же поступает macos-windows-manager.
+    // getBounds() бросает, если процесс окна умер между перечислением сессий и
+    // этой строкой; такое окно всё равно расставить не выйдет.
+    let bounds;
+    try {
+      bounds = w.getBounds();
+    } catch (e) {
+      log(`claude-place: границы окна сессии ${session.id} не прочитались — пропущено (${e.message})`, 'warn');
+      continue;
+    }
+    if (isMinimized(bounds)) {
+      log(`claude-place: окно сессии ${session.id} свёрнуто — пропущено`);
+      continue;
+    }
+    // Номер стола едет рядом с окном: он уже прочитан вместе со слотом, и
+    // спрашивать его у VirtualDesktop11.exe по окну — лишний запуск процесса
+    // на каждое окно там, где ответ уже на руках.
+    windows.push({ w, desktop: session.desktop ?? null });
   }
   return { windows, asked: ids.length || open.length };
+}
+
+/**
+ * Номер текущего рабочего стола, 1-based, либо null.
+ *
+ * Первым делом — по слоту активной сессии: там ответ уже есть и стоит ноль.
+ * Активное окно не сессия (пикер, браузер, что угодно) — один запуск
+ * VirtualDesktop11.exe; это единственное место раскладки, где он вообще
+ * зовётся. Молчит и он — null, и группировка возьмёт стол первого окна.
+ */
+async function resolveCurrentDesktop(items, activeId, log) {
+  const mine = items.find(it => it.w.id === activeId);
+  if (mine?.desktop != null) return mine.desktop;
+  if (!activeId) return null;
+  try {
+    const num = await virtualDesktop.GetWindowDesktopNumber(activeId);
+    if (num !== undefined && num !== null) return Number(num) + 1;
+  } catch (e) {
+    log(`claude-place: не удалось узнать текущий стол — ${e.message}`, 'warn');
+  }
+  return null;
 }
 
 /**
@@ -262,8 +305,12 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
   // всей раскладки узнать, на что человек смотрел, уже негде.
   const activeBefore = getActiveWindowId();
 
-  const rects = arrange({ mode, zones, work, n: windows.length });
-  mark('arrange');
+  // Каждый стол раскладывается сам по себе: своя сетка зон с нуля, свой проход
+  // подъёма. Иначе окна чужого стола съедали зоны у окон текущего — на обоих
+  // столах оставались дыры, — а подъём чужого окна уносил человека на его стол.
+  const current = await resolveCurrentDesktop(windows, activeBefore, log);
+  const groups = groupByDesktop(windows, current);
+  mark('desktops');
   let placed = 0;
   // Без изменений — окно дошло до placeWindow(), но bounds не поменялись:
   // слишком узкое, свёрнутое или уже стоящее ровно на месте. Различать
@@ -271,30 +318,38 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
   // веток одинаковый skipped. Упавшие (бросили) сюда не попадают: они не
   // «без изменений», а настоящий отказ, и про них уже есть строка error.
   let unchanged = 0;
-  for (let i = 0; i < windows.length; i += 1) {
-    const pos = rects[i];
-    if (!pos) {
-      // Тихий break прятал бы это как «разложено N из M» без единой строки
-      // warn — arrange() вернула меньше прямоугольников, чем окон, и это
-      // само по себе повод для диагноза, а не для молчания.
-      log(`claude-place: раскладка дала ${rects.length} прямоугольник(ов) на ${windows.length} окон — остаток не расставлен`, 'warn');
-      break;
+  for (const group of groups) {
+    const rects = arrange({ mode, zones, work, n: group.items.length });
+    for (let i = 0; i < group.items.length; i += 1) {
+      const pos = rects[i];
+      if (!pos) {
+        // Тихий break прятал бы это как «разложено N из M» без единой строки
+        // warn — arrange() вернула меньше прямоугольников, чем окон, и это
+        // само по себе повод для диагноза, а не для молчания.
+        log(`claude-place: раскладка дала ${rects.length} прямоугольник(ов) на ${group.items.length} окон — остаток не расставлен`, 'warn');
+        break;
+      }
+      // Одно упавшее окно не обрывает остальные — та же сетка, что в
+      // placeWindowsByConfig(): процесс окна мог умереть между перечислением и
+      // расстановкой.
+      let result;
+      try {
+        result = await placeWindow({ w: group.items[i].w, rule: { pos }, isBulk: true });
+      } catch (e) {
+        log(`claude-place: ${group.items[i].w.id} — ${e.message}`, 'error');
+        continue;
+      }
+      if (result && result.changes?.some(c => c.name === 'bounds')) placed += 1;
+      else unchanged += 1;
     }
-    // Одно упавшее окно не обрывает остальные — та же сетка, что в
-    // placeWindowsByConfig(): процесс окна мог умереть между перечислением и
-    // расстановкой.
-    let result;
-    try {
-      result = await placeWindow({ w: windows[i], rule: { pos }, isBulk: true });
-    } catch (e) {
-      log(`claude-place: ${windows[i].id} — ${e.message}`, 'error');
-      continue;
-    }
-    if (result && result.changes?.some(c => c.name === 'bounds')) placed += 1;
-    else unchanged += 1;
   }
   mark('place');
-  for (const w of windows) {
+  // Поднимается только текущий стол. `bringToTop()` окна с чужого стола уводит
+  // туда всю оболочку, и раскладка двух столов превращалась в чехарду
+  // переключений; чужие окна уже стоят по своим зонам и поднимутся сами, когда
+  // человек к ним переключится.
+  const front = groups.find(g => g.isCurrent) ?? groups[0] ?? { items: [] };
+  for (const { w } of front.items) {
     try {
       w.bringToTop();
     } catch (e) {
@@ -307,7 +362,7 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
   // подняты, а фокус мог не дойти до окна, свёрнутого или ушедшего на другой
   // стол между подъёмом и этой строкой.
   mark('raise');
-  const focusId = pickFocusTarget(windows.map(w => w.id), activeBefore);
+  const focusId = pickFocusTarget(front.items.map(it => it.w.id), activeBefore);
   if (focusId !== null && !focusWindowById(focusId)) {
     log(`claude-place: фокус не дошёл до окна ${focusId}`, 'warn');
   }
@@ -315,7 +370,13 @@ async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
   // Ноль без изменений — обычный случай, хвост не нужен: «разложено 2 из 3»
   // короче и не менее честно, чем «разложено 2, без изменений 0 из 3».
   const unchangedTail = unchanged ? `, без изменений ${unchanged}` : '';
-  log(`claude-place ${mode}: разложено ${placed}${unchangedTail} из ${asked}`);
+  // Разбивка по столам появляется только когда их больше одного: на обычной
+  // раскладке она была бы шумом, а на разбросанной отвечает на вопрос «почему
+  // поднялись не все» — поднимается лишь текущий стол.
+  const desktopsTail = groups.length > 1
+    ? ` (столы: ${groups.map(g => `${g.desktop ?? '?'} — ${g.items.length}`).join(', ')})`
+    : '';
+  log(`claude-place ${mode}: разложено ${placed}${unchangedTail} из ${asked}${desktopsTail}`);
   return { ok: true, placed };
 }
 

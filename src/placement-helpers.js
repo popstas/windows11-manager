@@ -71,4 +71,35 @@ function parsePosFromRule({ rule, mons, panelWidth, panelHeight }) {
   return newPos;
 }
 
-export { resolveMonitorRelativePos, parsePosFromRule };
+/**
+ * Что расстановщику разрешено делать с рабочими столами.
+ *
+ * Две галочки из окна настроек доезжают до node переменными окружения, а не
+ * флагами: автоrasстановщик поднимается как `node examples/autoplace-server.js`,
+ * аргументов не разбирает вовсе, и флаг пришлось бы протаскивать через
+ * placeWindowOnOpen() до самого placeWindow(). Значение читается на старте
+ * процесса, поэтому смена галочки перезапускает автоrasстановщик.
+ *
+ * `move` — переносить ли окно на стол из правила, `follow` — переключать ли
+ * вслед за ним текущий стол. Стороны независимы: с move=false переносов нет
+ * вовсе, и follow ни на что не влияет.
+ */
+function desktopPolicy(env = {}) {
+  return {
+    move: !isFlagOn(env.W11M_NO_MOVE_DESKTOP),
+    follow: !isFlagOn(env.W11M_NO_FOLLOW_DESKTOP),
+  };
+}
+
+/**
+ * Снятая галочка приходит не только отсутствием переменной: Rust с тем же
+ * успехом пишет "0" или пустую строку, а голая проверка на истинность строки
+ * прочитала бы "0" как запрет — то есть выключила бы перенос ровно тогда,
+ * когда человек его включил.
+ */
+function isFlagOn(value) {
+  if (value === undefined || value === null) return false;
+  return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
+}
+
+export { resolveMonitorRelativePos, parsePosFromRule, desktopPolicy };

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveMonitorRelativePos, parsePosFromRule } from './placement-helpers.js';
+import { resolveMonitorRelativePos, parsePosFromRule, desktopPolicy } from './placement-helpers.js';
 
 const monBounds = { x: 0, y: 0, width: 1920, height: 1080 };
 const panelWidth = 48;
@@ -191,5 +191,34 @@ describe('parsePosFromRule', () => {
     const third = (1920 - 48) / 3;
     expect(result.x).toBe(Math.floor(third * 1));
     expect(result.y).toBe(0);
+  });
+});
+
+describe('desktopPolicy', () => {
+  it('обе стороны разрешены, когда переменных нет', () => {
+    expect(desktopPolicy({})).toEqual({ move: true, follow: true });
+  });
+
+  it('W11M_NO_MOVE_DESKTOP запрещает перенос, не трогая переключение', () => {
+    expect(desktopPolicy({ W11M_NO_MOVE_DESKTOP: '1' })).toEqual({ move: false, follow: true });
+  });
+
+  it('W11M_NO_FOLLOW_DESKTOP запрещает переключение, не трогая перенос', () => {
+    expect(desktopPolicy({ W11M_NO_FOLLOW_DESKTOP: '1' })).toEqual({ move: true, follow: false });
+  });
+
+  it('обе галочки разом', () => {
+    expect(desktopPolicy({ W11M_NO_MOVE_DESKTOP: 'true', W11M_NO_FOLLOW_DESKTOP: 'yes' }))
+      .toEqual({ move: false, follow: false });
+  });
+
+  // Rust пишет в окружение не только «1»: снятая галочка доезжает как "0" или
+  // пустая строка, и прочитать её как включённый запрет означало бы выключить
+  // перенос ровно тогда, когда человек его включил.
+  it('снятая галочка запретом не считается', () => {
+    for (const off of ['', '0', 'false', 'no']) {
+      expect(desktopPolicy({ W11M_NO_MOVE_DESKTOP: off, W11M_NO_FOLLOW_DESKTOP: off }))
+        .toEqual({ move: true, follow: true });
+    }
   });
 });
