@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { focusSpawnedWindow, focusNewTerminalWindow, openClaudeProject, resumeClaudeSession, cursorRule } from './project.js';
+import { focusSpawnedWindow, focusNewTerminalWindow, openClaudeProject, resumeClaudeSession } from './project.js';
+import { cursorRule } from './cursor-place.js';
 
 /**
  * Часы и ожидание — подставные: настоящие четыре секунды паузы проверяли бы

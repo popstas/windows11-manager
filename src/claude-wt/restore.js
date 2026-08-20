@@ -16,6 +16,7 @@ import { listSnapshots } from './snapshotter.js';
 import { profileForTerminal } from './project-helpers.js';
 import { chooseTerminal } from './terminal-helpers.js';
 import { focusTerminalWindow } from './focus-terminal.js';
+import { cursorRule, placeByCursor } from './cursor-place.js';
 import { noTiming } from './timing.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -67,8 +68,13 @@ async function waitForNewWindow(knownIds, timeoutMs, pollMs = 250) {
  * `terminal` — имя из живой просьбы (Enter в пикере на мёртвой сессии); без
  * него, как при восстановлении на старте, `resolveTerminal` берёт дефолт
  * машины — то же самое, что явно передать пустую строку.
+ *
+ * `cursor` — оттуда же и только оттуда: точка, которой пикер называет экран,
+ * когда у человека включена галка «на активном экране». Восстановление на
+ * старте и снимок курсора не знают и не должны — там окон много, и один экран
+ * на всех был бы решением за человека.
  */
-async function restoreClaudeSessions({ force = false, sessionIds, terminal } = {}) {
+async function restoreClaudeSessions({ force = false, sessionIds, terminal, cursor = null } = {}) {
   const cfg = getClaudeWtConfig();
   const state = readState(cfg.statePath);
   const { unknown } = resolveRestoreIds({ state, sessionIds });
@@ -101,7 +107,7 @@ async function restoreClaudeSessions({ force = false, sessionIds, terminal } = {
     return { restored, skipped };
   }
   console.log(`[claude-wt] restoring ${plan.length} session(s)`);
-  await launchPlan({ plan, cfg, restored, skipped });
+  await launchPlan({ plan, cfg, restored, skipped, cursor });
   console.log(`[claude-wt] restored ${restored.length}, skipped ${skipped.length}`);
   return { restored, skipped };
 }
@@ -114,7 +120,7 @@ async function restoreClaudeSessions({ force = false, sessionIds, terminal } = {
  * устоялся. `restored` и `skipped` заполняются на месте, потому что вызывающий
  * печатает по ним итог.
  */
-async function launchPlan({ plan, cfg, restored, skipped }) {
+async function launchPlan({ plan, cfg, restored, skipped, cursor = null }) {
   const monitors = getWindowsMonitors();
   const placed = [];
   let first = true;
@@ -153,6 +159,40 @@ async function launchPlan({ plan, cfg, restored, skipped }) {
     // Окно уже есть, но Windows Terminal ещё доводит его до нужного размера;
     // позиция, выставленная в этот момент, тут же затирается.
     await sleep(cfg.restore.settleMs);
+    // Курсор главнее памяти о месте, и главнее её целиком — не только экран,
+    // но и стол. Слот помнит, где окно этой сессии стояло вчера; курсор —
+    // куда человек попросил прямо сейчас, включив галку и поставив мышь, и
+    // явная сегодняшняя просьба обязана перебивать вчерашнюю неявную. Правило
+    // общее с дорогой resume (`cursorRule`): разойдись они, галка работала бы
+    // по-разному в зависимости от того, помнит ли трекер эту сессию, — то
+    // есть через раз и необъяснимо.
+    //
+    // Размер при этом остаётся от слота: переезд на соседний экран — про
+    // экран, а не про то, чтобы забыть, каким окно было.
+    //
+    // Только у одиночного подъёма, по тому же правилу, что фокус и переход
+    // ниже: курсора у восстановления пачкой не бывает вовсе, а свались он
+    // туда — все окна сложились бы на один экран молча.
+    //
+    // Незнакомая точка — `null` от `cursorRule` и откат на прежнюю дорогу:
+    // она означает, что конфиг мониторов разошёлся с тем, что видит пикер, и
+    // ставить наугад тут хуже, чем сделать то, что делали всегда.
+    const target = cursor && plan.length === 1
+      ? cursorRule({ win, cursor, slot: { bounds: item.bounds } })
+      : null;
+    if (target) {
+      // Стол не назначается вовсе, и `desktop: null` в `placed` гасит переход
+      // следом (`restoreFollowDesktop`): «открывай там, где я смотрю» читается
+      // буквально, а окно, уехавшее на запомненный стол, утащило бы туда и
+      // человека — то есть галка отменяла бы сама себя.
+      if (await placeByCursor(target, placeWindowByConfig, item.title)) {
+        restored.push(item.sessionId);
+        placed.push({ desktop: null, windowId: win.id });
+      } else {
+        skipped.push(item.sessionId);
+      }
+      continue;
+    }
     const bounds = clampBoundsToMonitors(item.bounds, monitors);
     const rule = { window: win.id, ...bounds };
     if (cfg.desktop && item.desktop) rule.desktop = item.desktop;

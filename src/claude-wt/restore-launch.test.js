@@ -19,6 +19,8 @@ const focusTerminalWindow = vi.fn();
 const placeWindowByConfig = vi.fn();
 const GoToDesktopNumber = vi.fn();
 const spawn = vi.fn();
+const getMonitorByPoint = vi.fn();
+const markNoAutoplace = vi.fn();
 
 vi.mock('../windows.js', () => ({
   getWindows: (...a) => getWindows(...a),
@@ -31,7 +33,11 @@ vi.mock('../placement.js', () => ({ placeWindowByConfig: (...a) => placeWindowBy
 vi.mock('../virtual-desktop.js', () => ({
   virtualDesktop: { GoToDesktopNumber: (...a) => GoToDesktopNumber(...a), GetWindowDesktopNumber: vi.fn() },
 }));
-vi.mock('../monitors.js', () => ({ getWindowsMonitors: () => [] }));
+vi.mock('../monitors.js', () => ({
+  getWindowsMonitors: () => [],
+  getMonitorByPoint: (...a) => getMonitorByPoint(...a),
+}));
+vi.mock('../no-autoplace.js', () => ({ markNoAutoplace: (...a) => markNoAutoplace(...a) }));
 vi.mock('node:child_process', () => ({ spawn: (...a) => spawn(...a) }));
 vi.mock('./index.js', () => ({ getClaudeWtConfig: vi.fn(), isTerminalWindow: () => true }));
 vi.mock('./state.js', () => ({ readState: vi.fn() }));
@@ -59,6 +65,8 @@ beforeEach(() => {
   placeWindowByConfig.mockReset().mockResolvedValue(undefined);
   GoToDesktopNumber.mockReset().mockResolvedValue(undefined);
   spawn.mockReset();
+  getMonitorByPoint.mockReset();
+  markNoAutoplace.mockReset();
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
@@ -113,5 +121,100 @@ describe('launchPlan', () => {
     await launchPlan({ plan: [item(), item({ sessionId: 'b2' })], cfg, restored: [], skipped: [] });
     expect(focusTerminalWindow).not.toHaveBeenCalled();
     expect(focusWindowById).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Второй монитор, справа от главного. Рабочая область, а не полные границы:
+ * панель задач съедает низ, и центр по полным границам увёл бы окно вниз.
+ */
+const secondScreen = () => getMonitorByPoint.mockReturnValue({
+  isPrimary: () => false,
+  getWorkArea: () => ({ x: 2560, y: 0, width: 1920, height: 1040 }),
+  getScaleFactor: () => 1,
+});
+const cursor = { x: 3000, y: 500 };
+
+describe('launchPlan по курсору', () => {
+  it('ставит окно на экран под курсором, а не в запомненные границы', async () => {
+    // Ради этого всё и затевалось: знакомую трекеру сессию менеджер поднимает
+    // восстановлением, и до этой правки галка «на активном экране» у неё не
+    // делала ничего — окно возвращалось туда, где сессия жила вчера.
+    //
+    // Размер при этом остаётся от слота: переезд на соседний экран — про
+    // экран, а не про то, чтобы забыть, каким окно было.
+    secondScreen();
+    windowsAfterSpawn(42);
+    await launchPlan({ plan: [item()], cfg, restored: [], skipped: [], cursor });
+    expect(placeWindowByConfig).toHaveBeenCalledWith({
+      window: 42, x: 3120, y: 220, width: 800, height: 600,
+    });
+  });
+
+  it('курсор отменяет и стол — и человека никуда не уводит', async () => {
+    // «Открывай там, где я смотрю» читается буквально: стол из слота значил бы,
+    // что окно встало на нужный экран и тут же уехало на чужой рабочий стол,
+    // утащив туда и человека (`restoreFollowDesktop`).
+    secondScreen();
+    windowsAfterSpawn(42);
+    await launchPlan({ plan: [item()], cfg, restored: [], skipped: [], cursor });
+    expect(placeWindowByConfig.mock.calls[0][0]).not.toHaveProperty('desktop');
+    expect(GoToDesktopNumber).not.toHaveBeenCalled();
+    expect(focusTerminalWindow).toHaveBeenCalledWith(42, expect.any(Function), null);
+  });
+
+  it('на неглавном экране закрывает окно от автоматики', async () => {
+    // Иначе демон при первой же привязке окна к знакомой сессии утащил бы его
+    // обратно в запомненные границы — то самое, от чего человек и уходил.
+    secondScreen();
+    windowsAfterSpawn(42);
+    await launchPlan({ plan: [item()], cfg, restored: [], skipped: [], cursor });
+    expect(markNoAutoplace).toHaveBeenCalledWith(42);
+  });
+
+  it('главный экран от пометки не спасает — слот у сессии есть всегда', async () => {
+    // Восстановление берётся только за сессию, которую трекер помнит, то есть
+    // слот тут есть по построению. Без пометки демон при первой привязке
+    // вернул бы окно в запомненные границы и на запомненный стол — и галка
+    // отменяла бы сама себя на главном экране, то есть чаще всего.
+    getMonitorByPoint.mockReturnValue({
+      isPrimary: () => true,
+      getWorkArea: () => ({ x: 0, y: 0, width: 1920, height: 1040 }),
+      getScaleFactor: () => 1,
+    });
+    windowsAfterSpawn(42);
+    await launchPlan({ plan: [item()], cfg, restored: [], skipped: [], cursor });
+    expect(markNoAutoplace).toHaveBeenCalledWith(42);
+  });
+
+  it('пачкой курсор не действует — окна встают по своим местам', async () => {
+    // Курсора у восстановления пачкой (старт машины, `^S`) не бывает вовсе,
+    // но проверка на одиночный подъём стоит страховкой: свались туда курсор,
+    // все окна сложились бы на один экран молча.
+    secondScreen();
+    let n = 0;
+    const list = [];
+    getWindows.mockImplementation(() => list.slice());
+    spawn.mockImplementation(() => { list.push({ id: 40 + (++n), getTitle: () => 'ccfzf' }); return { unref() {} }; });
+    await launchPlan({ plan: [item(), item({ sessionId: 'b2' })], cfg, restored: [], skipped: [], cursor });
+    expect(placeWindowByConfig).toHaveBeenCalledWith({ window: 41, ...bounds, desktop: 2 });
+  });
+
+  it('нет монитора в точке — откат на запомненные границы', async () => {
+    // Незнакомая точка значит, что конфиг мониторов разошёлся с тем, что видит
+    // пикер. Ставить наугад тут хуже, чем сделать то, что делали всегда.
+    getMonitorByPoint.mockReturnValue(null);
+    windowsAfterSpawn(42);
+    const restored = [];
+    await launchPlan({ plan: [item()], cfg, restored, skipped: [], cursor });
+    expect(placeWindowByConfig).toHaveBeenCalledWith({ window: 42, ...bounds, desktop: 2 });
+    expect(restored).toEqual(['a1']);
+  });
+
+  it('без курсора ставит как ставил', async () => {
+    windowsAfterSpawn(42);
+    await launchPlan({ plan: [item()], cfg, restored: [], skipped: [] });
+    expect(placeWindowByConfig).toHaveBeenCalledWith({ window: 42, ...bounds, desktop: 2 });
+    expect(getMonitorByPoint).not.toHaveBeenCalled();
   });
 });

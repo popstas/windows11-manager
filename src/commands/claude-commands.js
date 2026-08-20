@@ -62,13 +62,17 @@ function claudeCommands({ winMan, log, notify, slots }) {
     return session ? { session } : { error: `unknown session ${id}`, unknown: true };
   }
 
-  async function restoreOne(id, terminal) {
+  async function restoreOne(id, terminal, cursor) {
     try {
       const opts = { sessionIds: [id] };
       // Ключа нет, когда пикер имя не назвал: дефолт машины решает сам
       // restoreClaudeSessions, а не пустая строка здесь — тот же приём, что у
       // openProject.
       if (terminal) opts.terminal = terminal;
+      // И так же с точкой: её нет, когда галка «на активном экране» выключена
+      // или пикер прежней версии её не шлёт, — а «нет точки» и значит «ставь
+      // как ставил».
+      if (cursor) opts.cursor = cursor;
       const { restored, skipped } = await winMan.restoreClaudeSessions(opts);
       log(`claude-wt restored ${restored.length}, skipped ${skipped.length}`);
       if (!restored.length) notify(`claude-wt: не удалось поднять сессию ${id}`);
@@ -93,11 +97,12 @@ function claudeCommands({ winMan, log, notify, slots }) {
    *
    * `terminal` доходит только досюда с дорогой session-open: у claude-focus
    * его в просьбе не бывает, и вызов оттуда просто не передаёт третий
-   * аргумент.
+   * аргумент. То же и с точкой курсора: подъём уже открытого окна её не
+   * спрашивает вовсе — ставить нечего, окно стоит там, куда его поставили.
    */
-  async function focusOrRestore(id, session, terminal, mark = noTiming) {
+  async function focusOrRestore(id, session, terminal, mark = noTiming, cursor = null) {
     if (chooseAction(session, (windowId) => !!winMan.getWindowById(windowId)) === 'restore') {
-      await restoreOne(id, terminal);
+      await restoreOne(id, terminal, cursor);
       return;
     }
     if (!(await winMan.focusTerminalWindow(session.windowId, mark))) log(`claude-wt: ${id} is not on screen`, 'warn');
@@ -362,27 +367,18 @@ function claudeCommands({ winMan, log, notify, slots }) {
       }
       const found = id ? findSession(id, mark) : null;
       if (found?.session) {
-        // «Не расставляй» и восстановление противоречат друг другу: второе тем
-        // и занимается, что возвращает окно в запомненные границы, на
-        // запомненный стол, — и уводит туда же человека
-        // (`restoreFollowDesktop` в `restore.js`). Пометка тут не помогает
-        // ничем: её ставит дорога курсора, а этой дороге курсора не дают
-        // вовсе. Поэтому просьба отменяет саму ветку, а не её хвост, и сессия
-        // поднимается дорогой resume — той же, какой открываются сессии без
-        // слота: тот же шаблон `claudeWt.launch`, тот же профиль по каталогу,
-        // но место называет курсор, и окно метится.
+        // Точка едет и сюда. Прежде эта ветка курсора не получала вовсе — она
+        // **тем и занимается**, что возвращает окно в запомненные границы, —
+        // и просьбу «не расставляй» приходилось исполнять отменой самой ветки:
+        // сессия поднималась дорогой resume мимо слота. Двух дорог к одному
+        // результату больше нет, и это важнее удобства: разойдись они, окно
+        // вставало бы по-разному в зависимости от того, помнит ли трекер эту
+        // сессию, а сказать об этом было бы некому — ответа у публикации нет.
         //
-        // У живого окна ветка не меняется: подъём — не открытие, ставить
+        // У живого окна точка не значит ничего: подъём — не открытие, ставить
         // нечего, а второе окно той же сессии человек не просил.
-        const restoring = chooseAction(
-          found.session,
-          (windowId) => !!winMan.getWindowById(windowId),
-        ) === 'restore';
-        if (!(restoring && at?.noAutoplace)) {
-          await focusOrRestore(id, found.session, wantedTerminal, mark);
-          return;
-        }
-        log(`claude-wt session-open ${id}: просили не расставлять — поднимаю мимо слота`);
+        await focusOrRestore(id, found.session, wantedTerminal, mark, at);
+        return;
       }
       // Список сессий не прочитался — это поломка, а не «сессии тут нет»;
       // сказать о ней надо, но не встать: поднять сессию по id можно и без

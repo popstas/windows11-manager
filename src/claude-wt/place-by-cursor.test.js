@@ -13,7 +13,7 @@ vi.mock('../no-autoplace.js', () => ({
   noAutoplaceIds: () => new Set(),
 }));
 
-const { placeByCursor } = await import('./project.js');
+const { placeByCursor } = await import('./cursor-place.js');
 
 const target = (extra) => ({
   rule: { window: 77, x: 0, y: 0, width: 800, height: 600 },
@@ -42,6 +42,17 @@ describe('placeByCursor', () => {
     // открывать всегда», модификатор — «как открыть вот эту», и на главном
     // экране он значит ровно то же, что на соседнем.
     await placeByCursor(target({ pinned: true }), vi.fn(), 'a window');
+    expect(markNoAutoplace).toHaveBeenCalledWith(77);
+  });
+
+  it('перебитую память о месте помечает и на главном экране', async () => {
+    // Слот у окна есть, и курсор его только что перебил. Не пометь — демон при
+    // первой же привязке утащил бы окно в запомненные границы и на запомненный
+    // стол (`step` в `tracker-helpers.js`), то есть отменил бы ровно то, о чём
+    // человек просил. Оговорка про главный экран тут не работает: она про
+    // окна, у которых своего места ещё нет, и правила `config.windows` для них
+    // делают ожидаемое.
+    await placeByCursor(target({ remembered: true }), vi.fn(), 'a window');
     expect(markNoAutoplace).toHaveBeenCalledWith(77);
   });
 
