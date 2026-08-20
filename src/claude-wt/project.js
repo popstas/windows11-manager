@@ -145,7 +145,14 @@ async function placeSpawnedWindow(win, title, mark = noTiming, cursor = null, de
     ? cursorRule({ win, cursor, slot, monitorAt })
     : slot?.bounds && { rule: { window: win.id, ...slot.bounds }, primary: true };
   if (!target) return null;
-  if (slot?.desktop) target.rule.desktop = slot.desktop;
+  // Курсор отменяет и стол, а не только экран. Стол из слота — где окно этой
+  // сессии стояло вчера; названная точка — сегодняшняя просьба «открывай там,
+  // где я смотрю», и читается она буквально: окно, уехавшее следом на
+  // запомненный стол, утащило бы туда и человека, то есть галка отменяла бы
+  // сама себя. Правило общее с восстановлением (`launchPlan`): разойдись они,
+  // один и тот же курсор давал бы разный стол в зависимости от того, помнит ли
+  // трекер эту сессию.
+  if (!cursor && slot?.desktop) target.rule.desktop = slot.desktop;
   if (!(await placeByCursor(target, place, title))) return null;
   mark('place');
   return target.rule.desktop ?? null;
@@ -433,4 +440,7 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
   return { ok: true, action: 'spawn', cwd, name: sessionName, sessionName };
 }
 
-export { openClaudeProject, resumeClaudeSession, focusSpawnedWindow, focusNewTerminalWindow, focusTerminalWindow };
+// `placeSpawnedWindow` — в экспорте ради сторожа, по той же причине, что и
+// постановка по курсору: назначенный слотом рабочий стол виден только глазами
+// и только на машине, где столов больше одного.
+export { openClaudeProject, resumeClaudeSession, focusSpawnedWindow, focusNewTerminalWindow, focusTerminalWindow, placeSpawnedWindow };
