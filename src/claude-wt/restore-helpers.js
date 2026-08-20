@@ -97,4 +97,25 @@ function restoreFollowDesktop({ planned = 0, placed = [] } = {}) {
   return Number.isFinite(desktop) && desktop > 0 ? desktop : null;
 }
 
-export { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFollowDesktop };
+/**
+ * Окно, которому после подъёма отдать ввод.
+ *
+ * Правило то же и по той же причине, что у `restoreFollowDesktop`: фокус
+ * заслуживает только одиночный подъём — открытие названной сессии. Пачкой
+ * (снимок, падение) поднимаются окна разных сессий, и выбрать из них одно
+ * значит решить за человека, в котором из них он сейчас будет печатать.
+ *
+ * Заведено потому, что фокуса в восстановлении не было вовсе: сессия,
+ * открытая из истории пикера, вставала на своё место, а ввод оставался у того,
+ * кто держал передний план. Подъём `placeWindow()` (`bringToTop`) окно
+ * показывает, но переднего плана не даёт, а переход на чужой стол вслед за
+ * окном оставляет передним что придётся — поэтому фокус берётся последним, уже
+ * после переноса и перехода.
+ */
+function restoreFocusTarget({ planned = 0, placed = [] } = {}) {
+  if (planned !== 1 || placed.length !== 1) return null;
+  const windowId = placed[0]?.windowId;
+  return Number.isFinite(windowId) ? windowId : null;
+}
+
+export { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFocusTarget, restoreFollowDesktop };
