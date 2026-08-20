@@ -159,16 +159,22 @@ function cursorRule({ win, cursor, slot, monitorAt = getMonitorByPoint }) {
   const at = centerOnMonitor(area, size);
   const rule = { window: win.id, x: at.x, y: at.y, width: size.width, height: size.height };
   console.log(`[claude-wt] cursor ${cursor.x},${cursor.y} -> ${JSON.stringify(rule)}`);
-  return { rule, primary };
+  // `pinned` — попросили прямо: «поставь сюда и не двигай». Признак приезжает
+  // в самой точке (`parseCursorPoint`) и здесь только перекладывается — решает
+  // по нему `placeByCursor`, одна на обе дороги постановки по курсору.
+  return { rule, primary, pinned: cursor?.noAutoplace === true };
 }
 
 /**
- * Поставить окно по правилу и, если экран не главный, закрыть его от автоматики.
+ * Поставить окно по правилу и, если просили, закрыть его от автоматики.
  *
- * Пометка только для неглавного экрана — так просил человек, и оговорка не
- * лишняя: на главном экране правила из `config.windows` и память слотов делают
- * ровно то, чего от них ждут, а выключенная там расстановка выглядела бы
- * поломкой конфига.
+ * Поводов два. Неглавный экран — так просил человек, и оговорка не лишняя: на
+ * главном экране правила из `config.windows` и память слотов делают ровно то,
+ * чего от них ждут, а выключенная там расстановка выглядела бы поломкой
+ * конфига. И прямая просьба пикера (`noAutoplace` в теле, Ctrl на строке
+ * списка) — та экран не спрашивает вовсе: галка «на активном экране» отвечает
+ * на вопрос «как открывать всегда», а модификатор — «как открыть вот эту», и
+ * на главном экране он значит ровно то же, что на соседнем.
  *
  * Ставится **после** удачной постановки: помеченное, но не переехавшее окно
  * осталось бы и на прежнем месте, и без расстановки — худшее из двух.
@@ -181,7 +187,7 @@ async function placeByCursor(target, place, what) {
     console.error(`[claude-wt] failed to place ${what}: ${e.message}`);
     return false;
   }
-  if (!target.primary) markNoAutoplace(target.rule.window);
+  if (!target.primary || target.pinned) markNoAutoplace(target.rule.window);
   return true;
 }
 
@@ -511,5 +517,7 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
 
 // `cursorRule` вынесена в экспорт ради сторожа: поведением её не поймать —
 // правило уходит в `setBounds`, а окно на неверном экране видно только
-// глазами и только на машине с двумя мониторами.
-export { openClaudeProject, resumeClaudeSession, focusSpawnedWindow, focusNewTerminalWindow, focusTerminalWindow, cursorRule };
+// глазами и только на машине с двумя мониторами. `placeByCursor` — там же и
+// по той же причине: пометка «не расставлять» видна лишь тем, что окно через
+// секунду **не** уехало, и отличить это от сработавшей расстановки нечем.
+export { openClaudeProject, resumeClaudeSession, focusSpawnedWindow, focusNewTerminalWindow, focusTerminalWindow, cursorRule, placeByCursor };
