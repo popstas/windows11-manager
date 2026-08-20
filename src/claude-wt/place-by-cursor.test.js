@@ -13,7 +13,7 @@ vi.mock('../no-autoplace.js', () => ({
   noAutoplaceIds: () => new Set(),
 }));
 
-const { placeByCursor } = await import('./project.js');
+const { placeByCursor } = await import('./cursor-place.js');
 
 const target = (extra) => ({
   rule: { window: 77, x: 0, y: 0, width: 800, height: 600 },
