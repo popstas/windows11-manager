@@ -8,6 +8,9 @@ on:
     # и у релизов 2.1.0, 3.0.0 и 3.1.0 не оказалось ни одного .exe — молча:
     # workflow, который не сработал, в релизе ничем себя не проявляет.
     # Старый образец оставлен ради тегов, проставленных до release-please.
+    # Впредь теги ставит `npm version` — они без префикса. Второй образец
+    # оставлен ради шести тегов, проставленных release-please, пока он был жив:
+    # пересобрать старый релиз иначе стало бы нечем.
     tags: ['v*', 'windows11-manager-v*']
   # Ради тега, который уже стоит: пересобрать релиз, не переставляя тег
   # (`gh workflow run release.yml --ref windows11-manager-v3.1.0`).
@@ -21,6 +24,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # git-cliff считает заметки по диапазону тегов — на мелкой копии
+          # предыдущего тега не видно, и в заметки уехала бы вся история.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -53,7 +60,31 @@ jobs:
       #   env:
       #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Upload release assets
+      # Тело релиза собирается из сообщений коммитов. Раньше релиз заводил
+      # release-please и он же писал заметки; с его уходом релиз создаёт шаг
+      # ниже — `action-gh-release` заводит его, если тега ещё нет в релизах.
+      - name: Generate release notes
+        id: release_notes
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create release and upload assets
         uses: softprops/action-gh-release@v2
         with:
+          body: ${{ steps.release_notes.outputs.content }}
           files: tauri-app/src-tauri/target/release/bundle/nsis/*.exe
+
+      # Заголовок правится здесь, а не в workflow `Release Title`: тот висит на
+      # событии `release: published`, а событий от `GITHUB_TOKEN` GitHub обратно
+      # в workflow не пускает — то есть на релиз, созданный шагом выше, он не
+      # сработает ни разу. Тем же приёмом и по той же причине это делал
+      # release-please.
+      - name: Set release title
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: node scripts/release-title.js "$TAG"

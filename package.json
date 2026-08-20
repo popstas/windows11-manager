@@ -14,17 +14,19 @@
     "wql-process-monitor": "^3.0.2"
   },
   "scripts": {
-    "version": "node scripts/sync-tauri-version.js",
+    "version": "node scripts/sync-tauri-version.js && npm run changelog && git add CHANGELOG.md tauri-app/package.json tauri-app/src-tauri/tauri.conf.json tauri-app/src-tauri/Cargo.toml tauri-app/src-tauri/Cargo.lock",
     "build": "npm run version-sync && npm run build --prefix tauri-app && node -e \"import('fs').then(fs=>fs.cpSync('tauri-app/src-tauri/target/release/bundle','dist',{recursive:true}))\"",
     "start": "node src",
     "version-sync": "node scripts/sync-tauri-version.js",
     "dev": "npm run tauri dev --verbose --prefix tauri-app",
     "test": "vitest run",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "changelog": "git-cliff --unreleased --tag v$npm_package_version --prepend CHANGELOG.md"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "eslint": "^9.0.0",
+    "git-cliff": "^2.13.1",
     "globals": "^17.3.0",
     "vitest": "^3.0.0"
   },

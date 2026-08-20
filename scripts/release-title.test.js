@@ -35,6 +35,26 @@ describe('featureFromBody', () => {
     expect(featureFromBody(body)).toBe(null);
   });
 
+  it('не принимает автогенерацию git-cliff за фичу', () => {
+    // Генератор сменился вместе с уходом release-please, и шапка у него другая:
+    // не `## [4.1.0](compare…)`, а `## v4.2.0- дата`. Не узнай её проверка —
+    // заголовком релиза стало бы `v4.2.0: v4.2.0 - 2026-08-20`, и увидеть это
+    // можно было бы только на уже выпущенном релизе.
+    const body = '## v4.2.0 - 2026-08-20\n\n### Features\n\n- claude-wt: Слушает курсор\n';
+    expect(featureFromBody(body)).toBe(null);
+  });
+
+  it('не принимает шапку с префиксом компонента за фичу', () => {
+    // `workflow_dispatch` на старом теге: cliff печатает версией имя тега целиком.
+    expect(featureFromBody('## windows11-manager-v4.1.0 - 2026-08-18\n')).toBe(null);
+  });
+
+  it('не принимает рубрики git-cliff за фичу', () => {
+    // Свои имена групп у него тоже другие — `Refactor` вместо `Code Refactoring`.
+    expect(featureFromBody('### Refactor\n\n- Постановка окна по курсору\n')).toBe(null);
+    expect(featureFromBody('### Miscellaneous\n')).toBe(null);
+  });
+
   it('не принимает рубрику changelog за фичу', () => {
     const body = '### Bug Fixes\n\n* **tauri:** fix tray icon click ([48d3ac8](url))\n';
     expect(featureFromBody(body)).toBe(null);

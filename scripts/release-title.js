@@ -32,6 +32,11 @@ function stripMarkdown(text) {
 /**
  * Секции автогенерённого changelog: у старых релизов тело начинается прямо с
  * `### Bug Fixes`, без строки с версией. Это не фича, это рубрика.
+ *
+ * Генераторов здесь побывало два, и имена групп у них разные: `Code
+ * Refactoring` у release-please против `Refactor` у git-cliff. Перечислены оба
+ * набора — старые релизы никуда не делись, а разбирать их тела приходится тем
+ * же кодом.
  */
 const CHANGELOG_SECTIONS = new Set([
   'features',
@@ -47,17 +52,30 @@ const CHANGELOG_SECTIONS = new Set([
   'styles',
   'dependencies',
   'breaking changes',
+  // git-cliff
+  'build',
+  'miscellaneous',
+  'refactor',
+  'performance',
+  'styling',
+  'testing',
+  'security',
 ]);
 
 /**
- * Первый заголовок тела релиза или null, если тело — автогенерация
- * release-please: её заголовки — либо номер версии, либо рубрика changelog.
+ * Первый заголовок тела релиза или null, если тело автогенерённое: его
+ * заголовки — либо номер версии, либо рубрика changelog.
+ *
+ * Версию заголовок называет по-разному у двух генераторов: `[4.1.0](compare…)`
+ * у release-please, а у git-cliff — имя тега целиком, то есть с `v`, а на
+ * старых тегах ещё и с префиксом компонента. Не узнай проверка любую из этих
+ * форм, шапка уехала бы в заголовок фичей — `v4.2.0: v4.2.0 - 2026-08-20`.
  */
 export function featureFromBody(body) {
   for (const line of String(body ?? '').split(/\r?\n/)) {
     const m = /^#{1,6}\s+(.*\S)\s*$/.exec(line);
     if (!m) continue;
-    if (/^\[?\d+\.\d+\.\d+/.test(m[1])) return null;
+    if (/^\[?(?:[a-z0-9][a-z0-9-]*-)?v?\d+\.\d+\.\d+/i.test(m[1])) return null;
     const text = stripMarkdown(m[1]);
     if (CHANGELOG_SECTIONS.has(text.toLowerCase())) return null;
     return text || null;
