@@ -178,6 +178,48 @@ describe('claude-session-open', () => {
     expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
   });
 
+  it('просьба «не расставлять» отменяет восстановление, а не только слот', async () => {
+    // Живой случай 2026-08-20: Ctrl+Enter в пикере, а окно всё равно уезжало
+    // на прежнее место и на прежний стол, уводя туда и человека. Дорога
+    // восстановления курсора не получает вовсе — она **тем и занимается**, что
+    // возвращает окно в запомненные границы (`rule.desktop` и
+    // `restoreFollowDesktop` в `restore.js`), и пометка «не расставлять» ей не
+    // мешает ничем: ставит её дорога курсора. Поэтому просьба отменяет саму
+    // ветку.
+    const d = deps({ winMan: { getWindowById: vi.fn().mockReturnValue(null) } });
+    const cursor = { x: 2560, y: 300 };
+    await claudeCommands(d)['claude-session-open']({
+      ...PROJECT, id: 'abc', cursor, noAutoplace: true,
+    });
+    expect(d.winMan.restoreClaudeSessions).not.toHaveBeenCalled();
+    expect(d.winMan.resumeClaudeSession).toHaveBeenCalledWith({
+      id: 'abc', cwd: '/p/site', cursor: { ...cursor, noAutoplace: true },
+    });
+  });
+
+  it('у живого окна просьба ветку не меняет: подъём — не открытие', async () => {
+    // Ставить нечего, а второе окно той же сессии человек не просил.
+    const d = deps();
+    await claudeCommands(d)['claude-session-open']({
+      id: 'abc', action: 'terminal', cursor: { x: 10, y: 20 }, noAutoplace: true,
+    });
+    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledWith(42, expect.any(Function));
+    expect(d.winMan.resumeClaudeSession).not.toHaveBeenCalled();
+    expect(d.winMan.restoreClaudeSessions).not.toHaveBeenCalled();
+  });
+
+  it('без просьбы знакомая сессия по-прежнему восстанавливается на своё место', async () => {
+    // Отмена ветки — отступление, а не новое умолчание: галка
+    // `openOnActiveDisplay` в пикере про все открытия сразу, и менять ей смысл
+    // никто не просил.
+    const d = deps({ winMan: { getWindowById: vi.fn().mockReturnValue(null) } });
+    await claudeCommands(d)['claude-session-open']({
+      ...PROJECT, id: 'abc', cursor: { x: 2560, y: 300 },
+    });
+    expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledWith({ sessionIds: ['abc'] });
+    expect(d.winMan.resumeClaudeSession).not.toHaveBeenCalled();
+  });
+
   it('сессию без слота поднимает по id, а не заводит чистую в её каталоге', async () => {
     // Живой случай 2026-08-17: окно сессии стоит на мак мини, слота на Windows
     // у неё нет и не было. Каталог тут известен, и раньше просьба уходила в
