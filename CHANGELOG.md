@@ -32,6 +32,62 @@
 
 
 
+## [4.2.0](https://github.com/popstas/windows11-manager/compare/windows11-manager-v4.1.0...windows11-manager-v4.2.0) (2026-08-20)
+
+
+### Features
+
+* **claude-place:** глобальные хоткеи раскладок уходят пикеру ([2463ad8](https://github.com/popstas/windows11-manager/commit/2463ad8f24b46821476d4db4b028a14952e3824a))
+* **claude-place:** глобальные хоткеи раскладок уходят пикеру + tauri 2.11 ([f77f995](https://github.com/popstas/windows11-manager/commit/f77f9959c74d2b6c9bb265684d35459ef1177ee4))
+* **claude-place:** плитка раскладывает столы по одному, не прыгая между ними ([8d4e174](https://github.com/popstas/windows11-manager/commit/8d4e174c1ff847d6868296c4c80c674a4691b939))
+* **claude-place:** плитка тоже поднимает окна и забирает фокус ([8404d50](https://github.com/popstas/windows11-manager/commit/8404d50dd67a65dd188826f2790b3fdb9eaf6fa9))
+* **claude-place:** свёрнутые окна больше не занимают зону ([f512143](https://github.com/popstas/windows11-manager/commit/f5121430842f3b0ab9bec5eabb2f6c88cb89dfeb))
+* **claude-wt:** восстановление сессии слушает курсор ([dcfe4bb](https://github.com/popstas/windows11-manager/commit/dcfe4bb72b8304e2022d4713d904d231726f2ef1))
+* **claude-wt:** восстановление сессии слушает курсор ([0f4fd8e](https://github.com/popstas/windows11-manager/commit/0f4fd8e10eb81e0a3017adf78beb7afcd9d2949e))
+* **claude-wt:** новое окно сессии встаёт на экран под курсором ([2ff190c](https://github.com/popstas/windows11-manager/commit/2ff190c0460e09b09a9812c0289e4cc28b3149bc))
+* **claude-wt:** новое окно сессии встаёт на экран под курсором ([e3911b0](https://github.com/popstas/windows11-manager/commit/e3911b036a528e003dad3fe7ea0410f4a485684c))
+* **claude-wt:** просьба пикера «не расставлять» закрывает окно от автоматики ([20d4df6](https://github.com/popstas/windows11-manager/commit/20d4df650fc179fa765a9c7fb8a1105275b6f94e))
+* **claude-wt:** просьба пикера «не расставлять» закрывает окно от автоматики ([eb467b0](https://github.com/popstas/windows11-manager/commit/eb467b0444b8c8b51ca0e4d6801be823e1084a6e))
+* **claude-wt:** секундомер по звеньям цепочки открытия сессии ([1cbf04b](https://github.com/popstas/windows11-manager/commit/1cbf04b19896e196ebe6b8a4d15621a38775e214))
+* **settings:** вкладка Claude правит claudeWt.* и слоты панели в YAML-конфиге ([e94b4b6](https://github.com/popstas/windows11-manager/commit/e94b4b6f876ee23162dcae853b6c08c33da109ef))
+* **settings:** вкладка Claude правит claudeWt.* и слоты панели в YAML-конфиге ([719dd14](https://github.com/popstas/windows11-manager/commit/719dd14178d5023655c2c35591c72b824c6e3d3b))
+* **settings:** галочки «не переносить окна между столами» и «не следовать за окном» ([2bbe49b](https://github.com/popstas/windows11-manager/commit/2bbe49b43a50acffa2bf3e38043aae97697c1129))
+* показать отслеживаемые окна claude-wt в меню трея ([9bf0820](https://github.com/popstas/windows11-manager/commit/9bf0820f7b1b3b8687fb59545dcfc30975b475f0))
+* разбить настройки на вкладки и показать лог прямо в окне ([1b6bd57](https://github.com/popstas/windows11-manager/commit/1b6bd57a2575776c235873a11d369982ee8ea497))
+* расстановка знает про рабочие столы и свёрнутые окна ([6cb5d02](https://github.com/popstas/windows11-manager/commit/6cb5d0234aaa531a590c54d485bdf7655c1b7649))
+
+
+### Bug Fixes
+
+* **claude-wt:** восстановление отдаёт фокус поднятому окну ([aed34ca](https://github.com/popstas/windows11-manager/commit/aed34ca31147bb73ad0fac3c4ce7b2da87783100))
+* **claude-wt:** восстановление отдаёт фокус поднятому окну ([c83ae83](https://github.com/popstas/windows11-manager/commit/c83ae836608059efbbbf252ee8acc27e59ba4e27))
+* **claude-wt:** окно с неглавного экрана не уезжает обратно автоматикой ([e03da36](https://github.com/popstas/windows11-manager/commit/e03da367f9ad719943a68d0e856bf7e06db8c05f))
+* **claude-wt:** просьба «не расставлять» отменяет восстановление, а не только слот ([bf020f7](https://github.com/popstas/windows11-manager/commit/bf020f7ab613db6bb62809d5153be4ab8992f7e7))
+* **claude-wt:** рабочая область для курсора переводится в пространство окна ([a1ebc91](https://github.com/popstas/windows11-manager/commit/a1ebc91a5eecd1daaea73170db1e8d7519e835bc))
+* **claude-wt:** с курсором своё окно ищется по hwnd, а не по заголовку ([f586de0](https://github.com/popstas/windows11-manager/commit/f586de019038cd59fc7adc0f2a54dab8b9954b28))
+* **claude-wt:** файл окон называет свёрнутость ([da78a01](https://github.com/popstas/windows11-manager/commit/da78a01a2e72a07348b8b1749fd6b4a4f803455f))
+* **claude-wt:** файл окон называет свёрнутость, иначе читателю её взять неоткуда ([592b870](https://github.com/popstas/windows11-manager/commit/592b870aaf3bf90b458907ea07b93b320924f409))
+* **settings:** интерфейс окна настроек по-английски ([b8bca46](https://github.com/popstas/windows11-manager/commit/b8bca46222810260984dfb903bea1a76d773ab80))
+* **tray:** обновить tauri до 2.11 — правый клик больше не открывает два меню ([3b671ad](https://github.com/popstas/windows11-manager/commit/3b671ad966ea6e84f8f31940cea27e7506091e4a))
+* **windows:** фокус разворачивает свёрнутое окно ([3a321b0](https://github.com/popstas/windows11-manager/commit/3a321b0f3683b3fcd69033f1299a79c2f8fdf5d1))
+* писать состав списка отслеживаемых окон в лог ([b9670a4](https://github.com/popstas/windows11-manager/commit/b9670a425165bf2ac93a1807468e541e02150895))
+* фокус разворачивает свёрнутое окно ([fa1b69d](https://github.com/popstas/windows11-manager/commit/fa1b69d5555d52efd186a30a0e1e198bb5062059))
+
+
+### Performance Improvements
+
+* **claude-place:** раскладка не читает состояние агента, когда порядок задан ([7e9b805](https://github.com/popstas/windows11-manager/commit/7e9b805bc0bc9d78d2e1d85c72582bbc4b439645))
+* **claude-wt:** не запускать VirtualDesktop11.exe там, где не нужно ([29d264b](https://github.com/popstas/windows11-manager/commit/29d264b31c89dae4fbb55d69f5a7e3851cbaffbe))
+* **claude-wt:** открытие сессии с шести секунд до полутора ([746c62e](https://github.com/popstas/windows11-manager/commit/746c62ed7b67c5521389fed2b69f4b40afe489bc))
+* **claude-wt:** подъём уже открытого окна больше не ждёт сетевой диск ([8278a88](https://github.com/popstas/windows11-manager/commit/8278a88e41d680476f444ae58dad5033c2c341ca))
+* **claude-wt:** ставить окно новой сессии на место до фокуса ([b2759cc](https://github.com/popstas/windows11-manager/commit/b2759ccce582fa5893f760dcca0faf1d6e3cea9a))
+
+
+### Code Refactoring
+
+* **claude-wt:** постановка окна по курсору переезжает в свой модуль ([f13c406](https://github.com/popstas/windows11-manager/commit/f13c40668b602aa32e79444be69e4f1ab556a682))
+* одна проверка свёрнутости на всех ([94b736d](https://github.com/popstas/windows11-manager/commit/94b736d2ac018f21cb17ca6a14f6023194629677))
+
 ## [4.1.0](https://github.com/popstas/windows11-manager/compare/windows11-manager-v4.0.0...windows11-manager-v4.1.0) (2026-08-18)
 
 
