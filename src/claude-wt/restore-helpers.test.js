@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFollowDesktop } from './restore-helpers.js';
+import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFocusTarget, restoreFollowDesktop } from './restore-helpers.js';
 
 const bounds = { x: 10, y: 20, width: 800, height: 600 };
 const slot = (over = {}) => ({ titles: ['ccfzf'], cwd: '/p', bounds, desktop: 2, lastSeen: 500, ...over });
@@ -190,5 +190,33 @@ describe('restoreFollowDesktop', () => {
     expect(restoreFollowDesktop({ planned: 1, placed: [{}] })).toBeNull();
     expect(restoreFollowDesktop({ planned: 1, placed: [] })).toBeNull();
     expect(restoreFollowDesktop({})).toBeNull();
+  });
+});
+
+describe('restoreFocusTarget', () => {
+  it('отдаёт окно единственной поднятой сессии', () => {
+    // Ради этого хелпер и заведён: сессию, открытую из истории пикера,
+    // восстановление ставило на место и на этом заканчивало — окно было, а
+    // ввод оставался у того, кто держал передний план.
+    expect(restoreFocusTarget({ planned: 1, placed: [{ windowId: 42, desktop: 2 }] })).toBe(42);
+  });
+
+  it('фокусирует и без стола — окно встало там же, где человек', () => {
+    // Стол `null` значит «переносить некуда», а не «не фокусировать»: это
+    // самый частый случай, и молчание в нём и было багом.
+    expect(restoreFocusTarget({ planned: 1, placed: [{ windowId: 42, desktop: null }] })).toBe(42);
+  });
+
+  it('молчит на восстановлении пачкой — то же правило, что у стола', () => {
+    // Снимок раскладки поднимает несколько окон; выбрать из них одно и отдать
+    // ему ввод — тот же произвол, что и переход на чужой стол.
+    expect(restoreFocusTarget({ planned: 3, placed: [{ windowId: 42 }] })).toBeNull();
+    expect(restoreFocusTarget({ planned: 1, placed: [{ windowId: 1 }, { windowId: 2 }] })).toBeNull();
+  });
+
+  it('молчит, когда окно не встало', () => {
+    expect(restoreFocusTarget({ planned: 1, placed: [{}] })).toBeNull();
+    expect(restoreFocusTarget({ planned: 1, placed: [] })).toBeNull();
+    expect(restoreFocusTarget({})).toBeNull();
   });
 });

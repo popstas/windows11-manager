@@ -1,6 +1,6 @@
 import os from 'node:os';
 import { spawn } from 'node:child_process';
-import { getWindows } from '../windows.js';
+import { focusWindowById, getWindows } from '../windows.js';
 import { placeWindowByConfig } from '../placement.js';
 import { virtualDesktop } from '../virtual-desktop.js';
 import { getWindowsMonitors } from '../monitors.js';
@@ -10,11 +10,13 @@ import { loadSessionIndex } from './sessions.js';
 import { resolveSession } from './tracker-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
-import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFollowDesktop } from './restore-helpers.js';
+import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFocusTarget, restoreFollowDesktop } from './restore-helpers.js';
 import { planSnapshotRestore, findSnapshot } from './snapshot-helpers.js';
 import { listSnapshots } from './snapshotter.js';
 import { profileForTerminal } from './project-helpers.js';
 import { chooseTerminal } from './terminal-helpers.js';
+import { focusTerminalWindow } from './focus-terminal.js';
+import { noTiming } from './timing.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -38,15 +40,23 @@ function openSessionIds(cfg, state) {
   return ids;
 }
 
-/** The window we just launched is the one whose id was not there before. */
-async function waitForNewWindow(knownIds, timeoutMs, pollMs = 500) {
+/**
+ * The window we just launched is the one whose id was not there before.
+ *
+ * Опрос идёт до сна, а не после: всё, что делается с окном — место, стол,
+ * фокус, — ждёт этой находки, и полтакта, проспанные впустую, человек видит
+ * как задержку. По той же причине такт вчетверо короче таймаута соседей и
+ * равен такту `focusSpawnedWindow` (250 мс): бюджет опроса это не трогает —
+ * цикл живёт только пока запущенный терминал не показал окно, а не постоянно.
+ */
+async function waitForNewWindow(knownIds, timeoutMs, pollMs = 250) {
   const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    await sleep(pollMs);
+  for (;;) {
     const found = terminalWindows().find(w => !knownIds.has(w.id));
     if (found) return found;
+    if (Date.now() >= deadline) return null;
+    await sleep(pollMs);
   }
-  return null;
 }
 
 /**
@@ -130,6 +140,16 @@ async function launchPlan({ plan, cfg, restored, skipped }) {
       skipped.push(item.sessionId);
       continue;
     }
+    // Показать окно сразу, не дожидаясь ни доводки размера, ни переноса: это
+    // самое раннее, что можно сделать с ним после появления, и стоит оно
+    // одного `bringToTop()`. Ввод так не отдаётся (передний план даётся не
+    // всякому, и после перехода на другой стол он всё равно достаётся кому
+    // придётся) — фокус берётся ниже, последним действием.
+    //
+    // Только у одиночного подъёма, по тому же правилу, что фокус и переход:
+    // пачкой всплывают окна разных сессий, и поднимать из них одно — решать
+    // за человека.
+    if (plan.length === 1) focusWindowById(win.id);
     // Окно уже есть, но Windows Terminal ещё доводит его до нужного размера;
     // позиция, выставленная в этот момент, тут же затирается.
     await sleep(cfg.restore.settleMs);
@@ -139,7 +159,7 @@ async function launchPlan({ plan, cfg, restored, skipped }) {
     try {
       await placeWindowByConfig(rule);
       restored.push(item.sessionId);
-      placed.push({ desktop: rule.desktop ?? null });
+      placed.push({ desktop: rule.desktop ?? null, windowId: win.id });
     } catch (e) {
       console.error(`[claude-wt] failed to place ${item.sessionId}: ${e.message}`);
       skipped.push(item.sessionId);
@@ -157,6 +177,19 @@ async function launchPlan({ plan, cfg, restored, skipped }) {
       console.error(`[claude-wt] failed to follow restored window to desktop ${follow}: ${e.message}`);
     }
   }
+
+  // Фокус — последним. Раньше его не было вовсе: сессия, открытая из истории
+  // пикера, вставала на своё место, а ввод оставался у того, кто держал
+  // передний план, — человек смотрел на терминал и печатал мимо него. Место в
+  // конце не случайно: переход на чужой стол оставляет передним что придётся,
+  // и фокус, взятый до него, пропал бы.
+  //
+  // Стол передаётся известным: его только что навязало правило, и
+  // переспрашивать `VirtualDesktop11.exe` незачем — после `follow` окно и так
+  // на текущем столе, так что дешёвая ветка `focusTerminalWindow` отработает
+  // с первой попытки и ни одного процесса не запустит.
+  const target = restoreFocusTarget({ planned: plan.length, placed });
+  if (target !== null) await focusTerminalWindow(target, noTiming, follow);
 }
 
 /**
@@ -230,6 +263,7 @@ async function maybeRestoreOnStart() {
 
 export {
   waitForNewWindow,
+  launchPlan,
   openSessionIds,
   restoreClaudeSessions,
   restoreSnapshot,
