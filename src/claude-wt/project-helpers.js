@@ -156,12 +156,19 @@ function planLaunchNew({ launchNew, cwd, name, profile, terminal }) {
  *
  * Нуль и отрицательные — обычные значения, а не «пусто»: начало координат у
  * главного монитора, и экран слева от него весь в минусе.
+ *
+ * `noAutoplace` — просьба пикера не расставлять это окно вовсе (Ctrl на строке
+ * списка). Едет она **внутри точки**, а не рядом с ней, и это решение: пометка
+ * ставится на той же дороге, какой ставится окно по курсору
+ * (`placeByCursor`), то есть без точки не значила бы ничего. Врозь эти два
+ * поля пришлось бы тащить через шесть чужих сигнатур подряд, и забытая молчала
+ * бы: окно встало бы верно и через секунду уехало в слот.
  */
-function parseCursorPoint(raw) {
+function parseCursorPoint(raw, opts = {}) {
   if (!raw || typeof raw !== 'object') return null;
   const { x, y } = raw;
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  return { x, y };
+  return { x, y, noAutoplace: opts.noAutoplace === true };
 }
 
 /**

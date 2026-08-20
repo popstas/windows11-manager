@@ -243,22 +243,52 @@ describe('claude-session-open', () => {
     // человек. Забудь любую из трёх дорог — галка работала бы через раз, и
     // объяснить это было бы нечем: ответа у публикации нет.
     const cursor = { x: 2560, y: 300 };
+    const at = { ...cursor, noAutoplace: false };
     const project = deps();
     await claudeCommands(project)['claude-session-open']({ action: 'terminal', cwd: '/p/home', cursor });
-    expect(project.winMan.openClaudeProject).toHaveBeenCalledWith({ cwd: '/p/home', name: 'home', cursor });
+    expect(project.winMan.openClaudeProject)
+      .toHaveBeenCalledWith({ cwd: '/p/home', name: 'home', cursor: at });
 
     const fresh = deps();
     await claudeCommands(fresh)['claude-session-open']({
       action: 'terminal-new', cwd: '/p/site', name: 'site-2', cursor,
     });
     expect(fresh.winMan.openClaudeProject).toHaveBeenCalledWith({
-      cwd: '/p/site', name: 'site-2', reuseOpen: false, cursor,
+      cwd: '/p/site', name: 'site-2', reuseOpen: false, cursor: at,
     });
 
     const resumed = deps();
     await claudeCommands(resumed)['claude-session-open']({ ...PROJECT, cursor });
     expect(resumed.winMan.resumeClaudeSession).toHaveBeenCalledWith({
-      id: 'zzz', cwd: '/p/site', cursor,
+      id: 'zzz', cwd: '/p/site', cursor: at,
+    });
+  });
+
+  it('просьба «не расставлять» доезжает теми же тремя дорогами', async () => {
+    // Ctrl на строке пикера: окно встаёт под курсором и остаётся там. Ключ
+    // едет рядом с точкой, и забудь мы его на одной из дорог — модификатор
+    // работал бы через раз: строка сессии слушалась бы, а строка проекта нет.
+    const cursor = { x: 2560, y: 300 };
+    const pinned = { ...cursor, noAutoplace: true };
+    const project = deps();
+    await claudeCommands(project)['claude-session-open']({
+      action: 'terminal', cwd: '/p/home', cursor, noAutoplace: true,
+    });
+    expect(project.winMan.openClaudeProject)
+      .toHaveBeenCalledWith({ cwd: '/p/home', name: 'home', cursor: pinned });
+
+    const fresh = deps();
+    await claudeCommands(fresh)['claude-session-open']({
+      action: 'terminal-new', cwd: '/p/site', name: 'site-2', cursor, noAutoplace: true,
+    });
+    expect(fresh.winMan.openClaudeProject).toHaveBeenCalledWith({
+      cwd: '/p/site', name: 'site-2', reuseOpen: false, cursor: pinned,
+    });
+
+    const resumed = deps();
+    await claudeCommands(resumed)['claude-session-open']({ ...PROJECT, cursor, noAutoplace: true });
+    expect(resumed.winMan.resumeClaudeSession).toHaveBeenCalledWith({
+      id: 'zzz', cwd: '/p/site', cursor: pinned,
     });
   });
 

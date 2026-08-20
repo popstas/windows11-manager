@@ -312,8 +312,21 @@ describe('parseCursorPoint', () => {
     // Начало координат у главного монитора: экран слева от него весь в минусе,
     // и отбрось мы отрицательные, галка не работала бы ровно на той половине
     // стола, ради которой её и заводили.
-    expect(parseCursorPoint({ x: 2560, y: 300 })).toEqual({ x: 2560, y: 300 });
-    expect(parseCursorPoint({ x: -1920, y: 0 })).toEqual({ x: -1920, y: 0 });
+    expect(parseCursorPoint({ x: 2560, y: 300 })).toEqual({ x: 2560, y: 300, noAutoplace: false });
+    expect(parseCursorPoint({ x: -1920, y: 0 })).toEqual({ x: -1920, y: 0, noAutoplace: false });
+  });
+
+  it('просьба «не расставлять» едет внутри точки', () => {
+    // Ctrl на строке пикера. Внутри точки, а не рядом с ней: пометку ставит та
+    // же дорога, какой ставится окно по курсору, и без точки просьба не значила
+    // бы ничего. Ложь по умолчанию — забытый аргумент обязан выключать
+    // оговорку, а не включать её.
+    expect(parseCursorPoint({ x: 10, y: 20 }, { noAutoplace: true }))
+      .toEqual({ x: 10, y: 20, noAutoplace: true });
+    expect(parseCursorPoint({ x: 10, y: 20 }, { noAutoplace: 'yes' }).noAutoplace).toBe(false);
+    expect(parseCursorPoint({ x: 10, y: 20 }, {}).noAutoplace).toBe(false);
+    // Точки нет — и просьбы нет: ставить нечего, помечать нечего.
+    expect(parseCursorPoint(null, { noAutoplace: true })).toBe(null);
   });
 
   it('мусор из чужого тела не доезжает до setBounds', () => {

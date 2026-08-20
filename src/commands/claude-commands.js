@@ -313,7 +313,7 @@ function claudeCommands({ winMan, log, notify, slots }) {
      *     Молчание здесь было бы неотличимо от успеха.
      */
     async 'claude-session-open'(payload) {
-      const { id, action, cwd, name, terminal, cursor } = parseIdPayload(payload);
+      const { id, action, cwd, name, terminal, cursor, noAutoplace } = parseIdPayload(payload);
       if (!action) return;
       if (action !== 'terminal' && action !== 'terminal-new') {
         // Незнакомое действие не делает хотя бы ничего и жалуется — тем же
@@ -335,7 +335,11 @@ function claudeCommands({ winMan, log, notify, slots }) {
       // нумераций мониторов у нас три, и общий словарь на два репозитория
       // разошёлся бы молча. Просеивается здесь же (`parseCursorPoint`): тело
       // пишет чужая машина, а мусор доехал бы до `setBounds`.
-      const at = parseCursorPoint(cursor);
+      // `noAutoplace` едет вместе с точкой, потому что без точки не значит
+      // ничего: пометку ставит та же дорога, что и окно по курсору. Пикер
+      // прежней версии ключа не шлёт вовсе, и это читается как «расставляй
+      // как обычно».
+      const at = parseCursorPoint(cursor, { noAutoplace: noAutoplace === true });
       // Секундомер заводится здесь, а не в ветке подъёма: считать надо с
       // прихода просьбы, иначе разбор тела и поиск сессии выпадут из отчёта —
       // а именно поиск и оказался тем, что стоило больше секунды.
