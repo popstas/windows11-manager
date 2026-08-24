@@ -67,7 +67,7 @@ afterEach(() => {
 });
 
 describe('startService', () => {
-  it('без хоста или базы служба не поднимается', () => {
+  it('без хоста или базы поднимается только http, mqtt-клиент — нет', () => {
     const { logged } = setup({ env: {} });
     expect(connectMqtt).not.toHaveBeenCalled();
     expect(logged[0]).toMatch(/не заданы/);

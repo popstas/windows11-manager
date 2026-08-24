@@ -11,6 +11,7 @@
  * аргумента.
  */
 import http from 'node:http';
+import { DROPPED } from './commands/press-throttle.js';
 
 const ROUTES = {
   '/place': 'place',
@@ -84,10 +85,28 @@ function startHttpServer({ router, port = 9722, log }) {
       res.end(JSON.stringify({ error: result.error }));
       return;
     }
+    // Дребезг платы: `claude-place`/`claude-snapshot-restore`, отброшенные
+    // press-throttle.js, доходят сюда как `ok: true, result: DROPPED` — по
+    // MQTT это была просто тишина, а `200 {"ok":true}` был бы подтверждённым
+    // успехом несделанного.
+    if (result.result === DROPPED) {
+      log(`POST ${req.url}: отброшено ограничителем частоты`, 'warn');
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'throttled' }));
+      return;
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, ...(result.result ?? {}) }));
   });
 
+  // Без этого подписчика EADDRINUSE (осиротевший процесс прошлой версии,
+  // чужая программа на 9722, второй экземпляр) — неперехваченное исключение:
+  // src/index.js намеренно не ставит uncaughtException, и служба падает
+  // целиком, роняя вместе с http-транспортом mqtt-клиент, HA-экспорт,
+  // статистику, автопостановщик и сторож демона. Лог и жизнь дальше — пикер
+  // получит отказ соединения (видимый человеку), а служба продолжит работать
+  // по MQTT.
+  server.on('error', (err) => log(`HTTP server: ${err.message}`, 'error'));
   server.listen(port, () => log(`HTTP server listening on port ${server.address().port}`));
   return server;
 }

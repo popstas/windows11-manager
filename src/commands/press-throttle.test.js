@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_INTERVAL_MS, throttlePress } from './press-throttle.js';
+import { DEFAULT_INTERVAL_MS, DROPPED, throttlePress } from './press-throttle.js';
 
 // Подставные часы: настоящие сделали бы проверку окна гонкой с планировщиком.
 function clock(start = 10_000) {
@@ -88,11 +88,12 @@ describe('press-throttle', () => {
     expect(seen).toEqual(['(win)f10', '(win)f10']);
   });
 
-  it('the handler result reaches the caller, and a dropped press yields nothing', () => {
-    // Обработчики подписок асинхронные: диспетчер ждёт возвращённый промис.
+  it('the handler result reaches the caller, and a dropped press yields the DROPPED marker', () => {
+    // DROPPED, а не undefined: http-server.js обязан отличить «выполнено и
+    // вернуть нечего» от «отброшено» и ответить 429, а не 200.
     const c = clock();
     const press = throttlePress(() => 'done', { now: c.now });
     expect(press()).toBe('done');
-    expect(press()).toBe(undefined);
+    expect(press()).toBe(DROPPED);
   });
 });
