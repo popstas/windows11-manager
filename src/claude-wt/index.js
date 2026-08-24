@@ -332,6 +332,11 @@ function publishWindows(cfg, windows, slots) {
   const payload = buildWindowsFile({
     windows, slots, host: os.hostname(), pid: process.pid, nowMs, snapshots,
     projects: claudeWtProjects(),
+    // Ключ верхнего уровня, не внутри claudeWt: вложенный молча ничего не
+    // сделает — та же семья, что placeWindowOnOpen и publishStats. `cfg` тут —
+    // подобъект claudeWt (см. getClaudeWtConfig), поэтому порт берётся у
+    // корневого конфига, как это делают src/mqtt/autoplacer.js и stats.js.
+    httpPort: getConfig().httpPort,
   });
   const fingerprint = windowsFingerprint(payload.windows, payload.snapshots, payload.projects);
   const due = shouldWriteWindowsFile({

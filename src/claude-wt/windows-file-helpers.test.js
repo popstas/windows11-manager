@@ -108,6 +108,37 @@ describe('buildWindowsFile', () => {
   it('survives missing windows and slots', () => {
     expect(buildWindowsFile({ host: 'pc', pid: 1, nowMs: 0 }).windows).toEqual({});
   });
+
+  // Адрес просьбы едет читателю тем же файлом, что и окна: согласовывать порт
+  // руками в двух проектах — ровно то, на чём ломается база топика MQTT.
+  it('names the http port when one is configured', () => {
+    const out = buildWindowsFile({
+      windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000,
+      httpPort: 9722,
+    });
+    expect(out.http).toEqual({ port: 9722 });
+  });
+
+  // Ключа нет вовсе, а не `null` и не ноль: читатель отличает «порта не знаю»
+  // от «порт такой» наличием ключа, и это то же правило, по которому пустой
+  // `mqttBase` значит «спроси свой конфиг».
+  it('omits the http key when no port is configured', () => {
+    const out = buildWindowsFile({
+      windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000,
+    });
+    expect('http' in out).toBe(false);
+  });
+
+  // Мусор читается как отсутствие: конфиг правит человек, и строка "9722" или
+  // ноль не должны превратиться в адрес, по которому никто не слушает.
+  it('treats a junk port as no port at all', () => {
+    for (const httpPort of ['9722', 0, -1, null, NaN]) {
+      const out = buildWindowsFile({
+        windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000, httpPort,
+      });
+      expect('http' in out).toBe(false);
+    }
+  });
 });
 
 describe('windowsFingerprint', () => {
