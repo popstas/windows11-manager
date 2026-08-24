@@ -185,7 +185,7 @@ describe('startService', () => {
   // Ради этого вся правка: без брокера служба обязана подняться и слушать
   // http. Раньше функция выходила первой же строкой, и вместе с ней не
   // заводились ни автопостановщик, ни сторож демона.
-  it('starts without any broker settings and still listens on http', async () => {
+  it('без настроек брокера служба всё равно поднимается и слушает http', async () => {
     const log = vi.fn();
     const service = startService({
       winMan: fakeWinMan(),
@@ -201,7 +201,7 @@ describe('startService', () => {
   // Слоты нужны единственной команде — claude-focus-slot, — и приходит она с
   // панели, то есть по MQTT. Без брокера заглушка законна; с брокером она была
   // бы дырой, и ровно поэтому третьего процесса здесь нет.
-  it('leaves the ha export stubbed when there is no broker', () => {
+  it('без брокера экспорт в Home Assistant остаётся заглушкой', () => {
     const service = startService({
       winMan: fakeWinMan(), config: { httpPort: 0 }, log: vi.fn(), env: {},
     });
