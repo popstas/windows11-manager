@@ -66,18 +66,10 @@ async function start() {
     });
 
   program
-    .command('http-server')
-    .option('--port <port>', 'HTTP server port', '9722')
-    .action(async (options) => {
-      const { startHttpServer } = await import('./http-server.js');
-      startHttpServer(Number(options.port));
-    });
-
-  program
     .command('mqtt')
-    .description('MQTT: подписка на команды окон и экспорт сессий в Home Assistant')
+    .description('Служба: http-транспорт, команды окон и — при настроенном брокере — MQTT и экспорт в Home Assistant')
     .action(async () => {
-      const { startMqttService } = await import('./mqtt/service.js');
+      const { startService } = await import('./mqtt/service.js');
       const log = (message, level = 'info') => {
         if (level === 'error') console.error(`[mqtt] ${message}`);
         else console.log(`[mqtt] ${message}`);
@@ -97,7 +89,7 @@ async function start() {
       // ловятся на месте (обработчики таймеров), а глушить их скопом — значит
       // оставлять процесс жить в состоянии, про которое ничего не известно.
 
-      const service = startMqttService({ winMan, config: winMan.getConfig(), log });
+      const service = startService({ winMan, config: winMan.getConfig(), log });
       // stop() — единственный, кто публикует availability: offline. Без этих
       // подписок он не звался никогда, и Home Assistant показывал все
       // переключатели живыми даже после остановки службы из трея: и `online`,
