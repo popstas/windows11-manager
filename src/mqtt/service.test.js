@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Клиент подменяем целиком: настоящий connectMqtt лезет в брокер, а проверять
 // надо ровно то, что решает служба, — топики, завещание и разбор входящих.
@@ -8,9 +8,22 @@ vi.mock('./client.js', async (importOriginal) => {
   return { ...actual, connectMqtt };
 });
 
-const { startMqttService } = await import('./service.js');
+const { startService } = await import('./service.js');
 
 const ENV = { W11M_MQTT_HOST: 'mqtt.lan', W11M_MQTT_BASE: 'home/room/pc/windows' };
+
+/** Минимальный winMan: службе от него на старте нужен только конфиг окон. */
+function fakeWinMan() {
+  return {
+    getWindows: () => [],
+    getConfig: () => ({}),
+  };
+}
+
+// Служба всегда поднимает http-слушатель, и тесту, который забыл её
+// остановить, не должно доставаться EADDRINUSE от предыдущего: порт — 0
+// (любой свободный), а закрывает его общий afterEach ниже.
+let startedServices = [];
 
 function setup({ env = ENV, config = {}, ...overrides } = {}) {
   const published = [];
@@ -36,18 +49,24 @@ function setup({ env = ENV, config = {}, ...overrides } = {}) {
     stopPlaceNewWindows: vi.fn(),
     ...overrides.winMan,
   };
-  const service = startMqttService({
+  const service = startService({
     winMan,
-    config: { homeassistant: { enabled: false }, ...config },
+    config: { homeassistant: { enabled: false }, httpPort: 0, ...config },
     log: (message, level = 'info') => logged.push(`${level}: ${message}`),
     env,
   });
+  startedServices.push(service);
   return { service, published, logged, handlers, client, winMan, args: () => args };
 }
 
 beforeEach(() => connectMqtt.mockReset());
 
-describe('startMqttService', () => {
+afterEach(() => {
+  startedServices.forEach((service) => service.stop());
+  startedServices = [];
+});
+
+describe('startService', () => {
   it('без хоста или базы служба не поднимается', () => {
     const { logged } = setup({ env: {} });
     expect(connectMqtt).not.toHaveBeenCalled();
@@ -161,5 +180,32 @@ describe('startMqttService', () => {
       topic: 'home/room/pc/windows/claude/availability', payload: 'offline',
     }));
     expect(client.end).toHaveBeenCalled();
+  });
+
+  // Ради этого вся правка: без брокера служба обязана подняться и слушать
+  // http. Раньше функция выходила первой же строкой, и вместе с ней не
+  // заводились ни автопостановщик, ни сторож демона.
+  it('starts without any broker settings and still listens on http', async () => {
+    const log = vi.fn();
+    const service = startService({
+      winMan: fakeWinMan(),
+      config: { httpPort: 0 },
+      log,
+      env: {},
+    });
+    expect(service.httpPort()).toBeGreaterThan(0);
+    expect(service.mqttConnected()).toBe(false);
+    service.stop();
+  });
+
+  // Слоты нужны единственной команде — claude-focus-slot, — и приходит она с
+  // панели, то есть по MQTT. Без брокера заглушка законна; с брокером она была
+  // бы дырой, и ровно поэтому третьего процесса здесь нет.
+  it('leaves the ha export stubbed when there is no broker', () => {
+    const service = startService({
+      winMan: fakeWinMan(), config: { httpPort: 0 }, log: vi.fn(), env: {},
+    });
+    expect(service.haExport().slots()).toEqual([]);
+    service.stop();
   });
 });

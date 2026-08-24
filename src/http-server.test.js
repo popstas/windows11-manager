@@ -18,6 +18,12 @@ describe('routeToCommand', () => {
     expect(routeToCommand('/claude-wt/session-open')).toBe('claude-session-open');
   });
 
+  // Без этого маршрута пятая просьба пикера (раскладка) получала бы 404, и
+  // человек видел бы «менеджер не отвечает» — неотличимо от лежащей службы.
+  it('раскладка claude-wt ведёт в claude-place, а не в place окон', () => {
+    expect(routeToCommand('/claude-wt/place')).toBe('claude-place');
+  });
+
   it('чужой путь — null', () => {
     expect(routeToCommand('/nope')).toBe(null);
     expect(routeToCommand('/')).toBe(null);
