@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { buildCommandMap } from './build.js';
+import { DROPPED } from './press-throttle.js';
 
 function winManStub() {
   return {
@@ -108,5 +109,63 @@ describe('buildCommandMap', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('claude-dock-press', () => {
+  const dockWith = (answer) => ({ count: 5, resolve: vi.fn().mockReturnValue(answer) });
+
+  function focusable() {
+    const winMan = winManStub();
+    winMan.claudeWtSessions.mockReturnValue({
+      ok: true,
+      sessions: [{ id: 'sess-1', open: true, windowId: 7 }],
+    });
+    winMan.getWindowById.mockReturnValue({ id: 7 });
+    winMan.focusTerminalWindow = vi.fn().mockResolvedValue(true);
+    return winMan;
+  }
+
+  it('нажатие поднимает окно той сессии, которую назвал снимок доски', async () => {
+    const winMan = focusable();
+    const dock = dockWith({ id: 'sess-1' });
+    const map = makeMap({ winMan, dock });
+
+    const result = await map['claude-dock-press']({ slot: 2 });
+
+    expect(dock.resolve).toHaveBeenCalledWith(2);
+    expect(winMan.focusTerminalWindow).toHaveBeenCalledWith(7, expect.anything());
+    expect(result).toEqual({ id: 'sess-1' });
+  });
+
+  it('пустой слот не зовёт фокус и не молчит', async () => {
+    // Нажатие на пустую кнопку — не ошибка транспорта, но и не тишина:
+    // человек нажал, а не случилось ничего, и в логе должна остаться строка.
+    const winMan = focusable();
+    const log = vi.fn();
+    const map = makeMap({ winMan, log, dock: dockWith({ empty: true }) });
+
+    expect(await map['claude-dock-press']({ slot: 3 })).toEqual({ empty: true });
+    expect(winMan.focusTerminalWindow).not.toHaveBeenCalled();
+    expect(log.mock.calls.some(([msg]) => String(msg).includes('3'))).toBe(true);
+  });
+
+  it('второе нажатие подряд отбрасывается ограничителем', async () => {
+    // Палец, снятый неровно, даёт две-три посылки подряд — та же беда, ради
+    // которой ограничитель стоит на claude-focus-slot.
+    const map = makeMap({ winMan: focusable(), dock: dockWith({ id: 'sess-1' }) });
+
+    await map['claude-dock-press']({ slot: 1 });
+    expect(map['claude-dock-press']({ slot: 1 })).toBe(DROPPED);
+  });
+
+  it('доски нет — команда есть, но фокус не зовёт', async () => {
+    // Карта одна на оба транспорта, и команда в ней заводится всегда; роутов
+    // же без доски нет, поэтому попасть сюда можно только вызовом руками.
+    const winMan = focusable();
+    const map = makeMap({ winMan });
+
+    expect(await map['claude-dock-press']({ slot: 1 })).toEqual({ empty: true });
+    expect(winMan.focusTerminalWindow).not.toHaveBeenCalled();
   });
 });

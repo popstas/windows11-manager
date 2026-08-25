@@ -20,7 +20,7 @@ const SLOT_COUNT_DEFAULT = 10;
  * настоящая работа. `claude-focus` без ограничителя: там источник — Enter в
  * списке пикера, дребезжать нечему.
  */
-function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = () => {} }) {
+function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = () => {}, dock = null }) {
   const windows = windowCommands({ winMan, config, log, notify });
   const claude = claudeCommands({ winMan, log, notify, slots: () => haExport.slots() });
 
@@ -64,6 +64,24 @@ function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = 
         schedulePanelSlotOff(slotFromPayload(payload));
       }),
       { onDrop: (payload) => log(`claude-focus-slot ${payload} — отброшено, не чаще раза в секунду`, 'warn') },
+    ),
+    // Нажатие на кнопку доски StreamDock. Ограничитель — по той же причине,
+    // что у claude-focus-slot: источник тот же, живой палец на физической
+    // кнопке. Слот резолвится по снимку доски, а не по снимку панели: у них
+    // разные сроки годности, и кнопка обязана значить то, что на ней
+    // нарисовано.
+    'claude-dock-press': throttlePress(
+      withRefresh(async (payload) => {
+        const slot = Number(slotFromPayload(payload));
+        const found = dock?.resolve(slot) ?? null;
+        if (!found || found.empty) {
+          log(`streamdock: слот ${slot} пуст`, 'warn');
+          return { empty: true };
+        }
+        await claude['claude-focus']({ id: found.id });
+        return { id: found.id };
+      }),
+      { onDrop: (payload) => log(`claude-dock-press ${payload} — отброшено, не чаще раза в секунду`, 'warn') },
     ),
     'claude-session-unread': withRefresh(claude['claude-session-unread']),
     'claude-session-open': withRefresh(claude['claude-session-open']),
