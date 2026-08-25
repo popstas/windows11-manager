@@ -101,7 +101,7 @@ function dumpNeedsHookStamps(dump) {
  *   keep serving data the file no longer contains.
  * Either way the tracker degrades to its own title history rather than throwing.
  */
-function loadDump(filePath, progressDir = '', nowMs = Date.now()) {
+function loadDump(filePath, progressDir = '', nowMs = Date.now(), wanted = false) {
   if (!filePath) return { index: {}, agents: {} };
   let stat;
   try {
@@ -120,8 +120,12 @@ function loadDump(filePath, progressDir = '', nowMs = Date.now()) {
   // старта процесса платит один stat, дальше ноль.
   const needStamp = cache.path !== filePath || cache.usesHookStamps !== false;
   const stamp = needStamp ? progressStamp(progressDir) : 0;
-  if (cache.path === filePath && cache.mtimeMs === stat.mtimeMs && cache.stamp === stamp
-      && nowMs - cache.readAt < MAX_AGE_MS) {
+  // `wanted` — тику попалось окно, чьего заголовка в индексе нет. Ждать срока
+  // годности тогда незачем: сессию за этим окном завели секунды назад, и
+  // пятнадцать секунд здесь — это пятнадцать секунд, которые окно простоит
+  // непривязанным. Вхолостую спрос не возникает вовсе: окна не меняются часами.
+  if (!wanted && cache.path === filePath && cache.mtimeMs === stat.mtimeMs
+      && cache.stamp === stamp && nowMs - cache.readAt < MAX_AGE_MS) {
     return cache;
   }
   try {
@@ -146,8 +150,8 @@ function loadDump(filePath, progressDir = '', nowMs = Date.now()) {
 }
 
 /** Title -> session, for binding a window to the session running in it. */
-function loadSessionIndex(filePath, progressDir = '', nowMs = Date.now()) {
-  return loadDump(filePath, progressDir, nowMs).index;
+function loadSessionIndex(filePath, progressDir = '', nowMs = Date.now(), wanted = false) {
+  return loadDump(filePath, progressDir, nowMs, wanted).index;
 }
 
 /**

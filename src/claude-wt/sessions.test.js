@@ -152,6 +152,37 @@ describe('loadSessionIndex', () => {
     loadSessionIndex(cached);
     expect(loadSessionIndex(path.join(dir, 'other.json'))).toEqual({});
   });
+
+  it('re-reads within the age window when a title is wanted', () => {
+    // Маковская развилка, портированная сюда: у окна, которого нет в индексе,
+    // ждать пятнадцать секунд незачем — сессию за ним завели секунды назад.
+    // Вхолостую спрос не возникает вовсе: окна не меняются часами.
+    const p = freshPath();
+    writeDump(p, dumpWith('ccfzf'), T0);
+    const base = 1_000_000;
+    loadSessionIndex(p, '', base);
+
+    // Тот же mtime намеренно: ровно этот случай кэш и держит — на сетевом
+    // диске statSync минутами отдаёт долгоживущему процессу прежнюю отметку.
+    writeDump(p, dumpWith('home'), T0);
+
+    expect(loadSessionIndex(p, '', base + 1000).home)
+      .toBeUndefined();
+    expect(loadSessionIndex(p, '', base + 1000, true).home)
+      .toEqual({ id: 's0', cwd: '/p0', title: 'home', ambiguous: false });
+  });
+
+  it('keeps the age window when nothing is wanted', () => {
+    // Спрос ускоряет, но не отменяет прежнего правила: без него всё как было.
+    const p = freshPath();
+    writeDump(p, dumpWith('ccfzf'), T0);
+    const base = 2_000_000;
+    loadSessionIndex(p, '', base);
+    writeDump(p, dumpWith('home'), T0);
+    expect(loadSessionIndex(p, '', base + 1000).home).toBeUndefined();
+    expect(loadSessionIndex(p, '', base + 20000).home)
+      .toEqual({ id: 's0', cwd: '/p0', title: 'home', ambiguous: false });
+  });
 });
 
 describe('warning throttle', () => {

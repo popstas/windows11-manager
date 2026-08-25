@@ -117,6 +117,12 @@ let liveState = null;
 let prevActiveWindowId = 0;
 let reportedTitles = new Set();
 
+// Было ли на прошлом тике окно без сессии. Индекс читается ДО step(), то есть
+// про непривязанное окно мы узнаём на тик позже, — и это нормально: тик
+// секундный, а второе чтение дампа в том же тике стоило бы сетевого чтения на
+// каждом витке.
+let wantedIndex = false;
+
 // Сессии, чей следующий переход фокуса не считается просмотром. Живёт в памяти
 // демона: пометка нужна ровно на те секунды, что человек закрывает пикер, а
 // переживший перезапуск демон и так начинает с чистого экрана.
@@ -160,7 +166,8 @@ async function claudeWtTick(tickGen = null) {
   // файл — только снимок для восстановления, а не рабочая структура.
   if (!liveState) liveState = readState(cfg.statePath);
   const windows = snapshot();
-  const sessionIndex = loadSessionIndex(cfg.sessionsFile, cfg.progressDir);
+  const sessionIndex = loadSessionIndex(cfg.sessionsFile, cfg.progressDir, Date.now(), wantedIndex);
+  wantedIndex = false;
   // monitors нужны ДО actions: step() зажимает координаты сам, иначе запрошенная
   // и фактически применённая позиция расходятся и guard собственного хода
   // висит до таймаута, а потом записывает зажатую позицию поверх исходной.
@@ -180,6 +187,9 @@ async function claudeWtTick(tickGen = null) {
     options: { stableTicks: cfg.stableTicks },
   });
   prevWindows = nextWindows;
+  // Спрос на следующий тик. Считается той же функцией, что и жалоба в лог:
+  // второе правило «какое окно считать непривязанным» разошлось бы с первым.
+  wantedIndex = unresolvedTitles(nextWindows).length > 0;
   if (cfg.debug) reportUnresolved(nextWindows);
 
   // Переднее окно читается ДО переносов, и это существенно дважды. Во-первых,
