@@ -269,16 +269,25 @@ function claudeCommands({ winMan, log, notify, slots }) {
       log(`claude-wt marked unread: ${res.ids.join(', ')}`);
     },
 
+    // Хвостом, а не до ответа. launchPlan (restore.js) ждёт каждое окно до
+    // 30 с и держит между запусками паузу 2 с — снимок из трёх сессий легко
+    // занимает 10-30 секунд, а у http-транспорта пикера потолок 5 с на всю
+    // просьбу (manager_http.rs::TIMEOUT). Синхронный await отвечал бы
+    // «refused» ровно там, где восстановление дошло бы до конца, — обучая не
+    // верить строке ошибки, хотя вся эта работа затеяна ради обратного. Тот
+    // же приём, что у `openClaudeProject` (`project.js`): `tail.catch()`
+    // обязателен — необработанное отклонение в node 22 роняет весь служебный
+    // процесс, а не только эту просьбу.
     async 'claude-snapshot-restore'(payload) {
       const { id, sessionIds } = parseRestorePayload(payload);
-      try {
-        const { restored, skipped } = await winMan.restoreSnapshot({ id, sessionIds });
+      const tail = winMan.restoreSnapshot({ id, sessionIds }).then(({ restored, skipped }) => {
         log(`claude-wt snapshot ${id}: restored ${restored.length}, skipped ${skipped.length}`);
         if (!restored.length && !skipped.length) notify('claude-wt: нечего восстанавливать');
-      } catch (e) {
+      });
+      tail.catch((e) => {
         log(`claude-wt snapshot restore failed: ${e.message}`, 'error');
         notify(`claude-wt: ошибка восстановления — ${e.message}`);
-      }
+      });
     },
 
     /**

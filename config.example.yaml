@@ -91,6 +91,10 @@ placeWindowOnOpen: true
 notifyPlaced: true
 # Статистика окон в Home Assistant раз в минуту.
 publishStats: true
+# Порт, на котором служебный процесс принимает просьбы от ccfzf-picker.
+# Ключ верхнего уровня. Живой конфиг лежит не здесь — образец сам не
+# читается, переносить руками.
+httpPort: 9722
 # Топик статистики. По умолчанию `${base}/stats`, где base — W11M_MQTT_BASE;
 # на этой машине он задан отдельно и под базой окон не лежит.
 publishStatsTopic: state/pc/windows

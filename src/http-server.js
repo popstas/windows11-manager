@@ -1,17 +1,17 @@
 /**
  * HTTP-транспорт поверх той же карты команд, что и MQTT.
  *
- * Раньше здесь был свой switch, второй такой же жил в ws-client.js, и при пяти
- * командах они уже разъезжались. Теперь путь переводится в имя команды, а
- * дальше работает роутер.
+ * Роутер приходит снаружи, а не строится здесь: раньше слушатель поднимался
+ * отдельным процессом и потому строил свой, с заглушкой слотов. Теперь он
+ * живёт внутри служебного процесса и обязан разбирать команды тем же роутером,
+ * что и MQTT, — иначе `claude-focus-slot` с панели молча не находил бы сессию.
  *
- * Сервер поднимается отдельной командой (`node src/index.js http-server`), а не
- * внутри процесса демона: там он вешал событийный цикл через две-три минуты.
+ * `port: 0` — «любой свободный»: так тесты поднимают слушатель, не занимая
+ * настоящий порт. Настоящий порт всегда спрашивать у `address()`, а не у
+ * аргумента.
  */
 import http from 'node:http';
-import * as winMan from './lib/index.js';
-import { createRouter } from './commands/router.js';
-import { buildCommandMap } from './commands/build.js';
+import { DROPPED } from './commands/press-throttle.js';
 
 const ROUTES = {
   '/place': 'place',
@@ -29,6 +29,7 @@ const ROUTES = {
   '/claude-wt/session-open': 'claude-session-open',
   '/claude-wt/session-unread': 'claude-session-unread',
   '/claude-wt/snapshot-restore': 'claude-snapshot-restore',
+  '/claude-wt/place': 'claude-place',
 };
 
 function routeToCommand(url) {
@@ -52,20 +53,7 @@ function readBody(req) {
   });
 }
 
-function startHttpServer(port = 9722) {
-  const log = (message, level = 'info') => {
-    if (level === 'error') console.error(`[http] ${message}`);
-    else console.log(`[http] ${message}`);
-  };
-  const config = winMan.getConfig();
-  // Экспорт в HA живёт в mqtt-процессе; здесь нужна только его форма, чтобы
-  // команды claude-wt получили slots()/slotOff()/refresh() и не проверяли их
-  // на существование в каждом вызове.
-  const haExport = { slots: () => [], slotOff: () => {}, refresh: () => {} };
-  const router = createRouter(buildCommandMap({
-    winMan, config, log, notify: (m) => log(m), haExport,
-  }));
-
+function startHttpServer({ router, port = 9722, log }) {
   const server = http.createServer(async (req, res) => {
     if (req.method !== 'POST') {
       res.writeHead(405, { 'Content-Type': 'application/json' });
@@ -97,11 +85,29 @@ function startHttpServer(port = 9722) {
       res.end(JSON.stringify({ error: result.error }));
       return;
     }
+    // Дребезг платы: `claude-place`/`claude-snapshot-restore`, отброшенные
+    // press-throttle.js, доходят сюда как `ok: true, result: DROPPED` — по
+    // MQTT это была просто тишина, а `200 {"ok":true}` был бы подтверждённым
+    // успехом несделанного.
+    if (result.result === DROPPED) {
+      log(`POST ${req.url}: отброшено ограничителем частоты`, 'warn');
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'throttled' }));
+      return;
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, ...(result.result ?? {}) }));
   });
 
-  server.listen(port, () => log(`HTTP server listening on port ${port}`));
+  // Без этого подписчика EADDRINUSE (осиротевший процесс прошлой версии,
+  // чужая программа на 9722, второй экземпляр) — неперехваченное исключение:
+  // src/index.js намеренно не ставит uncaughtException, и служба падает
+  // целиком, роняя вместе с http-транспортом mqtt-клиент, HA-экспорт,
+  // статистику, автопостановщик и сторож демона. Лог и жизнь дальше — пикер
+  // получит отказ соединения (видимый человеку), а служба продолжит работать
+  // по MQTT.
+  server.on('error', (err) => log(`HTTP server: ${err.message}`, 'error'));
+  server.listen(port, () => log(`HTTP server listening on port ${server.address().port}`));
   return server;
 }
 

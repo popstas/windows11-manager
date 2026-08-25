@@ -559,14 +559,14 @@ fn update_tray_label(app: &tauri::AppHandle, kind: ChildKind, running: bool) {
         }
         ChildKind::Mqtt => {
             let _ = items.mqtt_toggle.set_text(if running {
-                "Stop MQTT"
+                "Stop service"
             } else {
-                "Start MQTT"
+                "Start service"
             });
             let _ = items.mqtt_status.set_text(if running {
-                "MQTT: running"
+                "Service: running"
             } else {
-                "MQTT: stopped"
+                "Service: stopped"
             });
         }
     }
@@ -1441,11 +1441,6 @@ fn toggle_claude_wt(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) 
 /// происходить ничего, что трогает UI.
 fn mqtt_launch_config(app: &tauri::AppHandle) -> Option<(Settings, String)> {
     let settings = load_settings_from_store(app);
-    if settings.mqtt_host.is_empty() || settings.mqtt_topic.is_empty() {
-        warn!("MQTT host or topic not configured");
-        return None;
-    }
-
     let project_path = get_project_path(app);
     if project_path.is_empty() {
         warn!("Project path not configured, opening settings");
@@ -1519,12 +1514,14 @@ fn start_mqtt_locked(
     // только его, а первый останется висеть. Запрет стоит здесь, а не у
     // вызывающих: их трое, и мьютекс каждый берёт по-своему.
     if s.mqtt_running {
-        warn!("MQTT service already running, not starting a second one");
+        warn!("Service already running, not starting a second one");
         return;
     }
 
-    // Ставится после проверок настроек: без хоста, темы или пути проекта поднимать
-    // нечего, и откат крутился бы вокруг заведомо невозможного запуска.
+    // Путь проекта проверяется, хост брокера — нет: служба поднимается и без
+    // него, отвечая только по http. Раньше пустой хост запрещал запуск, и
+    // вместе с mqtt не заводились автопостановщик, сторож демона и приём
+    // просьб от пикера.
     s.mqtt_desired = true;
 
     // Spawn the Node.js MQTT service. Credentials go through the environment,
@@ -1551,7 +1548,7 @@ fn start_mqtt_locked(
             pump_output(ChildKind::Mqtt, rx, move |reason, uptime| {
                 on_child_exit(&app_handle, ChildKind::Mqtt, generation, reason, uptime);
             });
-            info!("MQTT service started");
+            info!("Service started");
         }
         Err(e) => {
             s.mqtt_running = false;
@@ -1559,7 +1556,7 @@ fn start_mqtt_locked(
             s.mqtt_restart_attempts = attempt;
             let delay = restart_delay_secs(attempt);
             error!(
-                "Failed to start MQTT service: {} (retrying in {}s, attempt {})",
+                "Failed to start service: {} (retrying in {}s, attempt {})",
                 e, delay, attempt
             );
             schedule_mqtt_restart(app, delay);
@@ -1568,7 +1565,7 @@ fn start_mqtt_locked(
 }
 
 /// Остановка службы по воле оператора (или на выходе из приложения): подъём
-/// после неё не нужен, и «Stop MQTT» в трее обязан значить именно stop.
+/// после неё не нужен, и «Stop service» в трее обязан значить именно stop.
 fn stop_mqtt_state(app_state: &mut AppState) {
     app_state.mqtt_desired = false;
     app_state.mqtt_restart_attempts = 0;
@@ -1579,7 +1576,7 @@ fn stop_mqtt_state(app_state: &mut AppState) {
         let _ = child.kill();
     }
     app_state.mqtt_running = false;
-    info!("MQTT service stopped");
+    info!("Service stopped");
 }
 
 fn toggle_mqtt(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
@@ -1718,8 +1715,9 @@ pub fn run() {
                 None::<&str>,
             )?;
             // Строка-итог стоит прямо под пунктом демона: она рассказывает
-            // именно про него, и читается так же, как «MQTT: running» ниже про
-            // свою службу. Подпись, а не действие — как и строки окон под ней.
+            // именно про него, и читается так же, как «Service: running» ниже
+            // про свою службу. Подпись, а не действие — как и строки окон под
+            // ней.
             let tracked_count_i = MenuItem::with_id(
                 app,
                 "tracked_count",
@@ -1729,9 +1727,9 @@ pub fn run() {
             )?;
             let sep1 = PredefinedMenuItem::separator(app)?;
             let mqtt_status_i =
-                MenuItem::with_id(app, "mqtt_status", "MQTT: stopped", false, None::<&str>)?;
+                MenuItem::with_id(app, "mqtt_status", "Service: stopped", false, None::<&str>)?;
             let mqtt_toggle_i =
-                MenuItem::with_id(app, "mqtt_toggle", "Start MQTT", true, None::<&str>)?;
+                MenuItem::with_id(app, "mqtt_toggle", "Start service", true, None::<&str>)?;
             let sep2 = PredefinedMenuItem::separator(app)?;
             let restart_store_i =
                 MenuItem::with_id(app, "restart_store", "Restart (Store)", true, None::<&str>)?;

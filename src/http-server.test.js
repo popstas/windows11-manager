@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { routeToCommand } from './http-server.js';
+import net from 'node:net';
+import { startHttpServer, routeToCommand } from './http-server.js';
+import { DROPPED } from './commands/press-throttle.js';
 
 describe('routeToCommand', () => {
   it('переводит путь в команду', () => {
@@ -18,8 +20,56 @@ describe('routeToCommand', () => {
     expect(routeToCommand('/claude-wt/session-open')).toBe('claude-session-open');
   });
 
+  // Без этого маршрута пятая просьба пикера (раскладка) получала бы 404, и
+  // человек видел бы «менеджер не отвечает» — неотличимо от лежащей службы.
+  it('раскладка claude-wt ведёт в claude-place, а не в place окон', () => {
+    expect(routeToCommand('/claude-wt/place')).toBe('claude-place');
+  });
+
   it('чужой путь — null', () => {
     expect(routeToCommand('/nope')).toBe(null);
     expect(routeToCommand('/')).toBe(null);
+  });
+});
+
+describe('startHttpServer', () => {
+  // EADDRINUSE раньше уходил в неперехваченное исключение и ронял весь
+  // служебный процесс — mqtt-клиент, HA-экспорт, статистику, автопостановщик
+  // и сторож демона заодно с http-транспортом. Красит эту находку правка
+  // src/http-server.js: подписка на 'error' у server.
+  it('занятый порт не роняет процесс — пишет строку в лог и не бросает', async () => {
+    const blocker = net.createServer();
+    await new Promise((resolve) => blocker.listen(0, resolve));
+    const port = blocker.address().port;
+
+    const logged = [];
+    let onError;
+    const errored = new Promise((resolve) => { onError = resolve; });
+    const log = (msg, level) => {
+      logged.push({ msg, level });
+      if (level === 'error') onError();
+    };
+
+    expect(() => startHttpServer({ router: { dispatch: async () => ({ ok: true }) }, port, log }))
+      .not.toThrow();
+    await errored;
+
+    expect(logged.some((l) => l.level === 'error')).toBe(true);
+    blocker.close();
+  });
+
+  // Дребезг платы (claude-place/claude-snapshot-restore, throttlePress) даёт
+  // роутеру result: DROPPED. По MQTT это была просто тишина; по http `200
+  // {"ok":true}` был бы подтверждённым успехом несделанного действия.
+  it('отброшенное ограничителем нажатие отвечает 429, а не 200', async () => {
+    const router = { dispatch: async () => ({ ok: true, result: DROPPED }) };
+    const server = startHttpServer({ router, port: 0, log: () => {} });
+    await new Promise((resolve) => server.once('listening', resolve));
+    const port = server.address().port;
+
+    const res = await fetch(`http://127.0.0.1:${port}/claude-wt/place`, { method: 'POST', body: '{}' });
+    expect(res.status).toBe(429);
+
+    server.close();
   });
 });

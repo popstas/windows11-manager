@@ -332,6 +332,16 @@ function publishWindows(cfg, windows, slots) {
   const payload = buildWindowsFile({
     windows, slots, host: os.hostname(), pid: process.pid, nowMs, snapshots,
     projects: claudeWtProjects(),
+    // Ключ верхнего уровня, не внутри claudeWt: вложенный молча ничего не
+    // сделает — та же семья, что placeWindowOnOpen и publishStats. `cfg` тут —
+    // подобъект claudeWt (см. getClaudeWtConfig), поэтому порт берётся у
+    // корневого конфига, как это делают src/mqtt/autoplacer.js и stats.js.
+    //
+    // Умолчание то же самое, что слушает src/mqtt/service.js (`?? 9722`), и
+    // должно остаться тем же: без него на машине без явного `httpPort` в
+    // конфиге слушатель поднимался бы на 9722, а файл трекера объявлял бы
+    // порт отсутствующим — пикер тихо откатывался бы на MQTT.
+    httpPort: getConfig().httpPort ?? 9722,
   });
   const fingerprint = windowsFingerprint(payload.windows, payload.snapshots, payload.projects);
   const due = shouldWriteWindowsFile({
@@ -519,5 +529,8 @@ export {
   claudeWtStatus,
   claudeWtTick,
   markSessionUnread,
+  // Экспортирован ради test/http-port-agreement.test.js: тест зовёт запись
+  // файла напрямую, минуя claudeWtTick — тому нужен живой перебор окон.
+  publishWindows,
 };
 export { removeWindowsFile } from './windows-file.js';

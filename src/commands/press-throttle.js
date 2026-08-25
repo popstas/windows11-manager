@@ -7,6 +7,17 @@
 const DEFAULT_INTERVAL_MS = 1000;
 
 /**
+ * Метка отброшенного нажатия.
+ *
+ * По MQTT ей нет получателя — публикация в брокер и раньше не отвечала
+ * ничем, — но у http-транспорта есть код ответа, и `undefined`, неотличимый
+ * от «выполнено и вернуть нечего», уходил бы клиенту как `200 {"ok":true}`:
+ * подтверждённый успех несделанного действия. `http-server.js` ищет эту метку
+ * и отвечает `429`.
+ */
+const DROPPED = Symbol('press-throttle-dropped');
+
+/**
  * Обёртка, пропускающая не чаще одного вызова в интервал.
  *
  * Первое нажатие проходит немедленно, всё, что прилетело следом внутри окна,
@@ -53,11 +64,11 @@ function throttlePress(handler, {intervalMs = DEFAULT_INTERVAL_MS, now = Date.no
     // но с подставными часами в тестах — нет.
     if (at - (lastAt.get(key) ?? -Infinity) < intervalMs) {
       onDrop?.(...args);
-      return undefined;
+      return DROPPED;
     }
     lastAt.set(key, at);
     return handler(...args);
   };
 }
 
-export {DEFAULT_INTERVAL_MS, throttlePress};
+export {DEFAULT_INTERVAL_MS, DROPPED, throttlePress};

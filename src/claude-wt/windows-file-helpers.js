@@ -33,7 +33,7 @@ const WINDOWS_FILE_HEARTBEAT_MS = 30_000;
  * видит, и без этой его список продолжал бы звать к сессии, на которую уже
  * сходили руками.
  */
-function buildWindowsFile({ windows, slots, host, pid, nowMs, snapshots, projects }) {
+function buildWindowsFile({ windows, slots, host, pid, nowMs, snapshots, projects, httpPort }) {
   const out = {};
   for (const w of windows ?? []) {
     const id = w?.sessionId;
@@ -64,6 +64,24 @@ function buildWindowsFile({ windows, slots, host, pid, nowMs, snapshots, project
       minimized: isMinimized(w),
     };
   }
+  // Адрес, по которому менеджер этой машины принимает просьбы напрямую.
+  //
+  // Объявление о намерении, а не доказательство: файл пишет демон
+  // (`claude-wt watch`), а слушатель живёт в служебном процессе, и спрашивать
+  // его состояние в цикле демона нельзя — это лишний опрос, за который в этом
+  // проекте уже заплачено правилом бюджета.
+  //
+  // Проверять и нечего: mqtt-клиент живёт в том же служебном процессе, что и
+  // слушатель. Лежит служба — мертвы оба транспорта, и откат на MQTT спас бы
+  // ровно ноль случаев.
+  //
+  // Ключа нет вовсе, когда порта нет: читатель отличает «не знаю» от «знаю»
+  // наличием ключа, ровно как у `mqttBase` пустая строка значит «спроси свой
+  // конфиг». Ноль и строка читаются как отсутствие — конфиг правит человек.
+  const port = Number(httpPort);
+  const http = Number.isFinite(port) && port > 0 && typeof httpPort === 'number'
+    ? { port }
+    : null;
   // Секунды, а не миллисекунды: рядом лежит `lastSeen` в секундах, и читатель —
   // python на другой машине, которому проще сравнивать с time.time().
   return {
@@ -85,6 +103,7 @@ function buildWindowsFile({ windows, slots, host, pid, nowMs, snapshots, project
         name: typeof p.name === 'string' ? p.name : '',
         hotkey: p.hotkey.trim(),
       })),
+    ...(http ? { http } : {}),
   };
 }
 

@@ -142,8 +142,30 @@ describe('claude-snapshot-restore', () => {
 
   it('сообщает, когда восстанавливать нечего', async () => {
     const d = deps({ winMan: { restoreSnapshot: vi.fn().mockResolvedValue({ restored: [], skipped: [] }) } });
+    // Обработчик отвечает хвостом (I-3): notify зовётся после того, как
+    // winMan.restoreSnapshot() доразрешится, а не до возврата из обработчика.
     await claudeCommands(d)['claude-snapshot-restore']('last');
-    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('нечего восстанавливать'));
+    await vi.waitFor(() => expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('нечего восстанавливать')));
+  });
+
+  it('отвечает раньше, чем доразрешится восстановление — потолок http-транспорта пикера меньше launchPlan', async () => {
+    // manager_http.rs держит 5 секунд на всю просьбу, а launchPlan (restore.js)
+    // может занимать 10-30 секунд на снимке из нескольких сессий: синхронный
+    // await отвечал бы «refused» там, где восстановление удалось бы.
+    let resolveRestore;
+    const pending = new Promise((resolve) => { resolveRestore = resolve; });
+    const d = deps({ winMan: { restoreSnapshot: vi.fn().mockReturnValue(pending) } });
+    await claudeCommands(d)['claude-snapshot-restore']('last');
+    expect(d.log).not.toHaveBeenCalled();
+    resolveRestore({ restored: ['abc'], skipped: [] });
+    await vi.waitFor(() => expect(d.log).toHaveBeenCalledWith(expect.stringContaining('restored 1')));
+  });
+
+  it('ошибка восстановления не роняет процесс и уходит в лог хвостом', async () => {
+    const d = deps({ winMan: { restoreSnapshot: vi.fn().mockRejectedValue(new Error('boom')) } });
+    await claudeCommands(d)['claude-snapshot-restore']('last');
+    await vi.waitFor(() => expect(d.log).toHaveBeenCalledWith(expect.stringContaining('boom'), 'error'));
+    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('boom'));
   });
 });
 
