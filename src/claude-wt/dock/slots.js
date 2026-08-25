@@ -19,6 +19,20 @@ const DEFAULT_SLOTS = 5;
 const DEFAULT_INTERVAL_SEC = 10;
 
 /**
+ * Число из конфига, где ноль — осмысленное значение, а не «не задано».
+ *
+ * `||` тут ловушка: явный `slots: 0` (доска фактически выключена) или
+ * `interval: 0` (снимок каждый раз заново) молча превратились бы в
+ * умолчание. `??` берёт значение только когда оно вправду не задано; мусор
+ * (`NaN`, отрицательное) откатывается к умолчанию отдельной проверкой, а
+ * дробное усекается — наружу не должен уехать бессмысленный `count`.
+ */
+function nonNegativeInt(value, fallback) {
+  const n = Number(value ?? fallback);
+  return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : fallback;
+}
+
+/**
  * Настройки доски. `null` — доски нет: у сервера тогда нет и роутов.
  *
  * `sort` читается и под именем `sessionsSort`: так этот же ключ называется в
@@ -29,8 +43,8 @@ function dockConfig(config) {
   const raw = config?.streamdock;
   if (!raw || raw.enabled === false) return null;
   return {
-    slots: Number(raw.slots) || DEFAULT_SLOTS,
-    intervalMs: (Number(raw.interval) || DEFAULT_INTERVAL_SEC) * 1000,
+    slots: nonNegativeInt(raw.slots, DEFAULT_SLOTS),
+    intervalMs: nonNegativeInt(raw.interval, DEFAULT_INTERVAL_SEC) * 1000,
     sort: normalizeSort(raw.sort ?? raw.sessionsSort),
     openOnly: raw.openOnly !== false,
   };
