@@ -141,7 +141,10 @@ streamdock:
   enabled: true
   slots: 5
   interval: 10      # секунд: срок годности снимка слотов
-  sort: recent      # тот же список, что у homeassistant.sessionsSort
+  sort: recent      # тот же список, что у homeassistant.sessionsSort;
+                    # под именем sessionsSort ключ читается тоже — иначе
+                    # строка, скопированная из блока homeassistant, молча
+                    # дала бы умолчание вместо заданного порядка
   openOnly: true
 ```
 
