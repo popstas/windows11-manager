@@ -9,6 +9,7 @@ import {
   layoutFingerprint,
   focusedSessionIds,
   unresolvedTitles,
+  indexWanted,
   emptyTickStats,
   recordTick,
   claudeWtHealth,
@@ -314,6 +315,42 @@ describe('unresolvedTitles', () => {
       { id: 2, stableTitle: 'same', sessionId: null },
     ]);
     expect(out).toEqual(['same']);
+  });
+});
+
+describe('indexWanted', () => {
+  const wt = (stableTitle, sessionId = null) => ({ id: stableTitle, stableTitle, sessionId });
+
+  it('asks for the index when a title it has not seen turns up', () => {
+    const out = indexWanted([wt('fresh session')], new Set());
+    expect(out.wanted).toBe(true);
+    expect([...out.seen]).toEqual(['fresh session']);
+  });
+
+  // Окно терминала, сессией Claude не являющееся, непривязанным остаётся
+  // навсегда. Спрос по «есть хоть один непривязанный» держал бы срок годности
+  // кэша отменённым насовсем, и дамп читался бы с сетевого диска каждую
+  // секунду вместо раза в пятнадцать.
+  it('stops asking for a title that stays unresolved forever', () => {
+    const plain = [wt('PowerShell')];
+    const first = indexWanted(plain, new Set());
+    expect(first.wanted).toBe(true);
+    const second = indexWanted(plain, first.seen);
+    expect(second.wanted).toBe(false);
+    const third = indexWanted(plain, second.seen);
+    expect(third.wanted).toBe(false);
+  });
+
+  it('asks again when a new title joins a stale one', () => {
+    const stale = indexWanted([wt('PowerShell')], new Set());
+    const out = indexWanted([wt('PowerShell'), wt('fresh session')], stale.seen);
+    expect(out.wanted).toBe(true);
+  });
+
+  it('does not ask for a window that already has a session', () => {
+    const out = indexWanted([wt('ccfzf', 'a1')], new Set());
+    expect(out.wanted).toBe(false);
+    expect([...out.seen]).toEqual([]);
   });
 });
 

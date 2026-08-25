@@ -213,11 +213,18 @@ function shouldWriteSignal({ print, lastPrint }) {
 
 /**
  * Куда его класть. Каталог настроек пикера на этой же машине: трекер и пикер
- * живут рядом, и сетевого здесь нет ничего. `os.homedir()` на Windows и есть
- * `USERPROFILE` — тем же, каким пикер считает свой путь.
+ * живут рядом, и сетевого здесь нет ничего.
+ *
+ * Порядок `HOME`, потом `USERPROFILE` — не наш выбор, а копия того, как дом
+ * считает читатель (`home_dir` в main.rs пикера). `os.homedir()` на Windows
+ * смотрит только `USERPROFILE` и на `HOME` не смотрит вовсе — то есть на
+ * машине с выставленным `HOME` (git-bash, MSYS, просто привычка) писали бы мы
+ * в один каталог, а читал бы пикер из другого. Отказ при этом молчаливый:
+ * сигнал не приходит никогда, и от «трекер не выкачен» это неотличимо.
  */
 function signalPath() {
-  return path.join(os.homedir(), '.config', 'ccfzf-picker', 'tracker-signal.json');
+  const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
+  return path.join(home, '.config', 'ccfzf-picker', 'tracker-signal.json');
 }
 
 export {

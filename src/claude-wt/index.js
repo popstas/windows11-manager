@@ -29,6 +29,7 @@ import {
   layoutFingerprint,
   focusedSessionIds,
   unresolvedTitles,
+  indexWanted,
   emptyTickStats,
   recordTick,
   isStaleTick,
@@ -117,11 +118,15 @@ let liveState = null;
 let prevActiveWindowId = 0;
 let reportedTitles = new Set();
 
-// Было ли на прошлом тике окно без сессии. Индекс читается ДО step(), то есть
-// про непривязанное окно мы узнаём на тик позже, — и это нормально: тик
-// секундный, а второе чтение дампа в том же тике стоило бы сетевого чтения на
-// каждом витке.
+// Появился ли на прошлом тике НОВЫЙ заголовок без сессии. Индекс читается ДО
+// step(), то есть про непривязанное окно мы узнаём на тик позже, — и это
+// нормально: тик секундный, а второе чтение дампа в том же тике стоило бы
+// сетевого чтения на каждом витке.
 let wantedIndex = false;
+// Непривязанные заголовки прошлого тика: спрос поднимает появление нового, а
+// не наличие хоть одного. Окно терминала, сессией Claude не являющееся, стоит
+// непривязанным вечно — см. `indexWanted`.
+let unresolvedSeen = new Set();
 
 // Сессии, чей следующий переход фокуса не считается просмотром. Живёт в памяти
 // демона: пометка нужна ровно на те секунды, что человек закрывает пикер, а
@@ -189,7 +194,7 @@ async function claudeWtTick(tickGen = null) {
   prevWindows = nextWindows;
   // Спрос на следующий тик. Считается той же функцией, что и жалоба в лог:
   // второе правило «какое окно считать непривязанным» разошлось бы с первым.
-  wantedIndex = unresolvedTitles(nextWindows).length > 0;
+  ({ wanted: wantedIndex, seen: unresolvedSeen } = indexWanted(nextWindows, unresolvedSeen));
   if (cfg.debug) reportUnresolved(nextWindows);
 
   // Переднее окно читается ДО переносов, и это существенно дважды. Во-первых,

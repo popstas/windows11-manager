@@ -381,9 +381,46 @@ describe('shouldWriteSignal', () => {
 });
 
 describe('signalPath', () => {
+  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  const restore = () => {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  };
+
   it('lives in the picker config directory', () => {
     expect(signalPath()).toBe(
       path.join(os.homedir(), '.config', 'ccfzf-picker', 'tracker-signal.json'),
     );
+  });
+
+  // Дом считается тем же порядком, что и у читателя (`home_dir` в main.rs
+  // пикера): сперва HOME, потом USERPROFILE. `os.homedir()` на Windows на
+  // HOME не смотрит вовсе — писали бы мы в один каталог, а пикер читал бы из
+  // другого, и отказ был бы молчаливым: сигнал не приходит никогда, и от
+  // «трекер не выкачен» это неотличимо.
+  it('prefers HOME over USERPROFILE, the way the picker reads it', () => {
+    try {
+      process.env.HOME = path.join('C:', 'msys', 'home', 'user');
+      process.env.USERPROFILE = path.join('C:', 'Users', 'user');
+      expect(signalPath()).toBe(
+        path.join('C:', 'msys', 'home', 'user', '.config', 'ccfzf-picker', 'tracker-signal.json'),
+      );
+    } finally {
+      restore();
+    }
+  });
+
+  it('falls back to USERPROFILE when HOME is unset', () => {
+    try {
+      delete process.env.HOME;
+      process.env.USERPROFILE = path.join('C:', 'Users', 'user');
+      expect(signalPath()).toBe(
+        path.join('C:', 'Users', 'user', '.config', 'ccfzf-picker', 'tracker-signal.json'),
+      );
+    } finally {
+      restore();
+    }
   });
 });

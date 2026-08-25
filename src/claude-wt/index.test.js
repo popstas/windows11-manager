@@ -47,3 +47,19 @@ describe('stopClaudeWt', () => {
     expect(fs.existsSync(windowsFile)).toBe(true);
   });
 });
+
+describe('спрос на внеочередное чтение индекса', () => {
+  // Текстовый, и иначе никак: тик ходит в реестр окон, в сеть и в дамп — в
+  // юнит-тесте его не поднять. Правило же молчаливое: вернись сюда прежнее
+  // `unresolvedTitles(nextWindows).length > 0`, и одно окно терминала,
+  // сессией Claude не являющееся (обычный PowerShell во вкладке), отменило бы
+  // срок годности кэша НАВСЕГДА — дамп читался бы с сетевого диска каждую
+  // секунду вместо раза в пятнадцать. Демон при этом работает, и увидеть это
+  // можно только счётчиком чтений на той машине.
+  const src = fs.readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+
+  it('поднимается новым заголовком, а не наличием хоть одного', () => {
+    expect(src).toMatch(/indexWanted\(nextWindows, unresolvedSeen\)/);
+    expect(src).not.toMatch(/wantedIndex = unresolvedTitles\(/);
+  });
+});
