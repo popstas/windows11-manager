@@ -168,4 +168,19 @@ describe('claude-dock-press', () => {
     expect(await map['claude-dock-press']({ slot: 1 })).toEqual({ empty: true });
     expect(winMan.focusTerminalWindow).not.toHaveBeenCalled();
   });
+
+  it('resolve() отдал null — номер вне диапазона доски, а не пустой слот', async () => {
+    // Опечатка в настройке кнопки (слот 8 на пятислотовой доске) — не то же
+    // самое, что нажатие на пустую кнопку в пределах диапазона: по http это
+    // отсекается 404-м раньше роутера (задача 4), а по MQTT команда доходит
+    // сюда, и молчать об этом нельзя — лог обязан называть беду своим именем.
+    const winMan = focusable();
+    const log = vi.fn();
+    const map = makeMap({ winMan, log, dock: dockWith(null) });
+
+    expect(await map['claude-dock-press']({ slot: 8 })).toEqual({ empty: true });
+    expect(winMan.focusTerminalWindow).not.toHaveBeenCalled();
+    expect(log.mock.calls.some(([msg]) => String(msg).includes('вне диапазона'))).toBe(true);
+    expect(log.mock.calls.some(([msg]) => String(msg).includes('пуст'))).toBe(false);
+  });
 });

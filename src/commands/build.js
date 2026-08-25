@@ -72,9 +72,22 @@ function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = 
     // нарисовано.
     'claude-dock-press': throttlePress(
       withRefresh(async (payload) => {
-        const slot = Number(slotFromPayload(payload));
+        const raw = slotFromPayload(payload);
+        const slot = Number(raw);
         const found = dock?.resolve(slot) ?? null;
-        if (!found || found.empty) {
+        // Два разных события, оба отвечают наружу одним и тем же
+        // `{ empty: true }` (форма ответа — интерфейс задачи 4, менять её в
+        // обход плана нельзя), но в логе им расходиться нужно: `null` — номер
+        // вне диапазона доски, то есть опечатка в настройке кнопки, а не
+        // нажатие на пустую. По http такое отсекается 404-м раньше роутера, а
+        // по MQTT — нет, и молчать об этом нельзя. `raw`, а не `slot`, — чтобы
+        // при пустом или нечисловом теле в логе было видно, что пришло, а не
+        // NaN/0.
+        if (!found) {
+          log(`streamdock: слот ${JSON.stringify(raw)} вне диапазона доски`, 'warn');
+          return { empty: true };
+        }
+        if (found.empty) {
           log(`streamdock: слот ${slot} пуст`, 'warn');
           return { empty: true };
         }
