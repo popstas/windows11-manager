@@ -337,6 +337,26 @@ function unresolvedTitles(nextWindows) {
   return [...new Set(nextWindows.filter(w => w.stableTitle && !w.sessionId).map(w => w.stableTitle))];
 }
 
+/**
+ * Спрос на внеочередное чтение индекса — и только на НОВЫЙ непривязанный
+ * заголовок, а не на любой.
+ *
+ * `unresolvedTitles` сам по себе признак постоянный: окно терминала, сессией
+ * Claude не являющееся (обычный PowerShell во вкладке Windows Terminal),
+ * непривязанным останется навсегда. Спрос по нему держал бы срок годности
+ * кэша отменённым насовсем, и дамп читался бы с сетевого диска каждую
+ * секунду вместо раза в пятнадцать — то есть вдвое хуже варианта, который
+ * спека измерила и отвергла.
+ *
+ * Свежую сессию это не пропускает: заголовок у её окна новый, значит спрос
+ * поднимется на тот тик, когда окно появилось. А если дамп о ней ещё не
+ * знает, перечитает его первая же смена mtime — она и так в ключе кэша.
+ */
+function indexWanted(nextWindows, seenUnresolved) {
+  const titles = unresolvedTitles(nextWindows);
+  return { wanted: titles.some(t => !seenUnresolved.has(t)), seen: new Set(titles) };
+}
+
 // Минута молчания при тике раз в секунду — это не флуктуация, а поломка.
 const TICK_SILENCE_MS = 60000;
 // Столько демону дают на первый успешный тик после старта: maybeRestoreOnStart()
@@ -427,6 +447,7 @@ export {
   applyFocusSuppression,
   applyPendingUnread,
   unresolvedTitles,
+  indexWanted,
   emptyTickStats,
   recordTick,
   claudeWtHealth,

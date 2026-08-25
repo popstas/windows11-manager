@@ -13,6 +13,9 @@ import {
   shouldWriteWindowsFile,
   writeWindowsFile,
   removeWindowsFile,
+  signalPrint,
+  shouldWriteSignal,
+  signalPath,
 } from './windows-file.js';
 import { step } from './tracker-helpers.js';
 import {
@@ -26,6 +29,7 @@ import {
   layoutFingerprint,
   focusedSessionIds,
   unresolvedTitles,
+  indexWanted,
   emptyTickStats,
   recordTick,
   isStaleTick,
@@ -107,9 +111,22 @@ let lastWritten = '';
 // этот — только то, что видно чужому читателю.
 let lastWindowsFingerprint = '';
 let lastWindowsWrite = 0;
+// Отпечаток последнего сигнала пикеру (см. signalPrint) — своя, узкая копия
+// расклада без сердцебиения: строка пишется на смену отпечатка и только на неё.
+let lastSignalPrint = null;
 let liveState = null;
 let prevActiveWindowId = 0;
 let reportedTitles = new Set();
+
+// Появился ли на прошлом тике НОВЫЙ заголовок без сессии. Индекс читается ДО
+// step(), то есть про непривязанное окно мы узнаём на тик позже, — и это
+// нормально: тик секундный, а второе чтение дампа в том же тике стоило бы
+// сетевого чтения на каждом витке.
+let wantedIndex = false;
+// Непривязанные заголовки прошлого тика: спрос поднимает появление нового, а
+// не наличие хоть одного. Окно терминала, сессией Claude не являющееся, стоит
+// непривязанным вечно — см. `indexWanted`.
+let unresolvedSeen = new Set();
 
 // Сессии, чей следующий переход фокуса не считается просмотром. Живёт в памяти
 // демона: пометка нужна ровно на те секунды, что человек закрывает пикер, а
@@ -154,7 +171,8 @@ async function claudeWtTick(tickGen = null) {
   // файл — только снимок для восстановления, а не рабочая структура.
   if (!liveState) liveState = readState(cfg.statePath);
   const windows = snapshot();
-  const sessionIndex = loadSessionIndex(cfg.sessionsFile, cfg.progressDir);
+  const sessionIndex = loadSessionIndex(cfg.sessionsFile, cfg.progressDir, Date.now(), wantedIndex);
+  wantedIndex = false;
   // monitors нужны ДО actions: step() зажимает координаты сам, иначе запрошенная
   // и фактически применённая позиция расходятся и guard собственного хода
   // висит до таймаута, а потом записывает зажатую позицию поверх исходной.
@@ -174,6 +192,9 @@ async function claudeWtTick(tickGen = null) {
     options: { stableTicks: cfg.stableTicks },
   });
   prevWindows = nextWindows;
+  // Спрос на следующий тик. Считается той же функцией, что и жалоба в лог:
+  // второе правило «какое окно считать непривязанным» разошлось бы с первым.
+  ({ wanted: wantedIndex, seen: unresolvedSeen } = indexWanted(nextWindows, unresolvedSeen));
   if (cfg.debug) reportUnresolved(nextWindows);
 
   // Переднее окно читается ДО переносов, и это существенно дважды. Во-первых,
@@ -343,6 +364,25 @@ function publishWindows(cfg, windows, slots) {
     // порт отсутствующим — пикер тихо откатывался бы на MQTT.
     httpPort: getConfig().httpPort ?? 9722,
   });
+  // Сигнал пикеру: узкий отпечаток (без сердцебиения, см. signalPrint) — до
+  // гейта ниже, у него своё правило записи.
+  const signal = signalPrint(payload);
+  if (shouldWriteSignal({ print: signal, lastPrint: lastSignalPrint })) {
+    try {
+      writeWindowsFile(signalPath(), {
+        generated: Math.floor(nowMs / 1000),
+        host: os.hostname(),
+        pid: process.pid,
+        print: signal,
+      });
+      lastSignalPrint = signal;
+    } catch (e) {
+      // Строка в лог и всё: сигнал это добавка, и ронять из-за него тик
+      // слежения за окнами нельзя — без пометки человек проживёт, без
+      // слежения нет.
+      console.error(`[claude-wt] signal write failed: ${e.message}`);
+    }
+  }
   const fingerprint = windowsFingerprint(payload.windows, payload.snapshots, payload.projects);
   const due = shouldWriteWindowsFile({
     fingerprint, lastFingerprint: lastWindowsFingerprint, lastWriteMs: lastWindowsWrite, nowMs,
