@@ -13,6 +13,9 @@ import {
   shouldWriteWindowsFile,
   writeWindowsFile,
   removeWindowsFile,
+  signalPrint,
+  shouldWriteSignal,
+  signalPath,
 } from './windows-file.js';
 import { step } from './tracker-helpers.js';
 import {
@@ -107,6 +110,9 @@ let lastWritten = '';
 // этот — только то, что видно чужому читателю.
 let lastWindowsFingerprint = '';
 let lastWindowsWrite = 0;
+// Отпечаток последнего сигнала пикеру (см. signalPrint) — своя, узкая копия
+// расклада без сердцебиения: строка пишется на смену отпечатка и только на неё.
+let lastSignalPrint = null;
 let liveState = null;
 let prevActiveWindowId = 0;
 let reportedTitles = new Set();
@@ -343,6 +349,25 @@ function publishWindows(cfg, windows, slots) {
     // порт отсутствующим — пикер тихо откатывался бы на MQTT.
     httpPort: getConfig().httpPort ?? 9722,
   });
+  // Сигнал пикеру: узкий отпечаток (без сердцебиения, см. signalPrint) — до
+  // гейта ниже, у него своё правило записи.
+  const signal = signalPrint(payload);
+  if (shouldWriteSignal({ print: signal, lastPrint: lastSignalPrint })) {
+    try {
+      writeWindowsFile(signalPath(), {
+        generated: Math.floor(nowMs / 1000),
+        host: os.hostname(),
+        pid: process.pid,
+        print: signal,
+      });
+      lastSignalPrint = signal;
+    } catch (e) {
+      // Строка в лог и всё: сигнал это добавка, и ронять из-за него тик
+      // слежения за окнами нельзя — без пометки человек проживёт, без
+      // слежения нет.
+      console.error(`[claude-wt] signal write failed: ${e.message}`);
+    }
+  }
   const fingerprint = windowsFingerprint(payload.windows, payload.snapshots, payload.projects);
   const due = shouldWriteWindowsFile({
     fingerprint, lastFingerprint: lastWindowsFingerprint, lastWriteMs: lastWindowsWrite, nowMs,

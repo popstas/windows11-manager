@@ -1,9 +1,14 @@
 import { describe, it, expect } from 'vitest';
+import os from 'node:os';
+import path from 'node:path';
 import {
   WINDOWS_FILE_HEARTBEAT_MS,
   buildWindowsFile,
   windowsFingerprint,
   shouldWriteWindowsFile,
+  signalPrint,
+  shouldWriteSignal,
+  signalPath,
 } from './windows-file-helpers.js';
 
 const WINDOWS = [
@@ -312,5 +317,73 @@ describe('windowsFingerprint — projects', () => {
     const win = { one: { desktop: 1, title: 'x', focusedAt: 0 } };
     const one = [{ cwd: '/p/home', name: 'home', hotkey: 'Ctrl+F11' }];
     expect(windowsFingerprint(win, [], [])).not.toBe(windowsFingerprint(win, [], one));
+  });
+});
+
+const payload = (windows, projects = []) => ({ windows, projects });
+
+describe('signalPrint', () => {
+  it('does not notice a fresh focus stamp', () => {
+    // focusedAt меняется на каждый alt-tab. Войди он сюда — пикер ходил бы по
+    // ssh десятки раз в минуту, то есть ровно то, от чего уходим.
+    const a = payload({ s1: { focusedAt: 1, lastSeen: 10, title: 'a', app: 'wt', minimized: false } });
+    const b = payload({ s1: { focusedAt: 999, lastSeen: 99, title: 'b', app: 'kitty', minimized: false } });
+    expect(signalPrint(a)).toBe(signalPrint(b));
+  });
+
+  it('notices a new binding', () => {
+    const a = payload({ s1: { minimized: false } });
+    const b = payload({ s1: { minimized: false }, s2: { minimized: false } });
+    expect(signalPrint(a)).not.toBe(signalPrint(b));
+  });
+
+  it('notices a closed window', () => {
+    const a = payload({ s1: { minimized: false }, s2: { minimized: false } });
+    const b = payload({ s1: { minimized: false } });
+    expect(signalPrint(a)).not.toBe(signalPrint(b));
+  });
+
+  it('notices a minimized window', () => {
+    // Свёрнутое уходит из плитки, и снимок пикера обязан это знать.
+    const a = payload({ s1: { minimized: false } });
+    const b = payload({ s1: { minimized: true } });
+    expect(signalPrint(a)).not.toBe(signalPrint(b));
+  });
+
+  it('notices a changed project hotkey', () => {
+    const a = payload({}, [{ cwd: '/p', hotkey: 'Ctrl+F1' }]);
+    const b = payload({}, [{ cwd: '/p', hotkey: 'Ctrl+F2' }]);
+    expect(signalPrint(a)).not.toBe(signalPrint(b));
+  });
+
+  it('ignores the order of keys', () => {
+    const a = payload({ s1: { minimized: false }, s2: { minimized: false } });
+    const b = payload({ s2: { minimized: false }, s1: { minimized: false } });
+    expect(signalPrint(a)).toBe(signalPrint(b));
+  });
+});
+
+describe('shouldWriteSignal', () => {
+  it('writes the very first time', () => {
+    expect(shouldWriteSignal({ print: 'a', lastPrint: null })).toBe(true);
+  });
+
+  it('writes when the fingerprint changed', () => {
+    expect(shouldWriteSignal({ print: 'b', lastPrint: 'a' })).toBe(true);
+  });
+
+  it('has no heartbeat', () => {
+    // У файла окон оно есть и там оправдано — читатель на другой машине должен
+    // видеть, что трекер жив. Здесь наоборот: сердцебиение будило бы скрытый
+    // пикер каждые полминуты впустую.
+    expect(shouldWriteSignal({ print: 'a', lastPrint: 'a' })).toBe(false);
+  });
+});
+
+describe('signalPath', () => {
+  it('lives in the picker config directory', () => {
+    expect(signalPath()).toBe(
+      path.join(os.homedir(), '.config', 'ccfzf-picker', 'tracker-signal.json'),
+    );
   });
 });

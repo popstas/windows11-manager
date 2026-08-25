@@ -1,5 +1,7 @@
 /** Pure helpers for the published windows file. No external I/O. */
 
+import os from 'node:os';
+import path from 'node:path';
 import { isMinimized } from './tracker-helpers.js';
 
 // Как часто файл переписывается, когда расклад не менялся. Свежесть читатель
@@ -177,9 +179,53 @@ function shouldWriteWindowsFile({ fingerprint, lastFingerprint, lastWriteMs, now
   return nowMs - lastWriteMs >= WINDOWS_FILE_HEARTBEAT_MS;
 }
 
+/**
+ * Узкий отпечаток — только то, из-за чего снимок скрытого пикера соврёт хоткею.
+ *
+ * Второй отпечаток рядом с `windowsFingerprint`, а не он сам: в тот входит
+ * `focusedAt`, и сигналь мы по нему — пикер ходил бы по ssh на каждое
+ * переключение фокуса. Сюда входит состав привязанных сессий, свёрнутость
+ * (свёрнутое окно уходит из плитки) и проектные хоткеи (по ним пикер вешает
+ * клавиши). Не входит: `focusedAt` и `lastSeen` — растут сами; `title` и `app`
+ * — подпись и буква, хоткей их не спрашивает; снимки — их читают только при
+ * открытом пикере.
+ *
+ * Состав, а не содержимое, — ещё и условие сходимости: опрос пикера освежает
+ * дамп, трекер привязывает окно, сигнал зовёт опрос снова. Петля кончается
+ * ровно потому, что привязка устоялась и состав перестал меняться.
+ */
+function signalPrint(payload) {
+  const win = Object.entries(payload?.windows ?? {})
+    .map(([id, w]) => `${id} ${w?.minimized ? 1 : 0}`)
+    .sort()
+    .join('|');
+  const keys = (payload?.projects ?? [])
+    .map(p => `${p?.cwd} ${p?.hotkey}`)
+    .sort()
+    .join('|');
+  return `${win}//${keys}`;
+}
+
+/** Писать ли сигнал. Сердцебиения нет намеренно — см. signalPrint. */
+function shouldWriteSignal({ print, lastPrint }) {
+  return print !== lastPrint;
+}
+
+/**
+ * Куда его класть. Каталог настроек пикера на этой же машине: трекер и пикер
+ * живут рядом, и сетевого здесь нет ничего. `os.homedir()` на Windows и есть
+ * `USERPROFILE` — тем же, каким пикер считает свой путь.
+ */
+function signalPath() {
+  return path.join(os.homedir(), '.config', 'ccfzf-picker', 'tracker-signal.json');
+}
+
 export {
   WINDOWS_FILE_HEARTBEAT_MS,
   buildWindowsFile,
   windowsFingerprint,
   shouldWriteWindowsFile,
+  signalPrint,
+  shouldWriteSignal,
+  signalPath,
 };
