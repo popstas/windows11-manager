@@ -20,7 +20,7 @@ const SLOT_COUNT_DEFAULT = 10;
  * настоящая работа. `claude-focus` без ограничителя: там источник — Enter в
  * списке пикера, дребезжать нечему.
  */
-function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = () => {} }) {
+function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = () => {}, dock = null }) {
   const windows = windowCommands({ winMan, config, log, notify });
   const claude = claudeCommands({ winMan, log, notify, slots: () => haExport.slots() });
 
@@ -64,6 +64,49 @@ function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = 
         schedulePanelSlotOff(slotFromPayload(payload));
       }),
       { onDrop: (payload) => log(`claude-focus-slot ${payload} — отброшено, не чаще раза в секунду`, 'warn') },
+    ),
+    // Нажатие на кнопку доски StreamDock. Ограничитель — по той же причине,
+    // что у claude-focus-slot: источник тот же, живой палец на физической
+    // кнопке. Слот резолвится по снимку доски, а не по снимку панели: у них
+    // разные сроки годности, и кнопка обязана значить то, что на ней
+    // нарисовано.
+    'claude-dock-press': throttlePress(
+      withRefresh(async (payload) => {
+        const raw = slotFromPayload(payload);
+        const slot = Number(raw);
+        const found = dock?.resolve(slot) ?? null;
+        // Два разных события, оба отвечают наружу одним и тем же
+        // `{ empty: true }` (форма ответа — интерфейс задачи 4, менять её в
+        // обход плана нельзя), но в логе им расходиться нужно: `null` — номер
+        // вне диапазона доски, то есть опечатка в настройке кнопки, а не
+        // нажатие на пустую. По http такое отсекается 404-м раньше роутера, а
+        // по MQTT — нет, и молчать об этом нельзя. `raw`, а не `slot`, — чтобы
+        // при пустом или нечисловом теле в логе было видно, что пришло, а не
+        // NaN/0.
+        if (!found) {
+          log(`streamdock: слот ${JSON.stringify(raw)} вне диапазона доски`, 'warn');
+          return { empty: true };
+        }
+        if (found.empty) {
+          log(`streamdock: слот ${slot} пуст`, 'warn');
+          return { empty: true };
+        }
+        await claude['claude-focus']({ id: found.id });
+        // Удачное нажатие тоже оставляет след: без этой строки в логе видны были бы
+        // только промахи, а разбираться приходится именно с тем, какая кнопка какую
+        // сессию подняла. По http строка пути сюда не доходит вовсе: ветка
+        // нажатия в http-server.js отвечает раньше общего `POST <url>`.
+        log(`streamdock: слот ${slot} — поднята сессия ${found.id}`);
+        return { id: found.id };
+      }),
+      {
+        // Окно ограничения — на слот, а не на команду целиком: кнопок на доске
+        // пять, и жест «ткнул не туда, тыкаю в соседнюю» тут обычен. Общее окно
+        // съедало бы исправление, а обратной связи у человека нет — 429 уходит в
+        // консоль плагина. Дребезг одной и той же кнопки ловится по-прежнему.
+        keyOf: (payload) => String(slotFromPayload(payload)),
+        onDrop: (payload) => log(`claude-dock-press ${payload} — отброшено, не чаще раза в секунду`, 'warn'),
+      },
     ),
     'claude-session-unread': withRefresh(claude['claude-session-unread']),
     'claude-session-open': withRefresh(claude['claude-session-open']),

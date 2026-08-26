@@ -159,6 +159,14 @@ openHASP — на shome (`R:`). Состояние течёт в одну сто
 (вранье `mtime` по SMB, обрезка шаблонов в Home Assistant, отсутствие отступов у
 кнопок openHASP).
 
+**Доска StreamDock висит на том же слушателе.** `GET /claude-wt/slot/<n>.svg`
+отдаёт картинку кнопки 128×128 (`src/claude-wt/dock/`), `POST
+/claude-wt/slot/<n>/press` поднимает окно сессии этого слота. Слоты строит тот
+же `buildSlots`, что и экспорт в Home Assistant, но снимок свой: тик экспорта
+заводится по подключению к брокеру, а доске брокер не нужен. Гейт — ключ
+`streamdock` **верхнего уровня** конфига; блока нет — обоих путей нет.
+Плагин доски живёт отдельно: `/home/popstas/projects/js/streamdock-http-button`.
+
 ## claude-wt polling budget
 
 Two rules keep the once-a-second daemon off the CPU graph; both were paid for once already and must not be re-learned:

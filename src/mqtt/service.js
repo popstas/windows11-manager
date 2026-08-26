@@ -19,6 +19,7 @@ import { createStatsPublisher } from './stats.js';
 import { startAutoplacer } from './autoplacer.js';
 import { startDaemonWatchdog } from './daemon-watchdog.js';
 import { startHttpServer } from '../http-server.js';
+import { createDock } from '../claude-wt/dock/slots.js';
 
 /**
  * Команды чужого модуля power из windows-mqtt.
@@ -57,15 +58,20 @@ function startService({ winMan, config, log, env = process.env }) {
     ? createHaExport({ winMan, publish, log, config: withBase })
     : { slots: () => [], slotOff: () => {}, refresh: () => {} };
 
+  // Доска StreamDock: физические кнопки с картинками сессий. Брокер ей не
+  // нужен — ровно как http-транспорту, автопостановщику и сторожу демона.
+  // Блока `streamdock` в конфиге нет — доски нет, и роутов у сервера тоже.
+  const dock = createDock({ winMan, config: withBase, log });
+
   const router = createRouter(buildCommandMap({
-    winMan, config: withBase, log, notify, haExport, publishDone,
+    winMan, config: withBase, log, notify, haExport, publishDone, dock,
   }));
 
   // Брокер этим троим не нужен, и ждать подключения они не должны: расстановка
   // окон при открытии работает и с лежащим брокером, сторож демона тем более —
   // он про поломку, которая случается сама по себе, — а http-транспорт и есть
   // причина, по которой служба теперь поднимается без брокера вовсе.
-  const httpServer = startHttpServer({ router, port: config?.httpPort ?? 9722, log });
+  const httpServer = startHttpServer({ router, port: config?.httpPort ?? 9722, log, dock });
   const autoplacer = startAutoplacer({ winMan, config: withBase, log });
   const daemonWatchdog = startDaemonWatchdog({ winMan, log, notify });
 

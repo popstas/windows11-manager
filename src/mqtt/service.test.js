@@ -208,4 +208,27 @@ describe('startService', () => {
     expect(service.haExport().slots()).toEqual([]);
     service.stop();
   });
+
+  it('с блоком streamdock служба отдаёт картинку слота по http', async () => {
+    // Сквозная проверка проводки: модули по отдельности уже проверены, а
+    // забытый `dock` в одном из двух вызовов не виден ни одному из них.
+    const winMan = {
+      claudeWtSessions: () => ({
+        ok: true,
+        sessions: [{ id: 'aaa', title: 'alpha', cwd: '/home/popstas/projects/js/alpha', open: true, agentState: 'active', lastActivity: 1 }],
+      }),
+    };
+    const service = startService({
+      winMan,
+      config: { httpPort: 0, streamdock: { enabled: true, slots: 5 } },
+      log: () => {},
+      env: {},
+    });
+
+    const res = await fetch(`http://127.0.0.1:${service.httpPort()}/claude-wt/slot/1.svg`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('alpha');
+
+    service.stop();
+  });
 });

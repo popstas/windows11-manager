@@ -72,4 +72,61 @@ describe('startHttpServer', () => {
 
     server.close();
   });
+
+  const fakeDock = { count: 5, svg: (n) => (n <= 5 ? `<svg data-slot="${n}"></svg>` : null) };
+
+  async function listen(opts) {
+    const server = startHttpServer({ port: 0, log: () => {}, ...opts });
+    await new Promise((resolve) => server.once('listening', resolve));
+    return { server, port: server.address().port };
+  }
+
+  it('картинка слота отдаётся по GET как SVG и не кэшируется', async () => {
+    // Плагин перечитывает картинку своим таймером; закэшированная кнопка
+    // застыла бы на состоянии получасовой давности.
+    const { server, port } = await listen({ router: { dispatch: async () => ({ ok: true }) }, dock: fakeDock });
+
+    const res = await fetch(`http://127.0.0.1:${port}/claude-wt/slot/3.svg`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('image/svg+xml');
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(await res.text()).toContain('data-slot="3"');
+
+    server.close();
+  });
+
+  it('номер вне диапазона — 404, а не пустая картинка', async () => {
+    // Это опечатка в настройке кнопки, и она должна быть видна.
+    const { server, port } = await listen({ router: { dispatch: async () => ({ ok: true }) }, dock: fakeDock });
+    expect((await fetch(`http://127.0.0.1:${port}/claude-wt/slot/9.svg`)).status).toBe(404);
+    expect((await fetch(`http://127.0.0.1:${port}/claude-wt/slot/9/press`, { method: 'POST' })).status).toBe(404);
+    server.close();
+  });
+
+  it('нажатие доезжает до команды с номером слота из пути', async () => {
+    const seen = [];
+    const router = { dispatch: async (command, body) => { seen.push([command, body]); return { ok: true, result: { id: 'x' } }; } };
+    const { server, port } = await listen({ router, dock: fakeDock });
+
+    const res = await fetch(`http://127.0.0.1:${port}/claude-wt/slot/2/press`, { method: 'POST' });
+
+    expect(res.status).toBe(200);
+    expect(seen).toEqual([['claude-dock-press', { slot: 2 }]]);
+    server.close();
+  });
+
+  it('без доски обоих путей нет вовсе', async () => {
+    const { server, port } = await listen({ router: { dispatch: async () => ({ ok: true }) } });
+    expect((await fetch(`http://127.0.0.1:${port}/claude-wt/slot/1.svg`)).status).toBe(404);
+    expect((await fetch(`http://127.0.0.1:${port}/claude-wt/slot/1/press`, { method: 'POST' })).status).toBe(404);
+    server.close();
+  });
+
+  it('командные пути по GET по-прежнему 405', async () => {
+    // Ветка GET заведена ради картинок; открыть по ней роутер команд значило бы
+    // отдать перезагрузку и раскладку окон любому, кто откроет ссылку.
+    const { server, port } = await listen({ router: { dispatch: async () => ({ ok: true }) }, dock: fakeDock });
+    expect((await fetch(`http://127.0.0.1:${port}/claude-wt/focus`)).status).toBe(405);
+    server.close();
+  });
 });

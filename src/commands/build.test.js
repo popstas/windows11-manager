@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { buildCommandMap } from './build.js';
+import { DROPPED } from './press-throttle.js';
 
 function winManStub() {
   return {
@@ -108,5 +109,103 @@ describe('buildCommandMap', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('claude-dock-press', () => {
+  const dockWith = (answer) => ({ count: 5, resolve: vi.fn().mockReturnValue(answer) });
+
+  function focusable() {
+    const winMan = winManStub();
+    winMan.claudeWtSessions.mockReturnValue({
+      ok: true,
+      sessions: [{ id: 'sess-1', open: true, windowId: 7 }],
+    });
+    winMan.getWindowById.mockReturnValue({ id: 7 });
+    winMan.focusTerminalWindow = vi.fn().mockResolvedValue(true);
+    return winMan;
+  }
+
+  it('нажатие поднимает окно той сессии, которую назвал снимок доски', async () => {
+    const winMan = focusable();
+    const dock = dockWith({ id: 'sess-1' });
+    const map = makeMap({ winMan, dock });
+
+    const result = await map['claude-dock-press']({ slot: 2 });
+
+    expect(dock.resolve).toHaveBeenCalledWith(2);
+    expect(winMan.focusTerminalWindow).toHaveBeenCalledWith(7, expect.anything());
+    expect(result).toEqual({ id: 'sess-1' });
+  });
+
+  it('пустой слот не зовёт фокус и не молчит', async () => {
+    // Нажатие на пустую кнопку — не ошибка транспорта, но и не тишина:
+    // человек нажал, а не случилось ничего, и в логе должна остаться строка.
+    const winMan = focusable();
+    const log = vi.fn();
+    const map = makeMap({ winMan, log, dock: dockWith({ empty: true }) });
+
+    expect(await map['claude-dock-press']({ slot: 3 })).toEqual({ empty: true });
+    expect(winMan.focusTerminalWindow).not.toHaveBeenCalled();
+    expect(log.mock.calls.some(([msg]) => String(msg).includes('3'))).toBe(true);
+  });
+
+  it('второе нажатие на ту же кнопку подряд отбрасывается ограничителем', async () => {
+    // Палец, снятый неровно, даёт две-три посылки подряд — та же беда, ради
+    // которой ограничитель стоит на claude-focus-slot.
+    const map = makeMap({ winMan: focusable(), dock: dockWith({ id: 'sess-1' }) });
+
+    await map['claude-dock-press']({ slot: 1 });
+    expect(map['claude-dock-press']({ slot: 1 })).toBe(DROPPED);
+  });
+
+  it('нажатия на разные кнопки друг друга не глушат — окно ограничения на слот', () => {
+    // Кнопок на доске пять, и жест «ткнул не туда, тыкаю в соседнюю» обычен.
+    // Одно окно на всю команду съедало бы исправление, а обратной связи у
+    // человека нет: 429 уходит в консоль плагина.
+    const map = makeMap({ winMan: focusable(), dock: dockWith({ id: 'sess-1' }) });
+
+    expect(map['claude-dock-press']({ slot: 1 })).not.toBe(DROPPED);
+    expect(map['claude-dock-press']({ slot: 2 })).not.toBe(DROPPED);
+    expect(map['claude-dock-press']({ slot: 2 })).toBe(DROPPED);
+  });
+
+  it('удачное нажатие оставляет след в логе: какой слот и какую сессию подняли', async () => {
+    // Привычка репозитория обратная тому, что вышло: неудача громкая, удача
+    // бесследная. По http строка общего лога сюда не доходит — ветка нажатия в
+    // http-server.js отвечает раньше неё.
+    const log = vi.fn();
+    const map = makeMap({ winMan: focusable(), log, dock: dockWith({ id: 'sess-1' }) });
+
+    await map['claude-dock-press']({ slot: 4 });
+
+    const line = log.mock.calls.map(([msg]) => String(msg)).find((m) => m.includes('sess-1'));
+    expect(line).toBeTruthy();
+    expect(line).toContain('4');
+  });
+
+  it('доски нет — команда есть, но фокус не зовёт', async () => {
+    // Карта одна на оба транспорта, и команда в ней заводится всегда; роутов
+    // же без доски нет, поэтому попасть сюда можно только вызовом руками.
+    const winMan = focusable();
+    const map = makeMap({ winMan });
+
+    expect(await map['claude-dock-press']({ slot: 1 })).toEqual({ empty: true });
+    expect(winMan.focusTerminalWindow).not.toHaveBeenCalled();
+  });
+
+  it('resolve() отдал null — номер вне диапазона доски, а не пустой слот', async () => {
+    // Опечатка в настройке кнопки (слот 8 на пятислотовой доске) — не то же
+    // самое, что нажатие на пустую кнопку в пределах диапазона: по http это
+    // отсекается 404-м раньше роутера (задача 4), а по MQTT команда доходит
+    // сюда, и молчать об этом нельзя — лог обязан называть беду своим именем.
+    const winMan = focusable();
+    const log = vi.fn();
+    const map = makeMap({ winMan, log, dock: dockWith(null) });
+
+    expect(await map['claude-dock-press']({ slot: 8 })).toEqual({ empty: true });
+    expect(winMan.focusTerminalWindow).not.toHaveBeenCalled();
+    expect(log.mock.calls.some(([msg]) => String(msg).includes('вне диапазона'))).toBe(true);
+    expect(log.mock.calls.some(([msg]) => String(msg).includes('пуст'))).toBe(false);
   });
 });

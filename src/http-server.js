@@ -37,6 +37,20 @@ function routeToCommand(url) {
   return ROUTES[clean] ?? null;
 }
 
+/**
+ * Пути доски StreamDock. Отдельно от `ROUTES` и не через `routeToCommand`:
+ * там точное совпадение пути с командой, а здесь в пути стоит номер слота, и
+ * картинка вообще не команда — у неё тело ответа, а не результат роутера.
+ */
+const SLOT_IMAGE = /^\/claude-wt\/slot\/(\d+)\.svg$/;
+const SLOT_PRESS = /^\/claude-wt\/slot\/(\d+)\/press$/;
+
+function slotNumber(url, re) {
+  const clean = String(url ?? '').split('?')[0].replace(/\/+$/, '') || '/';
+  const match = re.exec(clean);
+  return match ? Number(match[1]) : null;
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -53,17 +67,80 @@ function readBody(req) {
   });
 }
 
-function startHttpServer({ router, port = 9722, log }) {
+function replyResult(res, log, url, result) {
+  if (!result.ok) {
+    log(`POST ${url}: ${result.error}`, 'error');
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: result.error }));
+    return;
+  }
+  // Дребезг платы: `claude-place`/`claude-snapshot-restore`/`claude-dock-press`,
+  // отброшенные press-throttle.js, доходят сюда как `ok: true, result: DROPPED`
+  // — по MQTT это была просто тишина, а `200 {"ok":true}` был бы подтверждённым
+  // успехом несделанного.
+  if (result.result === DROPPED) {
+    log(`POST ${url}: отброшено ограничителем частоты`, 'warn');
+    res.writeHead(429, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'throttled' }));
+    return;
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true, ...(result.result ?? {}) }));
+}
+
+function startHttpServer({ router, port = 9722, log, dock = null }) {
+  const inDockRange = (n) => Boolean(dock) && Number.isInteger(n) && n >= 1 && n <= dock.count;
   const server = http.createServer(async (req, res) => {
+    const notFound = () => {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not found' }));
+    };
+
+    // Картинка кнопки. Единственный GET на всём сервере: роутер команд по нему
+    // не открывается — путь, не совпавший с SLOT_IMAGE, падает ниже на прежнюю
+    // проверку метода и получает 405, как и раньше.
+    if (req.method === 'GET') {
+      const slot = slotNumber(req.url, SLOT_IMAGE);
+      if (slot !== null) {
+        const svg = inDockRange(slot) ? dock.svg(slot) : null;
+        if (!svg) {
+          notFound();
+          return;
+        }
+        res.writeHead(200, {
+          'Content-Type': 'image/svg+xml; charset=utf-8',
+          // Плагин перечитывает картинку своим таймером, и закэшированная
+          // кнопка застыла бы на прошлом состоянии сессии.
+          'Cache-Control': 'no-store',
+        });
+        res.end(svg);
+        return;
+      }
+    }
+
     if (req.method !== 'POST') {
       res.writeHead(405, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Method not allowed' }));
       return;
     }
+
+    // Нажатие на кнопку доски. Номер берётся из пути, а тело не читается
+    // вовсе: у кнопки плагина его может не быть, а пустой разбор ответил бы
+    // 400 на исправное нажатие.
+    const pressSlot = slotNumber(req.url, SLOT_PRESS);
+    if (pressSlot !== null) {
+      if (!inDockRange(pressSlot)) {
+        notFound();
+        return;
+      }
+      const result = await router.dispatch('claude-dock-press', { slot: pressSlot });
+      replyResult(res, log, req.url, result);
+      return;
+    }
+
     const command = routeToCommand(req.url);
     if (!command) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Not found' }));
+      notFound();
       return;
     }
     let body;
@@ -79,24 +156,7 @@ function startHttpServer({ router, port = 9722, log }) {
     }
     log(`POST ${req.url}: ${JSON.stringify(body)}`);
     const result = await router.dispatch(command, body);
-    if (!result.ok) {
-      log(`POST ${req.url}: ${result.error}`, 'error');
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: result.error }));
-      return;
-    }
-    // Дребезг платы: `claude-place`/`claude-snapshot-restore`, отброшенные
-    // press-throttle.js, доходят сюда как `ok: true, result: DROPPED` — по
-    // MQTT это была просто тишина, а `200 {"ok":true}` был бы подтверждённым
-    // успехом несделанного.
-    if (result.result === DROPPED) {
-      log(`POST ${req.url}: отброшено ограничителем частоты`, 'warn');
-      res.writeHead(429, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'throttled' }));
-      return;
-    }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, ...(result.result ?? {}) }));
+    replyResult(res, log, req.url, result);
   });
 
   // Без этого подписчика EADDRINUSE (осиротевший процесс прошлой версии,
