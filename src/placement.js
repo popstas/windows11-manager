@@ -151,12 +151,24 @@ async function placeWindow({ w, rule = {}, isBulk = false, verbose = false }) {
 }
 
 // rule - element of config.windows
+/**
+ * Ответ — не окно, а отчёт о постановке: `{ window, changes, skipped }`.
+ *
+ * Само окно из ответа не читает никто, а вот `changes` зовущим нужны, и
+ * выбрасывать их тут было ошибкой: единственный, кто знает, переехало ли окно
+ * на другой стол, — это `placeWindow()`, спросивший у Windows его нынешний
+ * стол. Без этого знания демон и восстановление считали переездом сам факт
+ * `desktop` в правиле и уходили следом за никуда не уехавшим окном — см.
+ * `movedDesktop()`.
+ */
 async function placeWindowByConfig(rule) {
   const w = getWindow(rule);
   const mons = getMons();
   rule.pos = parsePos(rule, mons);
-  await placeWindow({ w, rule });
-  return w;
+  // placeWindow() отвечает `false` окну, которого нет или которое слишком
+  // мало, — форму ответа это ломать не должно.
+  const result = await placeWindow({ w, rule });
+  return { window: w, changes: result ? result.changes : [], skipped: result ? result.skipped : [] };
 }
 
 async function placeWindowsByConfig(wins = [], opts = {}) {

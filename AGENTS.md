@@ -169,10 +169,11 @@ openHASP — на shome (`R:`). Состояние течёт в одну сто
 
 ## claude-wt polling budget
 
-Two rules keep the once-a-second daemon off the CPU graph; both were paid for once already and must not be re-learned:
+Three rules keep the once-a-second daemon off the CPU graph; each was paid for once already and must not be re-learned:
 
 - **Never call `getWindows()` in the loop.** It does `OpenProcess` plus an exe-path query for every window in the system (~21-31 ms measured here, commit `96c2584`). The daemon polls `getVisibleWindowIds()` instead (~1-3 ms: `EnumWindows` + `IsWindowVisible`), resolves a hwnd to a process exactly once via `getWindowById()`, and reads titles and bounds only for the handful of Windows Terminal windows.
 - **Never read the virtual desktop number in the loop.** `virtualDesktop.GetWindowDesktopNumber()` spawns `VirtualDesktop11.exe`; periodic exe spawns were the source of the parasitic load fixed in 2026-07-14. It is called only when a window is bound to a session, driven by the `bindings` list `step()` returns.
+- **Never switch desktops for a window that did not move.** `GoToDesktopNumber()` spawns the same exe, and this one the human sees: Windows paints the desktop-name overlay on every call, whether or not the desktop changed. A `desktop` rule rides along on almost every coordinate move, but `placeWindow()` skips the move when the window already sits there -- so "moved" must be read off the returned `changes` (`movedDesktop()` in `placement-helpers.js`), never off the rule. Taking the rule for the move is what put two `switch 0` overlays (01:20:47 and 01:21:12) on one session opened on the desktop the human was already looking at, 2026-08-27.
 
 Window titles are compared in decoration-stripped form (`title-helpers.js`): Claude Code prefixes the terminal title with a status glyph (`✳ ccfzf`) while the ccfzf dump stores the bare summary, so both sides are normalised by the same function.
 

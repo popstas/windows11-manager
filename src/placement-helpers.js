@@ -102,4 +102,23 @@ function isFlagOn(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
 }
 
-export { resolveMonitorRelativePos, parsePosFromRule, desktopPolicy };
+/**
+ * Переехало ли окно на другой стол на самом деле.
+ *
+ * `placeWindow()` навязывает стол только когда окно стоит не там
+ * (`GetWindowDesktopNumber` не совпал с `rule.desktop`), а о пропуске
+ * сообщает пустым `changes`. Зовущие же считали переездом сам факт того, что в
+ * правиле был `desktop`, — и уходили следом за окном, никуда не уезжавшим.
+ * Холостым такой переход не был: `switch:N` запускает `VirtualDesktop11.exe`,
+ * и Windows на каждый вызов рисует поверх экрана табличку с именем стола. В
+ * логе трея 2026-08-27 на сессию, открытую на том же столе, где человек и
+ * стоял, пришлись два `switch 0` — в 01:20:47 (перенос координат, стол
+ * пропущен) и в 01:21:12 (`desktopOnlyActions` на перепривязке, тоже
+ * пропущен). Второй и есть та табличка, что «промелькнула через полминуты
+ * после открытия».
+ */
+function movedDesktop(result) {
+  return Boolean(result?.changes?.some(c => c.name === 'desktop'));
+}
+
+export { resolveMonitorRelativePos, parsePosFromRule, desktopPolicy, movedDesktop };

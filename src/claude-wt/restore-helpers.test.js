@@ -175,18 +175,29 @@ describe('restoreFollowDesktop', () => {
   it('уводит на стол единственной поднятой сессии', () => {
     // Открытие сессии из пикера — самый осознанный случай: человек попросил
     // именно это окно, и оно уехало на свой стол у него из-под рук.
-    expect(restoreFollowDesktop({ planned: 1, placed: [{ desktop: 2 }] })).toBe(2);
+    expect(restoreFollowDesktop({ planned: 1, placed: [{ desktop: 2, moved: true }] })).toBe(2);
+  });
+
+  it('молчит, когда окно никуда не ехало', () => {
+    // Стол в правиле стоит почти всегда, а переезд случается редко: окно чаще
+    // всего уже на своём столе, и placeWindow() перенос пропускает. Переход
+    // следом за таким «переездом» человек видит табличкой с именем стола
+    // поверх экрана — ровно та, что мелькала при открытии сессии.
+    expect(restoreFollowDesktop({ planned: 1, placed: [{ desktop: 2, moved: false }] })).toBeNull();
+    expect(restoreFollowDesktop({ planned: 1, placed: [{ desktop: 2 }] })).toBeNull();
   });
 
   it('молчит на восстановлении пачкой', () => {
     // Снимок раскладки поднимает окна на разные столы; выбрать из них один и
     // выбросить туда человека — произвол.
-    expect(restoreFollowDesktop({ planned: 3, placed: [{ desktop: 2 }] })).toBeNull();
-    expect(restoreFollowDesktop({ planned: 1, placed: [{ desktop: 1 }, { desktop: 2 }] })).toBeNull();
+    expect(restoreFollowDesktop({ planned: 3, placed: [{ desktop: 2, moved: true }] })).toBeNull();
+    expect(restoreFollowDesktop({
+      planned: 1, placed: [{ desktop: 1, moved: true }, { desktop: 2, moved: true }],
+    })).toBeNull();
   });
 
   it('молчит, когда стол не запрашивали или окно не встало', () => {
-    expect(restoreFollowDesktop({ planned: 1, placed: [{ desktop: null }] })).toBeNull();
+    expect(restoreFollowDesktop({ planned: 1, placed: [{ desktop: null, moved: true }] })).toBeNull();
     expect(restoreFollowDesktop({ planned: 1, placed: [{}] })).toBeNull();
     expect(restoreFollowDesktop({ planned: 1, placed: [] })).toBeNull();
     expect(restoreFollowDesktop({})).toBeNull();

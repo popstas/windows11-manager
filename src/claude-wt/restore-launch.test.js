@@ -51,6 +51,12 @@ const cfg = { desktop: true, restore: { windowTimeoutMs: 1000, launchDelayMs: 0,
 const item = (over = {}) => ({
   sessionId: 'a1', title: 'ccfzf', command: 'wt.exe', args: [], bounds, desktop: 2, ...over,
 });
+// Отчёт placeWindowByConfig. Переезд на другой стол — это запись в `changes`,
+// а не сам `desktop` в правиле: стол правило навязывает почти всегда, а
+// переносит placeWindow() только окно, стоящее не там.
+const placement = (moved = false) => ({
+  window: {}, changes: moved ? [{ name: 'desktop', value: 1 }] : [], skipped: [],
+});
 // Окно списком: до запуска терминалов нет, после — одно новое.
 const windowsAfterSpawn = (id = 42) => {
   let opened = false;
@@ -62,7 +68,7 @@ beforeEach(() => {
   getWindows.mockReset();
   focusWindowById.mockReset().mockReturnValue(true);
   focusTerminalWindow.mockReset().mockResolvedValue(true);
-  placeWindowByConfig.mockReset().mockResolvedValue(undefined);
+  placeWindowByConfig.mockReset().mockResolvedValue(placement(false));
   GoToDesktopNumber.mockReset().mockResolvedValue(undefined);
   spawn.mockReset();
   getMonitorByPoint.mockReset();
@@ -74,6 +80,7 @@ beforeEach(() => {
 describe('launchPlan', () => {
   it('поднятой сессии отдаёт фокус — со столом, который сам же ей и назначил', async () => {
     windowsAfterSpawn(42);
+    placeWindowByConfig.mockResolvedValue(placement(true));
     const restored = [];
     await launchPlan({ plan: [item()], cfg, restored, skipped: [] });
     expect(restored).toEqual(['a1']);
@@ -84,6 +91,18 @@ describe('launchPlan', () => {
     // а после перехода передним остаётся что придётся.
     expect(GoToDesktopNumber.mock.invocationCallOrder[0])
       .toBeLessThan(focusTerminalWindow.mock.invocationCallOrder[0]);
+  });
+
+  it('не переехало — не переключает стол, но фокусу его называет', async () => {
+    windowsAfterSpawn(42);
+    // Окно и так стоит на своём столе, placeWindow() перенос пропустил. Переход
+    // следом ничего не менял бы, а человек видел бы его табличкой с именем
+    // стола поверх экрана — тем самым мельканием при открытии сессии. Фокусу
+    // номер всё равно называется: окно стоит там, и спрашивать про это
+    // VirtualDesktop11.exe незачем.
+    await launchPlan({ plan: [item()], cfg, restored: [], skipped: [] });
+    expect(GoToDesktopNumber).not.toHaveBeenCalled();
+    expect(focusTerminalWindow).toHaveBeenCalledWith(42, expect.any(Function), 2);
   });
 
   it('окно показывает сразу, не дожидаясь ни доводки, ни переноса', async () => {

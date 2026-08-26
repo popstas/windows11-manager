@@ -63,3 +63,20 @@ describe('спрос на внеочередное чтение индекса',
     expect(src).not.toMatch(/wantedIndex = unresolvedTitles\(/);
   });
 });
+
+describe('переход на стол вслед за окном', () => {
+  // Тоже текстовый, и по той же причине: тик ходит в реестр окон и в
+  // VirtualDesktop11.exe. Правило молчаливое с другой стороны — лишний переход
+  // ничего не ломает, окно остаётся где было, и в логе стоит честное
+  // `switch N`. Видит его только человек: Windows на каждый вызов рисует
+  // поверх экрана табличку с именем стола, и 2026-08-27 их пришлось две на
+  // одно открытие сессии, стоявшей на том же столе.
+  const src = fs.readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+
+  it('в moves идёт состоявшийся переезд, а не desktop из правила', () => {
+    expect(src).toMatch(/if \(movedDesktop\(placed\)\) moves\.push\(/);
+    // Обе дороги переноса: обычное действие step() и desktopOnlyActions.
+    expect(src.match(/if \(movedDesktop\(placed\)\) moves\.push\(/g)).toHaveLength(2);
+    expect(src).not.toMatch(/^\s*moves\.push\(/m);
+  });
+});
