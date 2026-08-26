@@ -10,6 +10,11 @@ const slot = (over = {}) => ({
   ...over,
 });
 
+/** Строки имени сессии: подпись проекта стоит на y="20" и в счёт не идёт. */
+const titleLines = (svg) => [...svg.matchAll(/<text x="8" y="(\d+)"[^>]*font-size="(\d+)"[^>]*>([^<]*)</g)]
+  .filter((m) => m[1] !== '20')
+  .map((m) => ({ size: Number(m[2]), text: m[3] }));
+
 describe('slotSvg', () => {
   it('размер вшит в документ: кнопка ровно 128 на 128', () => {
     // Плагин ужимает всё, что больше, канвасом; наш SVG приходит готовым и
@@ -30,12 +35,21 @@ describe('slotSvg', () => {
     expect(bg('empty')).toBe('#141416');
   });
 
-  it('на кнопке всё, ради чего в неё смотрят: проект, имя, процент, знак', () => {
+  it('на кнопке всё, ради чего в неё смотрят: проект, имя, кольцо контекста', () => {
     const svg = slotSvg(slot());
     expect(svg).toContain('ccfzf-picker');
-    expect(svg).toContain('ccfzf');
-    expect(svg).toContain('42%');
-    expect(svg).toContain('&gt;');
+    expect(titleLines(svg).map((l) => l.text).join(' ')).toBe('ccfzf picker');
+    expect(svg).toContain('<path d="M 104 90 A 14 14');
+  });
+
+  it('знака состояния на кнопке нет: состояние несёт цвет фона', () => {
+    // Знак съедал угол, который теперь занят кольцом, а сказать сверх цвета ему
+    // было нечего: цвет виден с двух метров, знак кегля 16 — нет.
+    for (const status of ['active', 'question', 'review', 'idle', 'closed']) {
+      const svg = slotSvg(slot({ status, title: 'x' }));
+      expect(svg).not.toContain('text-anchor="end"');
+      expect(titleLines(svg).map((l) => l.text)).toEqual(['x']);
+    }
   });
 
   it('амперсанд в имени экранируется, а не ломает документ', () => {
@@ -47,12 +61,30 @@ describe('slotSvg', () => {
     expect(svg).toContain('&lt;c&gt;');
   });
 
+  it('кегль имени подбирается под ширину: короткое имя крупнее длинного', () => {
+    // Ради этого правила всё и затевалось: при вшитом кегле `smi-parser`
+    // занимал две трети ширины кнопки, а её читают с расстояния руки.
+    const size = (title) => titleLines(slotSvg(slot({ title })))[0].size;
+    expect(size('smi')).toBeGreaterThan(size('smi-parser'));
+    expect(size('smi-parser')).toBeGreaterThan(size('smi-parser-and-more'));
+    expect(size('smi-parser')).toBeGreaterThan(15); // прежний вшитый кегль
+  });
+
+  it('имя влезает целиком, пока хватает кегля, и только потом обрезается', () => {
+    // Многоточие — плата за место, а не умолчание: пока имя помещается хоть
+    // каким-то читаемым кеглем, оно показывается полностью.
+    expect(titleLines(slotSvg(slot({ title: 'picker-latency' })))[0].text).toBe('picker-latency');
+  });
+
   it('длинное имя переносится на две строки и обрезается, а не вылезает за кнопку', () => {
-    const svg = slotSvg(slot({ title: 'очень длинное имя сессии которое никуда не влезает целиком' }));
-    const lines = [...svg.matchAll(/font-size="15"[^>]*>([^<]*)</g)].map((m) => m[1]);
+    const lines = titleLines(slotSvg(slot({ title: 'очень длинное имя сессии которое никуда не влезает целиком' })));
     expect(lines.length).toBe(2);
-    for (const line of lines) expect(line.length).toBeLessThanOrEqual(13);
-    expect(lines[1]).toContain('...'); // три точки, а не «…»: только ASCII
+    for (const line of lines) {
+      // Ширина считается по числу знаков — тем же приближением, каким её
+      // подбирает сам рендер.
+      expect(line.text.length * 0.55 * line.size).toBeLessThanOrEqual(112);
+    }
+    expect(lines[1].text).toContain('...'); // три точки, а не «…»: только ASCII
   });
 
   it('пустой слот несёт свой номер: видно, что кнопка настроена, а сессии нет', () => {
@@ -61,9 +93,21 @@ describe('slotSvg', () => {
     expect(svg).toContain('>4<');
   });
 
-  it('процента нет — ноль, а не пустое место', () => {
-    // Перехват статуслайна стоит не у всех, и пустая строка на месте числа
-    // читается как «кнопка сломалась».
-    expect(slotSvg(slot({ contextPct: 0 }))).toContain('0%');
+  it('контекст — доля кольца: ноль, половина, полный круг', () => {
+    // Дорожка рисуется всегда: пустое место на её месте читалось бы как
+    // сломанная кнопка. Перехват статуслайна стоит не у всех.
+    const track = '<circle cx="104" cy="104" r="14" fill="none" stroke-width="6" stroke="#18181a"/>';
+    const zero = slotSvg(slot({ contextPct: 0 }));
+    expect(zero).toContain(track);
+    expect(zero).not.toContain('<path');
+
+    // Флаг большой дуги переключается ровно на половине.
+    expect(slotSvg(slot({ contextPct: 50 }))).toContain('A 14 14 0 0 1 104 118');
+    expect(slotSvg(slot({ contextPct: 60 }))).toMatch(/A 14 14 0 1 1/);
+
+    // Полный круг дугой вырождается в точку, поэтому рисуется кругом.
+    const full = slotSvg(slot({ contextPct: 100 }));
+    expect(full).not.toContain('<path');
+    expect(full).toContain('stroke="#ffffff"/>');
   });
 });
