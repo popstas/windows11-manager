@@ -69,6 +69,37 @@ describe('createDock', () => {
     expect(dock.resolve(1)).toEqual({ id: 'first' });
   });
 
+  it('нажатие не перечитывает протухший снимок — кнопка значит то, что на ней нарисовано', () => {
+    // Кнопку жмут не в момент отрисовки: к нажатию срок годности снимка обычно
+    // уже истёк. Перечитай его resolve — и при `sort: recent` (умолчание)
+    // порядок пересобрала бы любая активность между картинкой и пальцем:
+    // поднялось бы соседнее окно, молча.
+    let now = 1000;
+    const sessions = [session({ id: 'first', title: 'first', lastActivity: 200 })];
+    const winMan = fakeWinMan(sessions);
+    const dock = createDock({ winMan, config: CONFIG, log: () => {}, now: () => now });
+
+    expect(dock.svg(1)).toContain('first'); // доска нарисовала кнопку этим снимком
+    sessions.unshift(session({ id: 'second', title: 'second', lastActivity: 300 }));
+
+    now += 20000; // снимок протух, порядок сессий изменился
+    expect(dock.resolve(1)).toEqual({ id: 'first' });
+    expect(winMan.calls.count).toBe(1); // и дамп ради нажатия не читался
+
+    // Новую сессию кнопка назовёт только после того, как её перерисуют.
+    expect(dock.svg(1)).toContain('second');
+    expect(dock.resolve(1)).toEqual({ id: 'second' });
+  });
+
+  it('снимка не было ни разу — нажатие строит его само, а не отвечает пустотой', () => {
+    // Обратная сторона правила выше: до первой отданной картинки показывать
+    // нечего, и отказ был бы мёртвой кнопкой на свежезапущенной службе.
+    const winMan = fakeWinMan([session({ id: 'only' })]);
+    const dock = createDock({ winMan, config: CONFIG, log: () => {} });
+    expect(dock.resolve(1)).toEqual({ id: 'only' });
+    expect(winMan.calls.count).toBe(1);
+  });
+
   it('пустой слот — не ошибка, а пустая кнопка', () => {
     const dock = createDock({ winMan: fakeWinMan([]), config: CONFIG, log: () => {} });
     expect(dock.resolve(2)).toEqual({ empty: true });
@@ -95,6 +126,8 @@ describe('createDock', () => {
     expect(dock.resolve(1)).toEqual({ id: 'aaa' });
     ok = false;
     now += 20000;
+    // Перечитывает снимок тот, кто рисует: resolve сроку годности не подчиняется.
+    dock.svg(1);
     expect(dock.resolve(1)).toEqual({ id: 'aaa' });
     expect(logged).toContain('error');
   });
@@ -120,12 +153,13 @@ describe('createDock', () => {
     expect(dock.resolve(1)).toEqual({ id: 'new' });
     expect(winMan.calls.count).toBe(1);
 
+    // Срок годности спрашивают у рисующей дороги: resolve() снимок не двигает.
     now += 9999;
-    dock.resolve(1);
+    dock.slots();
     expect(winMan.calls.count).toBe(1); // снимок ещё не протух — умолчание 10 секунд, а не 0
 
     now += 2;
-    dock.resolve(1);
+    dock.slots();
     expect(winMan.calls.count).toBe(2);
   });
 

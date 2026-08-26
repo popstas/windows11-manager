@@ -92,9 +92,21 @@ function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = 
           return { empty: true };
         }
         await claude['claude-focus']({ id: found.id });
+        // Удачное нажатие тоже оставляет след: без этой строки в логе видны были бы
+        // только промахи, а разбираться приходится именно с тем, какая кнопка какую
+        // сессию подняла. По http строка пути сюда не доходит вовсе: ветка
+        // нажатия в http-server.js отвечает раньше общего `POST <url>`.
+        log(`streamdock: слот ${slot} — поднята сессия ${found.id}`);
         return { id: found.id };
       }),
-      { onDrop: (payload) => log(`claude-dock-press ${payload} — отброшено, не чаще раза в секунду`, 'warn') },
+      {
+        // Окно ограничения — на слот, а не на команду целиком: кнопок на доске
+        // пять, и жест «ткнул не туда, тыкаю в соседнюю» тут обычен. Общее окно
+        // съедало бы исправление, а обратной связи у человека нет — 429 уходит в
+        // консоль плагина. Дребезг одной и той же кнопки ловится по-прежнему.
+        keyOf: (payload) => String(slotFromPayload(payload)),
+        onDrop: (payload) => log(`claude-dock-press ${payload} — отброшено, не чаще раза в секунду`, 'warn'),
+      },
     ),
     'claude-session-unread': withRefresh(claude['claude-session-unread']),
     'claude-session-open': withRefresh(claude['claude-session-open']),

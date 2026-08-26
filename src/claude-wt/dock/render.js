@@ -50,10 +50,17 @@ function esc(text) {
     .replace(/'/g, '&apos;');
 }
 
+// Три точки, а не «…» (U+2026): тот же довод, что у GLYPH. Картинку рисует
+// чужая программа, о шрифтах которой мы ничего не знаем, и одна ставка на
+// не-ASCII знак стоит ровно столько же, сколько другая.
+const ELLIPSIS = '...';
+
 function fit(text, maxChars) {
   const s = String(text ?? '').trim();
   if (s.length <= maxChars) return s;
-  return `${s.slice(0, Math.max(0, maxChars - 1))}…`;
+  // Место под сам хвост вычитается: иначе строка вылезла бы за отведённые
+  // maxChars ровно на его длину.
+  return `${s.slice(0, Math.max(0, maxChars - ELLIPSIS.length))}${ELLIPSIS}`;
 }
 
 /** Перенос по словам. Слово длиннее строки не делится по слогам — обрезается. */
@@ -113,4 +120,4 @@ function slotSvg(slot, { size = 128 } = {}) {
   ].join('');
 }
 
-export { slotSvg, BG, GLYPH };
+export { slotSvg };

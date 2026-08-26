@@ -56,6 +56,10 @@ function createDock({ winMan, config, log, now = Date.now }) {
 
   let snapshot = [];
   let takenAt = -Infinity;
+  // Был ли снимок построен хоть раз. Отдельно от `takenAt`, потому что вопросы
+  // разные: `takenAt` — «не пора ли перечитать», `taken` — «есть ли вообще что
+  // показывать». Нажатию нужен второй (см. `resolve`).
+  let taken = false;
 
   function slots() {
     const at = now();
@@ -74,6 +78,7 @@ function createDock({ winMan, config, log, now = Date.now }) {
     const forSlots = cfg.openOnly ? sessions.filter((s) => s.open) : sessions;
     snapshot = buildSlots(forSlots, cfg.slots, cfg.sort);
     takenAt = at;
+    taken = true;
     return snapshot;
   }
 
@@ -87,12 +92,36 @@ function createDock({ winMan, config, log, now = Date.now }) {
       const slot = slots().find((s) => s.slot === n);
       return slotSvg(slot ?? { slot: n, status: 'empty' });
     },
+    /**
+     * Сессия под кнопкой. Снимок по сроку годности **не** перечитывается —
+     * берётся тот, что есть, и строится новый, только если снимка не было ни
+     * разу.
+     *
+     * Кнопку жмут не в момент отрисовки. Картинка на доске нарисована прошлым
+     * снимком, а срок годности к моменту нажатия обычно уже истёк, и `slots()`
+     * построил бы **новый**: при `sort: recent` (умолчание) порядок слотов
+     * пересобирает любая активность — `lastActivity` двигает каждый вызов
+     * инструмента. Окно расхождения шириной до ~20 секунд было бы открыто
+     * постоянно, а промах выглядел бы как «иногда поднимается соседнее окно»,
+     * молча.
+     *
+     * Свежесть при этом не теряется: доска тянет картинки всех кнопок каждые
+     * свои `updateInterval`, то есть снимок обновляет тот, кто рисует. Нажатие
+     * резолвится по снимку последней отданной картинки — по тому, что человек
+     * видит. Картинок никто не тянет (доска выключена) — снимок стареет, но
+     * ровно настолько же стара и картинка на кнопке; согласованность тут и есть
+     * цель, а не свежесть. Ограничивать возраст снимка сверху нельзя — это
+     * вернуло бы ту же дыру.
+     */
     resolve(n) {
       if (!inRange(n)) return null;
-      const id = sessionIdForSlot(slots(), n);
+      const id = sessionIdForSlot(taken ? snapshot : slots(), n);
       return id ? { id } : { empty: true };
     },
   };
 }
 
-export { createDock, DEFAULT_SLOTS, DEFAULT_INTERVAL_SEC };
+// Наружу — только `createDock`. `DEFAULT_SLOTS` не экспортируется нарочно: имя
+// занято и в `ha/session-slots.js`, где оно значит другое число (9 против 5), и
+// два одноимённых экспорта рано или поздно импортируют не тот.
+export { createDock };

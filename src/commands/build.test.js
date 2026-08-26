@@ -150,13 +150,38 @@ describe('claude-dock-press', () => {
     expect(log.mock.calls.some(([msg]) => String(msg).includes('3'))).toBe(true);
   });
 
-  it('второе нажатие подряд отбрасывается ограничителем', async () => {
+  it('второе нажатие на ту же кнопку подряд отбрасывается ограничителем', async () => {
     // Палец, снятый неровно, даёт две-три посылки подряд — та же беда, ради
     // которой ограничитель стоит на claude-focus-slot.
     const map = makeMap({ winMan: focusable(), dock: dockWith({ id: 'sess-1' }) });
 
     await map['claude-dock-press']({ slot: 1 });
     expect(map['claude-dock-press']({ slot: 1 })).toBe(DROPPED);
+  });
+
+  it('нажатия на разные кнопки друг друга не глушат — окно ограничения на слот', () => {
+    // Кнопок на доске пять, и жест «ткнул не туда, тыкаю в соседнюю» обычен.
+    // Одно окно на всю команду съедало бы исправление, а обратной связи у
+    // человека нет: 429 уходит в консоль плагина.
+    const map = makeMap({ winMan: focusable(), dock: dockWith({ id: 'sess-1' }) });
+
+    expect(map['claude-dock-press']({ slot: 1 })).not.toBe(DROPPED);
+    expect(map['claude-dock-press']({ slot: 2 })).not.toBe(DROPPED);
+    expect(map['claude-dock-press']({ slot: 2 })).toBe(DROPPED);
+  });
+
+  it('удачное нажатие оставляет след в логе: какой слот и какую сессию подняли', async () => {
+    // Привычка репозитория обратная тому, что вышло: неудача громкая, удача
+    // бесследная. По http строка общего лога сюда не доходит — ветка нажатия в
+    // http-server.js отвечает раньше неё.
+    const log = vi.fn();
+    const map = makeMap({ winMan: focusable(), log, dock: dockWith({ id: 'sess-1' }) });
+
+    await map['claude-dock-press']({ slot: 4 });
+
+    const line = log.mock.calls.map(([msg]) => String(msg)).find((m) => m.includes('sess-1'));
+    expect(line).toBeTruthy();
+    expect(line).toContain('4');
   });
 
   it('доски нет — команда есть, но фокус не зовёт', async () => {

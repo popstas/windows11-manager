@@ -171,4 +171,4 @@ function startHttpServer({ router, port = 9722, log, dock = null }) {
   return server;
 }
 
-export { startHttpServer, routeToCommand, ROUTES, SLOT_IMAGE, SLOT_PRESS };
+export { startHttpServer, routeToCommand, ROUTES };

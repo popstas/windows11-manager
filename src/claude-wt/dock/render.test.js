@@ -52,7 +52,7 @@ describe('slotSvg', () => {
     const lines = [...svg.matchAll(/font-size="15"[^>]*>([^<]*)</g)].map((m) => m[1]);
     expect(lines.length).toBe(2);
     for (const line of lines) expect(line.length).toBeLessThanOrEqual(13);
-    expect(lines[1]).toContain('…');
+    expect(lines[1]).toContain('...'); // три точки, а не «…»: только ASCII
   });
 
   it('пустой слот несёт свой номер: видно, что кнопка настроена, а сессии нет', () => {
