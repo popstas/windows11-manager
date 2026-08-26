@@ -2,6 +2,7 @@ import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { focusWindowById, getWindows } from '../windows.js';
 import { placeWindowByConfig } from '../placement.js';
+import { movedDesktop } from '../placement-helpers.js';
 import { virtualDesktop } from '../virtual-desktop.js';
 import { getWindowsMonitors } from '../monitors.js';
 import { clampBoundsToMonitors } from '../geometry.js';
@@ -187,7 +188,7 @@ async function launchPlan({ plan, cfg, restored, skipped, cursor = null }) {
       // человека — то есть галка отменяла бы сама себя.
       if (await placeByCursor(target, placeWindowByConfig, item.title)) {
         restored.push(item.sessionId);
-        placed.push({ desktop: null, windowId: win.id });
+        placed.push({ desktop: null, moved: false, windowId: win.id });
       } else {
         skipped.push(item.sessionId);
       }
@@ -197,9 +198,13 @@ async function launchPlan({ plan, cfg, restored, skipped, cursor = null }) {
     const rule = { window: win.id, ...bounds };
     if (cfg.desktop && item.desktop) rule.desktop = item.desktop;
     try {
-      await placeWindowByConfig(rule);
+      // `moved` — не то же, что `rule.desktop`: стол навязывается почти всегда,
+      // а переезжает окно редко, потому что чаще всего уже стоит на своём
+      // столе. Переход следом полагается только настоящему переезду
+      // (`restoreFollowDesktop`).
+      const result = await placeWindowByConfig(rule);
       restored.push(item.sessionId);
-      placed.push({ desktop: rule.desktop ?? null, windowId: win.id });
+      placed.push({ desktop: rule.desktop ?? null, moved: movedDesktop(result), windowId: win.id });
     } catch (e) {
       console.error(`[claude-wt] failed to place ${item.sessionId}: ${e.message}`);
       skipped.push(item.sessionId);
@@ -207,7 +212,11 @@ async function launchPlan({ plan, cfg, restored, skipped, cursor = null }) {
   }
 
   // Окно уехало на свой стол — уходим следом, иначе открытая сессия выглядит
-  // исчезнувшей. Переключение на стол, где человек и так стоит, — холостой ход.
+  // исчезнувшей. Не уехало — не уходим: `switch:N` на стол, где человек и так
+  // стоит, не холостой ход, а запуск VirtualDesktop11.exe и табличка с именем
+  // стола поверх экрана. Окно, которое стоит на чужом столе само по себе,
+  // поднимет фокус ниже — он ходит по столам ровно тогда, когда фокус не
+  // прилип.
   const follow = restoreFollowDesktop({ planned: plan.length, placed });
   if (follow) {
     try {
@@ -224,12 +233,16 @@ async function launchPlan({ plan, cfg, restored, skipped, cursor = null }) {
   // конце не случайно: переход на чужой стол оставляет передним что придётся,
   // и фокус, взятый до него, пропал бы.
   //
-  // Стол передаётся известным: его только что навязало правило, и
-  // переспрашивать `VirtualDesktop11.exe` незачем — после `follow` окно и так
-  // на текущем столе, так что дешёвая ветка `focusTerminalWindow` отработает
-  // с первой попытки и ни одного процесса не запустит.
+  // Стол передаётся известным — тем, который правило только что навязало, и
+  // неважно, переехало окно или уже там стояло: спрашивать
+  // `VirtualDesktop11.exe` о том, что мы сами и назначили, незачем. После
+  // `follow` окно на текущем столе, и дешёвая ветка `focusTerminalWindow`
+  // отработает с первой попытки, не запустив ни одного процесса; без `follow`
+  // (окно никуда не ехало, а человек смотрит на другой стол) подсказка снимает
+  // с фокуса один запуск из двух.
   const target = restoreFocusTarget({ planned: plan.length, placed });
-  if (target !== null) await focusTerminalWindow(target, noTiming, follow);
+  const knownDesktop = plan.length === 1 ? placed[0]?.desktop ?? null : null;
+  if (target !== null) await focusTerminalWindow(target, noTiming, knownDesktop);
 }
 
 /**

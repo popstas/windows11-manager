@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveMonitorRelativePos, parsePosFromRule, desktopPolicy } from './placement-helpers.js';
+import { resolveMonitorRelativePos, parsePosFromRule, desktopPolicy, movedDesktop } from './placement-helpers.js';
 
 const monBounds = { x: 0, y: 0, width: 1920, height: 1080 };
 const panelWidth = 48;
@@ -220,5 +220,21 @@ describe('desktopPolicy', () => {
       expect(desktopPolicy({ W11M_NO_MOVE_DESKTOP: off, W11M_NO_FOLLOW_DESKTOP: off }))
         .toEqual({ move: true, follow: true });
     }
+  });
+});
+
+describe('movedDesktop', () => {
+  it('переезд — это запись в changes, а не desktop в правиле', () => {
+    expect(movedDesktop({ changes: [{ name: 'desktop', value: 1 }], skipped: [] })).toBe(true);
+    expect(movedDesktop({ changes: [{ name: 'bounds' }], skipped: [{ name: 'desktop' }] })).toBe(false);
+  });
+
+  it('нет ответа — нет и переезда', () => {
+    // placeWindowByConfig отвечает `null` из демона, когда постановка упала, и
+    // `false` внутри placeWindow() достаётся окну, которого уже нет. Ни то ни
+    // другое не должно уводить человека на другой стол.
+    expect(movedDesktop(null)).toBe(false);
+    expect(movedDesktop(undefined)).toBe(false);
+    expect(movedDesktop({})).toBe(false);
   });
 });

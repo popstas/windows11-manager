@@ -2,6 +2,7 @@ import os from 'node:os';
 import { getConfig } from '../config.js';
 import { getVisibleWindowIds, getWindowById, getActiveWindowId, focusWindowById } from '../windows.js';
 import { placeWindowByConfig } from '../placement.js';
+import { movedDesktop } from '../placement-helpers.js';
 import { noAutoplaceIds } from '../no-autoplace.js';
 import { getWindowsMonitors } from '../monitors.js';
 import { virtualDesktop } from '../virtual-desktop.js';
@@ -157,11 +158,16 @@ function reportUnresolved(nextWindows) {
   if (reportedTitles.size > 200) reportedTitles = new Set();
 }
 
+/**
+ * Ответ пробрасывается наружу: по нему решается, уходить ли следом за окном на
+ * его стол. Не вышло — `null`, и переезда не было тем более.
+ */
 async function place(rule, what) {
   try {
-    await placeWindowByConfig(rule);
+    return await placeWindowByConfig(rule);
   } catch (e) {
     console.error(`[claude-wt] failed to place ${what}: ${e.message}`);
+    return null;
   }
 }
 
@@ -210,8 +216,12 @@ async function claudeWtTick(tickGen = null) {
     // action.bounds уже зажаты внутри step() — повторно клампить не нужно
     const rule = { window: action.windowId, ...action.bounds };
     if (cfg.desktop && action.desktop) rule.desktop = action.desktop;
-    moves.push({ windowId: action.windowId, desktop: rule.desktop });
-    await place(rule, `window ${action.windowId}`);
+    // В `moves` идёт состоявшийся переезд, а не намерение: правило со столом
+    // ставится почти на каждый перенос координат, но стол при этом чаще всего
+    // и так свой. Считай мы переездом само правило — переход следом случался
+    // бы на ровном месте, а он не бесплатный (`movedDesktop`).
+    const placed = await place(rule, `window ${action.windowId}`);
+    if (movedDesktop(placed)) moves.push({ windowId: action.windowId, desktop: rule.desktop });
   }
 
   if (cfg.desktop) {
@@ -219,8 +229,8 @@ async function claudeWtTick(tickGen = null) {
       prevWindows: seenWindows, nextWindows, slots: nextState.slots, actions,
     });
     for (const fix of fixes) {
-      moves.push({ windowId: fix.windowId, desktop: fix.desktop });
-      await place({ window: fix.windowId, desktop: fix.desktop }, `window ${fix.windowId} on desktop ${fix.desktop}`);
+      const placed = await place({ window: fix.windowId, desktop: fix.desktop }, `window ${fix.windowId} on desktop ${fix.desktop}`);
+      if (movedDesktop(placed)) moves.push({ windowId: fix.windowId, desktop: fix.desktop });
     }
   }
 
