@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { slotSvg } from './render.js';
+import { slotSvg, textW } from './render.js';
 
 const slot = (over = {}) => ({
   slot: 1,
@@ -61,6 +61,18 @@ describe('slotSvg', () => {
     expect(svg).toContain('&lt;c&gt;');
   });
 
+  it('ширина знака взята у настоящей Segoe UI, а не усреднена', () => {
+    // Полосы таблицы измерены по segoeui.ttf с целевой машины (advance /
+    // unitsPerEm). Проверяются края разброса: узкая `i`, широкая `M` и
+    // кириллическая `Щ` — плоское среднее переврало бы каждую в полтора раза.
+    expect(textW('i', 100)).toBeCloseTo(29);
+    expect(textW('M', 100)).toBeCloseTo(102);
+    expect(textW('Щ', 100)).toBeCloseTo(102);
+    expect(textW('o', 100)).toBeCloseTo(61);
+    // Незнакомый знак не обваливает счёт в ноль: у него своя доля.
+    expect(textW('\u2603', 100)).toBeGreaterThan(0);
+  });
+
   it('кегль имени подбирается под ширину: короткое имя крупнее длинного', () => {
     // Ради этого правила всё и затевалось: при вшитом кегле `smi-parser`
     // занимал две трети ширины кнопки, а её читают с расстояния руки.
@@ -68,6 +80,16 @@ describe('slotSvg', () => {
     expect(size('smi')).toBeGreaterThan(size('smi-parser'));
     expect(size('smi-parser')).toBeGreaterThan(size('smi-parser-and-more'));
     expect(size('smi-parser')).toBeGreaterThan(15); // прежний вшитый кегль
+  });
+
+  it('кегль берётся наибольший из влезающих, а не первый попавшийся', () => {
+    // Иначе правило выродилось бы в «чуть крупнее прежнего»: подбор обязан
+    // упираться либо в ширину кнопки, либо в потолок кегля.
+    for (const title of ['smi-parser', 'picker-latency', 'bundle-sell', 'мышь']) {
+      const line = titleLines(slotSvg(slot({ title })))[0];
+      expect(line.text).toBe(title);
+      expect(textW(title, line.size + 1) > 112 || line.size === 26).toBe(true);
+    }
   });
 
   it('имя влезает целиком, пока хватает кегля, и только потом обрезается', () => {
@@ -79,11 +101,9 @@ describe('slotSvg', () => {
   it('длинное имя переносится на две строки и обрезается, а не вылезает за кнопку', () => {
     const lines = titleLines(slotSvg(slot({ title: 'очень длинное имя сессии которое никуда не влезает целиком' })));
     expect(lines.length).toBe(2);
-    for (const line of lines) {
-      // Ширина считается по числу знаков — тем же приближением, каким её
-      // подбирает сам рендер.
-      expect(line.text.length * 0.55 * line.size).toBeLessThanOrEqual(112);
-    }
+    // 128 минус поля по 8 с каждой стороны: то самое место, за которое строке
+    // выходить нельзя.
+    for (const line of lines) expect(textW(line.text, line.size)).toBeLessThanOrEqual(112);
     expect(lines[1].text).toContain('...'); // три точки, а не «…»: только ASCII
   });
 

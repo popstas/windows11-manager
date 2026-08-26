@@ -22,10 +22,41 @@ const BG = {
 
 const FONT = "'Segoe UI', Roboto, sans-serif";
 
-// Ширина текста на сервере не измеряется ничем, поэтому считается по числу
-// знаков: у Segoe UI средняя ширина близка к 0.55em. Та же приблизительность
-// уже работает в makeKeySvg плагина.
-const CHAR_W = 0.55;
+// Ширина знака в долях кегля. Измерено по самой `segoeui.ttf` с целевой машины
+// (advance / unitsPerEm) и разложено по полосам: в полосе стоит наибольшая из
+// измеренных ширин, поэтому оценка никогда не занижена, а промах внутри полосы
+// не больше 0.09 кегля.
+//
+// Плоские «0.55 на любой знак» стояли здесь до того и врали в полтора раза:
+// `picker-latency` из одних узких букв получал кегль 14 вместо 17, а `Ш` и `щ`
+// в кириллическом имени вылезли бы за кнопку.
+const CHAR_EM = [
+  [",.:;'|ijlI` !", 0.29],
+  ['()[]{}ftr', 0.35],
+  ['J\\г/"-т_*', 0.42],
+  ['sз?zxхcсэLГvyуFkк', 0.5],
+  ['яьEЕЁaаeеёTТлвS$0123456789З', 0.55],
+  ['дYPРчhnuУZБBВЬнпбKКийoоbpрdgqXХ#ЯъRц', 0.61],
+  ['ЭCСVAАЧЛ+<=>^~GфUД', 0.7],
+  ['DмЪыHНПwФЦжNИЙOQО', 0.76],
+  ['Ыш&ю%щmЖ', 0.87],
+  ['MМWШ@ЩЮ', 1.02],
+];
+
+const EM = new Map();
+for (const [chars, em] of CHAR_EM) for (const ch of chars) EM.set(ch, em);
+
+// Незнакомый знак считается по самой населённой полосе. Латиница и кириллица
+// в таблице есть целиком; сюда попадают эмодзи и прочие алфавиты, у которых
+// своя ширина всё равно неизвестна.
+const EM_DEFAULT = 0.61;
+
+/** Ширина строки в пикселях при данном кегле. */
+function textW(text, size) {
+  let em = 0;
+  for (const ch of String(text ?? '')) em += EM.get(ch) ?? EM_DEFAULT;
+  return em * size;
+}
 
 const PAD = 8;
 const TEXT_W = 128 - PAD * 2;
@@ -45,7 +76,6 @@ const TITLE_BOTTOM = 88;
 const TITLE_MID = (TITLE_TOP + TITLE_BOTTOM) / 2;
 
 const PROJECT_SIZE = 12;
-const PROJECT_CHARS = Math.floor(TEXT_W / (CHAR_W * PROJECT_SIZE));
 
 // Кольцо контекста: заполненная доля вместо числа. Процент цифрами читался
 // только вблизи, а долю кольца видно оттуда же, откуда и цвет.
@@ -77,34 +107,36 @@ function esc(text) {
 // сколько любая другая.
 const ELLIPSIS = '...';
 
-function fit(text, maxChars) {
+function fit(text, maxW, size) {
   const s = String(text ?? '').trim();
-  if (s.length <= maxChars) return s;
-  // Место под сам хвост вычитается: иначе строка вылезла бы за отведённые
-  // maxChars ровно на его длину.
-  return `${s.slice(0, Math.max(0, maxChars - ELLIPSIS.length))}${ELLIPSIS}`;
+  if (textW(s, size) <= maxW) return s;
+  // Хвост входит в отмеренную ширину, а не приписывается сверх неё: иначе
+  // строка вылезала бы за кнопку ровно на его длину.
+  let cut = s.length;
+  while (cut > 0 && textW(`${s.slice(0, cut)}${ELLIPSIS}`, size) > maxW) cut -= 1;
+  return `${s.slice(0, cut)}${ELLIPSIS}`;
 }
 
 /** Перенос по словам. Слово длиннее строки не делится по слогам — обрезается. */
-function wrap(text, maxChars, maxLines) {
+function wrap(text, maxW, size, maxLines) {
   const words = String(text ?? '').trim().split(/\s+/).filter(Boolean);
   const lines = [''];
   for (const word of words) {
     const last = lines[lines.length - 1];
     const next = last ? `${last} ${word}` : word;
-    if (next.length <= maxChars) {
+    if (textW(next, size) <= maxW) {
       lines[lines.length - 1] = next;
       continue;
     }
     if (lines.length === maxLines) {
       // Место кончилось, а текст — нет: хвост показывает многоточие, иначе
       // обрезанное имя читается как полное.
-      lines[lines.length - 1] = fit(next, maxChars);
+      lines[lines.length - 1] = fit(next, maxW, size);
       break;
     }
     lines.push(word);
   }
-  return lines.map((line) => fit(line, maxChars)).filter(Boolean);
+  return lines.map((line) => fit(line, maxW, size)).filter(Boolean);
 }
 
 /**
@@ -115,9 +147,7 @@ function wrap(text, maxChars, maxLines) {
 function layoutTitle(text) {
   const whole = String(text ?? '').trim().split(/\s+/).filter(Boolean).join(' ');
   for (let size = TITLE_MAX; size >= TITLE_MIN; size -= 1) {
-    const maxChars = Math.floor(TEXT_W / (CHAR_W * size));
-    if (maxChars < 1) continue;
-    const lines = wrap(whole, maxChars, TITLE_LINES);
+    const lines = wrap(whole, TEXT_W, size, TITLE_LINES);
     // Обрезанное имя читается как полное — такой кегль не годится, каким бы
     // крупным он ни был.
     if (lines.join(' ') !== whole) continue;
@@ -125,8 +155,7 @@ function layoutTitle(text) {
     return { size, lines };
   }
   // Целиком не влезло ни при каком кегле: самый мелкий, с многоточием.
-  const maxChars = Math.floor(TEXT_W / (CHAR_W * TITLE_MIN));
-  return { size: TITLE_MIN, lines: wrap(whole, maxChars, TITLE_LINES) };
+  return { size: TITLE_MIN, lines: wrap(whole, TEXT_W, TITLE_MIN, TITLE_LINES) };
 }
 
 function ring(pct) {
@@ -165,7 +194,7 @@ function slotSvg(slot, { size = 128 } = {}) {
     ].join('');
   }
 
-  const project = fit(basenameOfCwd(slot?.cwd), PROJECT_CHARS);
+  const project = fit(basenameOfCwd(slot?.cwd), TEXT_W, PROJECT_SIZE);
   const title = layoutTitle(slot?.title);
   const lh = Math.round(title.size * LINE_RATIO);
   // Блок строк центрируется в полосе: одна строка садится посередине, две
@@ -186,4 +215,4 @@ function slotSvg(slot, { size = 128 } = {}) {
   ].join('');
 }
 
-export { slotSvg };
+export { slotSvg, textW };
