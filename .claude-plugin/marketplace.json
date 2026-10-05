@@ -1,0 +1,19 @@
+{
+  "name": "windows11-manager",
+  "owner": {
+    "name": "popstas",
+    "url": "https://github.com/popstas/windows11-manager"
+  },
+  "metadata": {
+    "description": "Skills that install and configure windows11-manager",
+    "version": "4.3.0"
+  },
+  "plugins": [
+    {
+      "name": "windows11-manager",
+      "source": "./",
+      "version": "4.3.0",
+      "description": "Skills for windows11-manager: set it up on a Windows machine and register projects for claude-wt terminal profiles."
+    }
+  ]
+}

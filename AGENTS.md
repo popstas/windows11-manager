@@ -17,6 +17,7 @@ This repository contains a Node.js tool for managing window placement on Windows
 - **config.example.yaml** -- copy this file to `config.yaml` and customise rules for your environment. Without a config file the CLI will fail.
 - **vendor/** -- patched copy of [node-window-manager](https://github.com/sentialx/node-window-manager) used by the project.
 - **VirtualDesktop11.exe** -- third party utility required for switching desktops and pinning windows. Only works on Windows.
+- **skills/** -- agent skills shipped as a plugin for Claude Code and Codex (`setup`, `project-add`). Manifests are `.claude-plugin/` and `.codex-plugin/`; their version is written by `scripts/sync-tauri-version.js` on `npm version`, never by hand. `.claude/skills` is not tracked any more: inside the repo the skills resolve through the installed plugin or a per-machine link.
 - **tauri-app/** -- Tauri v2 system tray app that wraps the CLI (place windows, store, restore, autoplacer, MQTT). Runs node commands via the `tauri-plugin-shell` shell plugin. All tray menu logic is in `tauri-app/src-tauri/src/lib.rs`.
 
 ## Architecture
@@ -29,6 +30,7 @@ This repository contains a Node.js tool for managing window placement on Windows
 ## Conventions
 - Tray menu items call node CLI commands via shell plugin, not direct FFI
 - Use `get_project_path(app)` to resolve the node project path from settings
+- Время в пункте версии трея — `running_stamp()`: позднее из штампа сборки (`WM_BUILD_UNIX`) и последней записи рефлога `<project_path>/.git/logs/HEAD`, считанное один раз на старте. Одна сборка Rust о js-выкатке не знает, поэтому `build_time()` напрямую в подпись не подставлять
 - MQTT lifecycle managed in AppState behind Mutex (`mqtt_running`/`mqtt_child`/`mqtt_desired`)
 
 ## Tauri app architecture
