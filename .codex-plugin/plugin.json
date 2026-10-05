@@ -1,0 +1,37 @@
+{
+  "name": "windows11-manager",
+  "description": "Skills for windows11-manager: set it up on a Windows machine and register projects for claude-wt terminal profiles.",
+  "version": "4.3.0",
+  "author": {
+    "name": "Stanislav Popov",
+    "url": "https://github.com/popstas"
+  },
+  "homepage": "https://github.com/popstas/windows11-manager",
+  "repository": "https://github.com/popstas/windows11-manager",
+  "license": "ISC",
+  "keywords": [
+    "windows",
+    "window-manager",
+    "fancyzones",
+    "claude-wt",
+    "skills"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "windows11-manager",
+    "shortDescription": "Set up windows11-manager and its claude-wt projects",
+    "longDescription": "Two skills for the windows11-manager window manager: setup installs the node part and the tray app on a Windows machine and writes a first config; project-add registers a project in claudeWt.projects so its Claude Code sessions open in their own Windows Terminal profile.",
+    "developerName": "Stanislav Popov",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Set up windows11-manager on this machine.",
+      "Add a project to claude-wt."
+    ],
+    "websiteURL": "https://github.com/popstas/windows11-manager"
+  }
+}

@@ -27,6 +27,30 @@ I use it with:
 - Copy [config.example.yaml](config.example.yaml) to `config.yaml`
 - See [examples](examples)
 
+### With an agent
+
+The repo is also a plugin for Claude Code and Codex. It carries two skills: `setup` walks
+through the install on a Windows machine (dependencies, config, tray), `project-add` registers
+a project in `claudeWt.projects`.
+
+Claude Code:
+
+```text
+/plugin marketplace add popstas/windows11-manager
+/plugin install windows11-manager@windows11-manager
+```
+
+Codex CLI:
+
+```bash
+codex plugin marketplace add popstas/windows11-manager
+codex plugin add windows11-manager@windows11-manager
+```
+
+Then run `/windows11-manager:setup`. The skills live in [skills/](skills); to run them from a
+working copy instead of the plugin snapshot, link the directory into the agent's skills folder
+(`ln -s "$PWD/skills/setup" ~/.claude/skills/windows11-manager-setup`).
+
 ## Config
 
 The config is a YAML file — `.yaml`, never `.yml`. It is data only: no code runs from

@@ -14,7 +14,7 @@
     "wql-process-monitor": "^3.0.2"
   },
   "scripts": {
-    "version": "node scripts/sync-tauri-version.js && npm run changelog && git add CHANGELOG.md tauri-app/package.json tauri-app/src-tauri/tauri.conf.json tauri-app/src-tauri/Cargo.toml tauri-app/src-tauri/Cargo.lock",
+    "version": "node scripts/sync-tauri-version.js && npm run changelog && git add CHANGELOG.md tauri-app/package.json tauri-app/src-tauri/tauri.conf.json tauri-app/src-tauri/Cargo.toml tauri-app/src-tauri/Cargo.lock .claude-plugin .codex-plugin",
     "build": "npm run version-sync && npm run build --prefix tauri-app && node -e \"import('fs').then(fs=>fs.cpSync('tauri-app/src-tauri/target/release/bundle','dist',{recursive:true}))\"",
     "start": "node src",
     "version-sync": "node scripts/sync-tauri-version.js",
