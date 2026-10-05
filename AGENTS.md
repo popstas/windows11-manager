@@ -29,6 +29,7 @@ This repository contains a Node.js tool for managing window placement on Windows
 ## Conventions
 - Tray menu items call node CLI commands via shell plugin, not direct FFI
 - Use `get_project_path(app)` to resolve the node project path from settings
+- Время в пункте версии трея — `running_stamp()`: позднее из штампа сборки (`WM_BUILD_UNIX`) и последней записи рефлога `<project_path>/.git/logs/HEAD`, считанное один раз на старте. Одна сборка Rust о js-выкатке не знает, поэтому `build_time()` напрямую в подпись не подставлять
 - MQTT lifecycle managed in AppState behind Mutex (`mqtt_running`/`mqtt_child`/`mqtt_desired`)
 
 ## Tauri app architecture

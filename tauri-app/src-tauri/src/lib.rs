@@ -8,7 +8,7 @@ use chrono::{Local, NaiveDate, NaiveDateTime, TimeZone};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
@@ -177,11 +177,75 @@ fn build_time() -> Option<NaiveDateTime> {
     Some(Local.timestamp_opt(secs, 0).single()?.naive_local())
 }
 
+/// Unix-время последней записи рефлога `HEAD`.
+///
+/// Строка рефлога — `<старый sha> <новый sha> <имя> <почта> <unix> <пояс>\t<сообщение>`.
+/// Имя может содержать пробелы, сообщение — что угодно, поэтому время берётся
+/// не по номеру поля слева, а вторым с конца в части до табуляции.
+fn reflog_last_unix(log: &str) -> Option<i64> {
+    let line = log.lines().rev().find(|l| !l.trim().is_empty())?;
+    let head = line.split('\t').next()?;
+    let mut tail = head.split_whitespace().rev();
+    tail.next()?;
+    tail.next()?.parse().ok()
+}
+
+/// Время, когда в каталог node-части приехал нынешний `HEAD`.
+///
+/// Трей node-часть не содержит, а запускает процессом из `project_path`, и
+/// выкатка, тронувшая одни js-файлы, его не пересобирает: штамп сборки тогда
+/// честно называет прошлую сборку Rust, хотя работает уже новое. Рефлог
+/// отвечает ровно на вопрос выкатки — когда `git pull` сдвинул `HEAD`, — и
+/// читается файлом: ни процесса git, ни его наличия в PATH у трея, запущенного
+/// планировщиком, для этого не нужно.
+///
+/// `None` — каталог не задан, это не git-клон или рефлога нет: подпись тогда
+/// остаётся при одном времени сборки, как раньше.
+fn checkout_time(project_path: &str) -> Option<NaiveDateTime> {
+    if project_path.is_empty() {
+        return None;
+    }
+    let path = std::path::Path::new(project_path)
+        .join(".git")
+        .join("logs")
+        .join("HEAD");
+    let secs = reflog_last_unix(&std::fs::read_to_string(path).ok()?)?;
+    Some(Local.timestamp_opt(secs, 0).single()?.naive_local())
+}
+
+/// Какое время показать в подписи: позднее из сборки трея и приезда node-части.
+///
+/// Обычная выкатка сначала тянет репозиторий, потом собирает — позже сборка;
+/// выкатка с одними js-правками трей не пересобирает — позже приезд кода. В
+/// обоих случаях позднее из двух и есть «когда выкатили то, что работает».
+///
+/// Релизной сборке (`built` пуст) времени не достаётся и теперь: её называет
+/// версия.
+fn stamp_time(
+    built: Option<NaiveDateTime>,
+    checkout: Option<NaiveDateTime>,
+) -> Option<NaiveDateTime> {
+    let built = built?;
+    Some(checkout.map_or(built, |c| built.max(c)))
+}
+
+/// Время для подписи версии, считанное один раз за жизнь процесса.
+///
+/// Один раз — намеренно: детей трей поднимает на старте, и работает тот код,
+/// что лежал в каталоге тогда. Перечитай окно настроек рефлог заново, оно
+/// назвало бы время `git pull`, сделанного уже после запуска, — код, который
+/// ещё не работает, — и разошлось бы с пунктом меню.
+fn running_stamp(app: &tauri::AppHandle) -> Option<NaiveDateTime> {
+    static STAMP: OnceLock<Option<NaiveDateTime>> = OnceLock::new();
+    *STAMP.get_or_init(|| stamp_time(build_time(), checkout_time(&get_project_path(app))))
+}
+
 /// Подпись неактивного пункта меню: какая сборка сейчас запущена.
 ///
 /// Нужна она после выкатки: `deploy-pc.sh` обновляет менеджер на месте, версия
 /// у всех сборок между релизами одна, и «то ли перезапустилось» иначе не
-/// проверить ничем.
+/// проверить ничем. Время сюда приходит из `running_stamp` — оно учитывает и
+/// node-часть, которой в бинаре нет.
 ///
 /// Дата опускается, когда сборка сегодняшняя, — чаще всего так и есть, а
 /// повторять сегодняшнее число в трее незачем. «Сегодня» считается от запуска
@@ -239,6 +303,77 @@ mod tests {
             version_item_label("2.1.0", None, NaiveDate::from_ymd_opt(2026, 8, 16).unwrap()),
             "v2.1.0"
         );
+    }
+
+    /// Имя автора с пробелами и табуляция перед сообщением: время — второе с
+    /// конца в части до табуляции, а не поле с фиксированным номером.
+    #[test]
+    fn reflog_time_is_taken_from_the_last_entry() {
+        let log = "0000 aaaa Stanislav Popov <a@b.c> 1755700000 +0500\tclone: from github\n\
+                   aaaa bbbb Stanislav Popov <a@b.c> 1755723960 +0500\tpull --ff-only: Fast-forward\n";
+        assert_eq!(reflog_last_unix(log), Some(1755723960));
+    }
+
+    /// Число в сообщении рефлога временем не считается.
+    #[test]
+    fn reflog_message_digits_are_not_the_time() {
+        let log = "aaaa bbbb Name <a@b.c> 1755723960 +0500\tcommit: bump 1 2 3";
+        assert_eq!(reflog_last_unix(log), Some(1755723960));
+    }
+
+    #[test]
+    fn reflog_without_entries_gives_nothing() {
+        assert_eq!(reflog_last_unix(""), None);
+        assert_eq!(reflog_last_unix("\n\n"), None);
+        assert_eq!(reflog_last_unix("мусор"), None);
+    }
+
+    /// Случай из задачи: трей собран в 23:11, js-правки приехали позже —
+    /// подпись обязана назвать приезд кода, а не прошлую сборку.
+    #[test]
+    fn js_only_deploy_moves_the_stamp_past_the_build() {
+        let day = NaiveDate::from_ymd_opt(2026, 8, 20).unwrap();
+        let built = day.and_hms_opt(23, 11, 0).unwrap();
+        let checkout = day.and_hms_opt(23, 40, 0).unwrap();
+        assert_eq!(stamp_time(Some(built), Some(checkout)), Some(checkout));
+    }
+
+    /// Обычная выкатка: сначала pull, потом сборка — позже сборка.
+    #[test]
+    fn rebuilt_tray_keeps_its_build_time() {
+        let day = NaiveDate::from_ymd_opt(2026, 8, 20).unwrap();
+        let built = day.and_hms_opt(23, 41, 0).unwrap();
+        let checkout = day.and_hms_opt(23, 40, 0).unwrap();
+        assert_eq!(stamp_time(Some(built), Some(checkout)), Some(built));
+        assert_eq!(stamp_time(Some(built), None), Some(built));
+    }
+
+    /// Релизную сборку называет версия — и при git-клоне в `project_path` тоже.
+    #[test]
+    fn release_build_gets_no_stamp_from_the_checkout() {
+        let checkout = NaiveDate::from_ymd_opt(2026, 8, 20)
+            .unwrap()
+            .and_hms_opt(23, 40, 0)
+            .unwrap();
+        assert_eq!(stamp_time(None, Some(checkout)), None);
+    }
+
+    #[test]
+    fn checkout_time_reads_the_reflog_of_the_project() {
+        let dir = std::env::temp_dir().join(format!("wm-reflog-{}", std::process::id()));
+        let logs = dir.join(".git").join("logs");
+        std::fs::create_dir_all(&logs).unwrap();
+        std::fs::write(
+            logs.join("HEAD"),
+            "aaaa bbbb Name <a@b.c> 1755723960 +0500\tpull: Fast-forward\n",
+        )
+        .unwrap();
+        let got = checkout_time(dir.to_str().unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+        let want = Local.timestamp_opt(1755723960, 0).single().unwrap().naive_local();
+        assert_eq!(got, Some(want));
+        assert_eq!(checkout_time(""), None);
+        assert_eq!(checkout_time("/нет/такого/каталога"), None);
     }
 
     #[test]
@@ -678,7 +813,7 @@ async fn get_settings(app: tauri::AppHandle) -> Result<Settings, String> {
 #[tauri::command]
 async fn get_app_version(app: tauri::AppHandle) -> Result<String, String> {
     let version = app.package_info().version.to_string();
-    Ok(version_item_label(&version, build_time(), Local::now().date_naive()))
+    Ok(version_item_label(&version, running_stamp(&app), Local::now().date_naive()))
 }
 
 /// Хвост лога для вкладки Log в окне настроек.
@@ -1663,7 +1798,7 @@ pub fn run() {
                 "version_info",
                 version_item_label(
                     &current_version,
-                    build_time(),
+                    running_stamp(app.handle()),
                     Local::now().date_naive(),
                 ),
                 false,
