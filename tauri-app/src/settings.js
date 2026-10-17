@@ -138,6 +138,7 @@ async function loadSettings() {
     document.getElementById('mqtt_username').value = settings.mqtt_username;
     document.getElementById('mqtt_password').value = settings.mqtt_password;
     document.getElementById('mqtt_topic').value = settings.mqtt_topic;
+    document.getElementById('mqtt_ca').value = settings.mqtt_ca ?? '';
   } else {
     console.error('Failed to load settings:', settingsResult.reason);
   }
@@ -204,6 +205,7 @@ form.addEventListener('submit', async (e) => {
     mqtt_username: document.getElementById('mqtt_username').value,
     mqtt_password: document.getElementById('mqtt_password').value,
     mqtt_topic: document.getElementById('mqtt_topic').value,
+    mqtt_ca: document.getElementById('mqtt_ca').value.trim(),
   };
 
   const tileZonesText = document.getElementById('tile_zones').value;

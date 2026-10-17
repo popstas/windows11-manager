@@ -22,7 +22,15 @@ const files = [
   ['tauri-app/package.json', (c) => { const j = JSON.parse(c); j.version = v; return JSON.stringify(j, null, 2) + '\n'; }],
   ['tauri-app/src-tauri/tauri.conf.json', (c) => { const j = JSON.parse(c); j.version = v; return JSON.stringify(j, null, 2) + '\n'; }],
   ['tauri-app/src-tauri/Cargo.toml', (c) => c.replace(/^version = ".*"/m, `version = "${v}"`)],
-  ['tauri-app/src-tauri/Cargo.lock', (c) => c.replace(/^version = ".*"/m, `version = "${v}"`)],
+  // В Cargo.lock версия ищется в секции самого трея, а не первой строкой
+  // `version = "…"` файла: первой там стоит чужой крейт (`adler2`), и релиз
+  // 4.3.0 вписал версию ему, оставив трею прежнюю. Файл тогда переписывает
+  // первая же сборка на каждой машине, он остаётся грязным, и выкатка другой
+  // ветки спотыкается о `git checkout`.
+  ['tauri-app/src-tauri/Cargo.lock', (c) => c.replace(
+    /(\nname = "windows11-manager-tray"\r?\nversion = )".*"/,
+    `$1"${v}"`,
+  )],
 ];
 
 for (const [rel, updater] of files) {

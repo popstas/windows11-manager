@@ -34,7 +34,7 @@ import { createDock } from '../claude-wt/dock/slots.js';
 const FOREIGN_COMMANDS = new Set(['sleep', 'restart', 'restart_restore', 'shutdown']);
 
 function startService({ winMan, config, log, env = process.env }) {
-  const settings = readMqttSettings(env);
+  const settings = readMqttSettings(env, log);
   // Единственный объект конфига на всю службу: команда reload перезаписывает
   // его содержимое на месте, поэтому подменять ссылку никому нельзя.
   const withBase = settings ? { ...config, base: settings.base } : { ...config };
@@ -78,7 +78,8 @@ function startService({ winMan, config, log, env = process.env }) {
   const stats = settings ? createStatsPublisher({ winMan, publish, log, config: withBase }) : null;
 
   if (!settings) {
-    log('MQTT: W11M_MQTT_HOST или W11M_MQTT_BASE не заданы — работаем только по http', 'warn');
+    // Причину непонятого адреса или корня readMqttSettings уже написала выше.
+    log('MQTT: брокер не настроен (W11M_MQTT_HOST или W11M_MQTT_BASE не заданы или не разобраны) — работаем только по http', 'warn');
   }
 
   if (settings) {

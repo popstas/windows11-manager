@@ -30,6 +30,9 @@ pub struct Settings {
     pub mqtt_username: String,
     pub mqtt_password: String,
     pub mqtt_topic: String,
+    /// Путь к PEM-корню для `mqtts://`, которому одному и доверять. Пусто —
+    /// набор корней Mozilla, встроенный в Node.
+    pub mqtt_ca: String,
     pub claude_wt_enabled: bool,
     pub restore_on_start: bool,
     pub store_before_exit: bool,
@@ -58,6 +61,7 @@ impl Default for Settings {
             mqtt_username: String::new(),
             mqtt_password: String::new(),
             mqtt_topic: String::new(),
+            mqtt_ca: String::new(),
             // По умолчанию включено: на демоне claude-wt держится вся цепочка
             // (панель openHASP и пикер сессий), и выключенным он полезен только
             // при отладке.
@@ -246,6 +250,7 @@ mod tests {
         let s = Settings::default();
         assert_eq!(s.mqtt_port, 1883);
         assert!(!s.mqtt_enabled);
+        assert!(s.mqtt_ca.is_empty());
         assert!(s.claude_wt_enabled);
         assert!(s.restore_on_start);
         assert!(s.store_before_exit);
@@ -621,6 +626,10 @@ async fn get_settings(app: tauri::AppHandle) -> Result<Settings, String> {
             .get("mqtt_topic")
             .and_then(|v| v.as_str().map(String::from))
             .unwrap_or(defaults.mqtt_topic),
+        mqtt_ca: store
+            .get("mqtt_ca")
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or(defaults.mqtt_ca),
         claude_wt_enabled: store
             .get("claude_wt_enabled")
             .and_then(|v| v.as_bool())
@@ -731,6 +740,7 @@ async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<Stri
     store.set("mqtt_username", serde_json::json!(settings.mqtt_username));
     store.set("mqtt_password", serde_json::json!(settings.mqtt_password));
     store.set("mqtt_topic", serde_json::json!(settings.mqtt_topic));
+    store.set("mqtt_ca", serde_json::json!(settings.mqtt_ca));
     store.set(
         "claude_wt_enabled",
         serde_json::json!(settings.claude_wt_enabled),
@@ -983,6 +993,7 @@ fn load_settings_from_store(app: &tauri::AppHandle) -> Settings {
         mqtt_username: store.get("mqtt_username").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.mqtt_username),
         mqtt_password: store.get("mqtt_password").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.mqtt_password),
         mqtt_topic: store.get("mqtt_topic").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.mqtt_topic),
+        mqtt_ca: store.get("mqtt_ca").and_then(|v| v.as_str().map(String::from)).unwrap_or(defaults.mqtt_ca),
         claude_wt_enabled: store.get("claude_wt_enabled").and_then(|v| v.as_bool()).unwrap_or(defaults.claude_wt_enabled),
         restore_on_start: store.get("restore_on_start").and_then(|v| v.as_bool()).unwrap_or(true),
         store_before_exit: store.get("store_before_exit").and_then(|v| v.as_bool()).unwrap_or(true),
@@ -1536,6 +1547,7 @@ fn start_mqtt_locked(
         .env("W11M_MQTT_USER", settings.mqtt_username)
         .env("W11M_MQTT_PASS", settings.mqtt_password)
         .env("W11M_MQTT_BASE", settings.mqtt_topic)
+        .env("W11M_MQTT_CA", settings.mqtt_ca)
         .spawn();
 
     match mqtt_child {

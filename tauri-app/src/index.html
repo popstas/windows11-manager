@@ -272,7 +272,8 @@
 
       <div class="field">
         <label for="mqtt_host">MQTT Host</label>
-        <input type="text" id="mqtt_host" placeholder="mqtt.example.com">
+        <input type="text" id="mqtt_host" placeholder="mqtt.example.com or mqtts://mqtt.example.com:8883">
+        <small>Bare host or mqtt:// is plain MQTT; mqtts:// is TLS. A port in the address overrides MQTT Port, so write it there: mqtts://host:8883.</small>
       </div>
 
       <div class="field">
@@ -293,6 +294,12 @@
       <div class="field">
         <label for="mqtt_topic">MQTT Topic prefix</label>
         <input type="text" id="mqtt_topic" placeholder="home/windows11-manager">
+      </div>
+
+      <div class="field">
+        <label for="mqtt_ca">MQTT CA certificate</label>
+        <input type="text" id="mqtt_ca" placeholder="(optional) C:\certs\ca.pem">
+        <small>PEM file for mqtts:// — only this CA is trusted. Empty: the usual public roots (Let's Encrypt works).</small>
       </div>
     </section>
 
