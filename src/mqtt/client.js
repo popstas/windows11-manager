@@ -8,6 +8,7 @@
  * Настройки приходят окружением, а не аргументами: пароль в argv виден в
  * списке процессов.
  */
+import fs from 'node:fs';
 import mqtt from 'mqtt';
 
 /** Топик командного переключателя слота: `<base>/claude/slot/<n>/set`. */
@@ -48,18 +49,102 @@ function notifyTopicFor(base, env = process.env) {
   return `${root}/notify/notify`;
 }
 
-function readMqttSettings(env = process.env) {
-  const host = (env.W11M_MQTT_HOST ?? '').trim();
+/**
+ * `W11M_MQTT_HOST` → адрес брокера: голое имя (`имя[:порт]`), `mqtt://имя[:порт]`
+ * или `mqtts://имя[:порт]`, схема без учёта регистра, косая черта в конце
+ * допустима.
+ *
+ * Схема нужна ради ноутбука вне дома: наружу брокер выставлен только через
+ * TLS. Правило одно на три программы связки — пикер (ccfzf-picker, mqtt.rs),
+ * windows11-manager и windows-mqtt, — и расходиться им нельзя: один адрес
+ * брокера человек переписывает из одной настройки в другую.
+ *
+ * Разбор — руками, а не `new URL`: тот сам нормализует имя, терпит логин и путь
+ * и бросает на кривом порте, то есть проверяли бы мы его причуды.
+ *
+ * `null` — форма, которую мы не понимаем: чужая схема, логин в адресе, путь или
+ * запрос, негодный порт, пустое имя. Брокер тогда не настроен, а не подключён
+ * «как получилось»: `ws://` открытым текстом или молча отброшенный логин
+ * выглядели бы для человека как «брокер не отвечает».
+ *
+ * `port` здесь только из адреса; умолчания добавляет readMqttSettings.
+ */
+function parseMqttHost(raw) {
+  let rest = String(raw ?? '').trim();
+  if (!rest) return null;
+  let tls = false;
+  const sep = rest.indexOf('://');
+  if (sep !== -1) {
+    const scheme = rest.slice(0, sep).toLowerCase();
+    if (scheme === 'mqtts') tls = true;
+    else if (scheme !== 'mqtt') return null;
+    rest = rest.slice(sep + 3);
+  }
+  if (rest.endsWith('/')) rest = rest.slice(0, -1);
+  let host = rest;
+  let port;
+  const colon = rest.lastIndexOf(':');
+  if (colon !== -1) {
+    host = rest.slice(0, colon);
+    const digits = rest.slice(colon + 1);
+    if (!/^\d{1,5}$/.test(digits)) return null;
+    port = Number(digits);
+    if (port < 1 || port > 65535) return null;
+  }
+  if (!host || /[\s/@?#:[\]]/.test(host)) return null;
+  return { host, port, tls };
+}
+
+/**
+ * Настройки брокера из окружения; `null` — брокер не настроен.
+ *
+ * Порт: из адреса > W11M_MQTT_PORT > умолчание схемы (1883 / 8883). Адрес
+ * старше переменной, потому что трей шлёт W11M_MQTT_PORT всегда, и стоит в нём
+ * 1883 — TLS-порту он не годится, а порт, набранный рядом со схемой, говорит
+ * именно о ней.
+ *
+ * W11M_MQTT_CA — путь к PEM-файлу корня, которому одному и доверять: `ca` у
+ * Node заменяет набор корней, а не дополняет его. Не задан — в mqtt.connect не
+ * уходит ничего, и Node берёт свой набор Mozilla (ISRG Root X1 в нём есть).
+ * Нечитаемый файл — брокер не настроен, а не тихий откат к корням по
+ * умолчанию: человек, указавший свой корень, ждёт, что доверяют только ему.
+ * Для открытого mqtt переменная не читается вовсе.
+ *
+ * `log` — ради причины отказа: без неё служба сказала бы только «не задан
+ * хост», хотя он задан, просто не той формы.
+ */
+function readMqttSettings(env = process.env, log = () => {}) {
+  const rawHost = (env.W11M_MQTT_HOST ?? '').trim();
   const base = (env.W11M_MQTT_BASE ?? '').trim().replace(/\/$/, '');
-  if (!host || !base) return null;
-  return {
-    host,
-    port: Number(env.W11M_MQTT_PORT) || 1883,
+  if (!rawHost || !base) return null;
+  const address = parseMqttHost(rawHost);
+  if (!address) {
+    // Адрес виден, чтобы было понятно, что не так, но логин с паролем из
+    // `mqtts://user:pass@host` в лог не идут.
+    const shown = rawHost.replace(/\/\/[^@/]*@/, '//***@');
+    log(`MQTT: W11M_MQTT_HOST "${shown}" не разобран — ждём имя, mqtt://имя[:порт] или mqtts://имя[:порт]; брокер не настроен`, 'error');
+    return null;
+  }
+  const envPort = Number((env.W11M_MQTT_PORT ?? '').trim()) || undefined;
+  const settings = {
+    host: address.host,
+    port: address.port ?? envPort ?? (address.tls ? 8883 : 1883),
+    tls: address.tls,
     username: (env.W11M_MQTT_USER ?? '').trim(),
     password: env.W11M_MQTT_PASS ?? '',
     base,
     notifyTopic: notifyTopicFor(base, env),
   };
+  const caPath = (env.W11M_MQTT_CA ?? '').trim();
+  if (address.tls && caPath) {
+    try {
+      settings.ca = fs.readFileSync(caPath);
+    } catch (err) {
+      log(`MQTT: W11M_MQTT_CA ${caPath} не прочитан (${err.code ?? err.message}); брокер не настроен`, 'error');
+      return null;
+    }
+  }
+  return settings;
 }
 
 /**
@@ -73,7 +158,7 @@ function readMqttSettings(env = process.env) {
  * reboot оставляли бы retained-`online` висеть вечно.
  */
 function connectMqtt({ settings, onCommand, log, will }) {
-  const url = `mqtt://${settings.host}:${settings.port}`;
+  const url = `${settings.tls ? 'mqtts' : 'mqtt'}://${settings.host}:${settings.port}`;
   const client = mqtt.connect(url, {
     clientId: `w11mgr-${process.pid}`,
     username: settings.username || undefined,
@@ -81,6 +166,8 @@ function connectMqtt({ settings, onCommand, log, will }) {
     keepalive: 30,
     reconnectPeriod: 5000,
     will,
+    // Корень не задан — ключа нет вовсе, и Node доверяет своему набору Mozilla.
+    ...(settings.ca ? { ca: [settings.ca] } : {}),
   });
 
   client.on('connect', () => {
@@ -103,4 +190,6 @@ function connectMqtt({ settings, onCommand, log, will }) {
   return client;
 }
 
-export { commandFromTopic, readMqttSettings, notifyTopicFor, connectMqtt, SLOT_COMMAND };
+export {
+  commandFromTopic, readMqttSettings, parseMqttHost, notifyTopicFor, connectMqtt, SLOT_COMMAND,
+};
