@@ -70,10 +70,24 @@ wallpapers:
   1: d:/images/wallpapers/desktops/2.png
   2: d:/images/wallpapers/desktops/3.png
 
+# Брокер служба берёт НЕ отсюда: блок `mqtt:` никто не читает с тех пор, как
+# удалён старый src/mqtt.js. Адрес и учётку задают в трее (Settings → MQTT), и
+# трей передаёт их службе окружением W11M_MQTT_HOST / _PORT / _USER / _PASS /
+# _BASE / _CA. Ключи ниже — та же раскладка для справки.
+#
+# host — голое имя, mqtt://имя[:порт] или mqtts://имя[:порт] (TLS). Порт из
+# адреса старше port, а port старше умолчания схемы (1883 / 8883). Иная форма
+# (ws://, логин в адресе, путь) — брокер не настроен, причина в логе службы.
+# ca — PEM-корень, которому одному и доверять, только для mqtts://; пусто —
+# обычный набор публичных корней (Let's Encrypt в нём есть).
 mqtt:
-  host: mqtt://mqtt.popstas.ru
+  # дома, открытым текстом:
+  host: mqtt.example.com
   port: 1883
-  username: popstas
+  # снаружи, через TLS:
+  # host: mqtts://mqtt.example.com:8883
+  # ca: C:/certs/ca.pem
+  username: user
   password: password
   topic: home/room/pc/windows
 
