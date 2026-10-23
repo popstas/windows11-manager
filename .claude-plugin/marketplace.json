@@ -6,13 +6,13 @@
   },
   "metadata": {
     "description": "Skills that install and configure windows11-manager",
-    "version": "4.3.0"
+    "version": "4.4.0"
   },
   "plugins": [
     {
       "name": "windows11-manager",
       "source": "./",
-      "version": "4.3.0",
+      "version": "4.4.0",
       "description": "Skills for windows11-manager: set it up on a Windows machine and register projects for claude-wt terminal profiles."
     }
   ]

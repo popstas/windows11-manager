@@ -1,7 +1,7 @@
 {
   "name": "windows11-manager",
   "description": "Skills for windows11-manager: set it up on a Windows machine and register projects for claude-wt terminal profiles.",
-  "version": "4.3.0",
+  "version": "4.4.0",
   "author": {
     "name": "Stanislav Popov",
     "url": "https://github.com/popstas"

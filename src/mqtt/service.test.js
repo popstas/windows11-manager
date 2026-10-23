@@ -73,6 +73,13 @@ describe('startService', () => {
     expect(logged[0]).toMatch(/не заданы/);
   });
 
+  it('непонятый адрес брокера — тоже только http, с причиной в логе', () => {
+    const { logged } = setup({ env: { ...ENV, W11M_MQTT_HOST: 'ws://broker.example' } });
+    expect(connectMqtt).not.toHaveBeenCalled();
+    expect(logged[0]).toMatch(/^error: .*W11M_MQTT_HOST "ws:\/\/broker.example" не разобран/);
+    expect(logged[1]).toMatch(/^warn: .*брокер не настроен/);
+  });
+
   it('уведомления уходят на общую базу брокера, а не на нашу', async () => {
     // Подписчик — windows-mqtt/src/modules/notify.js — слушает
     // home/room/pc/notify/notify. Публикация в home/room/pc/windows/notify/notify
