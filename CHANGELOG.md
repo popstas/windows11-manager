@@ -1,6 +1,18 @@
 # Changelog
 
 
+## v4.5.0 - 2026-10-23
+
+### Features
+
+- plugin: Плагин для Claude Code и Codex со скиллами setup и project-add
+- tray: Время в пункте версии учитывает выкатку node-части
+
+### Bug Fixes
+
+- claude-wt: Окно в zellij привязывается к сессии
+- tray: Cargo.lock называет свой пакет своей версией
+
 ## v4.4.0 - 2026-10-17
 
 ### Features
