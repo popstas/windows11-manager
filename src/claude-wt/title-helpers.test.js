@@ -34,6 +34,20 @@ describe('stripTitleDecoration', () => {
     expect(stripTitleDecoration('  ccfzf  ')).toBe('ccfzf');
   });
 
+  it('strips the zellij session prefix before the status glyph', () => {
+    // Реальный заголовок окна на ноутбуке 2026-10-23: zellij ставит терминалу
+    // заголовок «<сессия zellij> | <заголовок панели>», и глиф статуса Claude
+    // оказывается уже после приставки. В дампе ccfzf сессия — «budva-day-5».
+    expect(stripTitleDecoration('popstas | ✳ budva-day-5')).toBe('budva-day-5');
+    expect(stripTitleDecoration('popstas | budva-day-5')).toBe('budva-day-5');
+  });
+
+  it('keeps a title whose prefix before " | " is several words', () => {
+    // Имя сессии zellij — одно слово без пробелов; приставка из нескольких
+    // слов — уже часть чужого заголовка, и срезать её нельзя.
+    expect(stripTitleDecoration('Some App | thing')).toBe('Some App | thing');
+  });
+
   it('returns an empty string for anything that is not a string', () => {
     expect(stripTitleDecoration(undefined)).toBe('');
     expect(stripTitleDecoration(null)).toBe('');

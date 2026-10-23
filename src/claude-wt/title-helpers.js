@@ -11,10 +11,17 @@
 // of the comparison would stop lining up.
 const DECORATION = /^\p{S}+\s+/u;
 
+// Приставка zellij: внутри него заголовок окна терминала — «<сессия> | <панель>»
+// (снято 2026-10-23: «popstas | ✳ budva-day-5»), и окно не совпадало ни с одной
+// сессией дампа. Снимается до глифа, потому что глиф стоит уже после неё.
+// Имя сессии zellij — одно слово без пробелов, поэтому и приставка — одно
+// слово: «Some App | thing» остаётся целым, это заголовок чужого окна.
+const ZELLIJ_PREFIX = /^[^\s|]+ \| /u;
+
 /** The form both the window title and the dump title are compared in. */
 function stripTitleDecoration(title) {
   if (typeof title !== 'string') return '';
-  return title.replace(DECORATION, '').trim();
+  return title.trim().replace(ZELLIJ_PREFIX, '').replace(DECORATION, '').trim();
 }
 
 export { stripTitleDecoration };
