@@ -1,5 +1,6 @@
 mod children;
 mod logging;
+mod mqtt_link;
 mod tray_windows;
 mod updater;
 
@@ -517,8 +518,32 @@ impl AppState {
     }
 }
 
+/// Значок трея и обе его картинки — обычная и с меткой обрыва связи.
+/// Картинки собраны один раз при старте: метка рисуется по пикселям значка
+/// приложения (`mqtt_link::badge`), а не лежит вторым файлом в `icons/`.
 struct TrayHolder {
-    _tray: tauri::tray::TrayIcon<tauri::Wry>,
+    tray: tauri::tray::TrayIcon<tauri::Wry>,
+    plain: Vec<u8>,
+    badged: Vec<u8>,
+    width: u32,
+    height: u32,
+}
+
+/// Показать состояние связи службы с брокером: пункт меню, подсказка, метка.
+fn apply_mqtt_link(app: &tauri::AppHandle, link: &mqtt_link::Link) {
+    info!("mqtt link: {}", link.menu_label());
+    if let Some(items) = app.try_state::<TrayMenuItems>() {
+        let _ = items.mqtt_link.set_text(link.menu_label());
+    }
+    if let Some(holder) = app.try_state::<TrayHolder>() {
+        let _ = holder.tray.set_tooltip(Some(link.tooltip()));
+        let rgba = if link.badged() { &holder.badged } else { &holder.plain };
+        let _ = holder.tray.set_icon(Some(tauri::image::Image::new_owned(
+            rgba.clone(),
+            holder.width,
+            holder.height,
+        )));
+    }
 }
 
 /// Пункты трея, которым нужно менять подпись не только из обработчика меню:
@@ -529,6 +554,9 @@ struct TrayMenuItems {
     claude_wt: MenuItem<tauri::Wry>,
     mqtt_status: MenuItem<tauri::Wry>,
     mqtt_toggle: MenuItem<tauri::Wry>,
+    /// Связь службы с брокером — отдельно от «Service: running»: процесс
+    /// бывает жив, а связи нет (`mqtt_link`).
+    mqtt_link: MenuItem<tauri::Wry>,
 }
 
 /// Часть меню, занятая списком отслеживаемых окон.
@@ -708,6 +736,16 @@ fn update_tray_label(app: &tauri::AppHandle, kind: ChildKind, running: bool) {
             } else {
                 "Service: stopped"
             });
+            // Запуск — «подключаемся», пока служба не сказала своё; остановка
+            // — «служба остановлена», что бы ни было сказано до неё.
+            let _ = items.mqtt_link.set_text(
+                if running { mqtt_link::Link::Connecting } else { mqtt_link::Link::Stopped }
+                    .menu_label(),
+            );
+            if !running {
+                drop(items);
+                apply_mqtt_link(app, &mqtt_link::Link::Stopped);
+            }
         }
     }
 }
@@ -1379,6 +1417,14 @@ fn on_child_exit(
     drop(s);
 
     update_tray_label(app, kind, false);
+    // Упавшая служба, которую сейчас поднимут, — обрыв, а не остановка:
+    // связи нет, и человек её не выключал.
+    if kind == ChildKind::Mqtt && delay.is_some() {
+        apply_mqtt_link(
+            app,
+            &mqtt_link::Link::Down(format!("service exited with {reason}, restarting")),
+        );
+    }
     match kind {
         ChildKind::Autoplacer => {
             let _ = app.emit("autoplacer-toggled", false);
@@ -1444,7 +1490,7 @@ fn start_claude_wt_locked(app: &tauri::AppHandle, s: &mut AppState) {
             s.claude_wt_child = Some(child);
             s.claude_wt_running = true;
             let app_handle = app.clone();
-            pump_output(ChildKind::ClaudeWt, rx, move |reason, uptime| {
+            pump_output(ChildKind::ClaudeWt, rx, |_| false, move |reason, uptime| {
                 on_child_exit(&app_handle, ChildKind::ClaudeWt, generation, reason, uptime);
             });
             info!("claude-wt started");
@@ -1516,7 +1562,7 @@ fn toggle_autoplacer(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>)
                 app_state.autoplacer_child = Some(child);
                 app_state.autoplacer_running = true;
                 let app_handle = app.clone();
-                pump_output(ChildKind::Autoplacer, rx, move |reason, uptime| {
+                pump_output(ChildKind::Autoplacer, rx, |_| false, move |reason, uptime| {
                     on_child_exit(
                         &app_handle,
                         ChildKind::Autoplacer,
@@ -1692,7 +1738,23 @@ fn start_mqtt_locked(
             s.mqtt_child = Some(child);
             s.mqtt_running = true;
             let app_handle = app.clone();
-            pump_output(ChildKind::Mqtt, rx, move |reason, uptime| {
+            let link_app = app.clone();
+            let on_line = move |line: &str| {
+                let Some(link) = mqtt_link::parse_line(line) else {
+                    return false;
+                };
+                // Строка от сменённого процесса: её состояние уже не про
+                // текущую службу.
+                let current = link_app
+                    .try_state::<Mutex<AppState>>()
+                    .map(|s| s.lock().map(|s| s.mqtt_generation == generation).unwrap_or(false))
+                    .unwrap_or(false);
+                if current {
+                    apply_mqtt_link(&link_app, &link);
+                }
+                true
+            };
+            pump_output(ChildKind::Mqtt, rx, on_line, move |reason, uptime| {
                 on_child_exit(&app_handle, ChildKind::Mqtt, generation, reason, uptime);
             });
             info!("Service started");
@@ -1877,6 +1939,13 @@ pub fn run() {
                 MenuItem::with_id(app, "mqtt_status", "Service: stopped", false, None::<&str>)?;
             let mqtt_toggle_i =
                 MenuItem::with_id(app, "mqtt_toggle", "Start service", true, None::<&str>)?;
+            let mqtt_link_i = MenuItem::with_id(
+                app,
+                "mqtt_link",
+                mqtt_link::Link::Stopped.menu_label(),
+                false,
+                None::<&str>,
+            )?;
             let sep2 = PredefinedMenuItem::separator(app)?;
             let restart_store_i =
                 MenuItem::with_id(app, "restart_store", "Restart (Store)", true, None::<&str>)?;
@@ -1922,6 +1991,7 @@ pub fn run() {
             let after_tracked: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![
                 &sep1,
                 &mqtt_status_i,
+                &mqtt_link_i,
                 &mqtt_toggle_i,
                 &sep2,
                 &restart_store_i,
@@ -1957,6 +2027,7 @@ pub fn run() {
                 claude_wt: claude_wt_i.clone(),
                 mqtt_status: mqtt_status_i.clone(),
                 mqtt_toggle: mqtt_toggle_i.clone(),
+                mqtt_link: mqtt_link_i.clone(),
             });
             let download_update_i_check = download_update_i.clone();
 
@@ -2247,7 +2318,15 @@ pub fn run() {
                 .build(app)?;
 
             // Retain tray reference so it persists for app lifetime
-            app.manage(TrayHolder { _tray: tray });
+            let icon = app.default_window_icon().cloned().unwrap();
+            let (width, height) = (icon.width(), icon.height());
+            app.manage(TrayHolder {
+                tray,
+                badged: mqtt_link::badge(icon.rgba(), width, height),
+                plain: icon.rgba().to_vec(),
+                width,
+                height,
+            });
 
             // Auto-start MQTT if enabled
             let settings = load_settings_from_store(app.handle());
