@@ -56,7 +56,8 @@ function createHaExport({ winMan, publish, log, config }) {
     if (!cfg.enabled) return;
     let sessions;
     try {
-      const res = winMan.claudeWtSessions();
+      // Закрытые на панель не идут — и их файлы с сетевого диска не читаются.
+      const res = winMan.claudeWtSessions({ openOnly: cfg.openOnly });
       if (!res.ok) throw new Error(res.reason);
       sessions = labelSessions(res.sessions);
     } catch (e) {

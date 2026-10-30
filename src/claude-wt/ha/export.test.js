@@ -102,6 +102,37 @@ describe('createHaExport', () => {
     expect(publish).not.toHaveBeenCalled();
   });
 
+  it('enabled: false не читает сессий вовсе — ни на старте, ни по таймеру, ни на refresh', () => {
+    // Выключатель нужен ради сетевого диска: выключенный экспорт, который всё
+    // равно перечитывает V:, ничего бы не выключал.
+    const claudeWtSessions = vi.fn().mockReturnValue({ ok: true, sessions: SESSIONS });
+    const { exporter } = make({ winMan: { claudeWtSessions }, config: { homeassistant: { enabled: false } } });
+    exporter.start();
+    exporter.refresh();
+    vi.advanceTimersByTime(60000);
+    expect(claudeWtSessions).not.toHaveBeenCalled();
+  });
+
+  it('при openOnly (умолчание) состояние агента просится только у открытых сессий', () => {
+    // Полный список читает state.json и meta.json на каждый слот с сетевого
+    // диска: на ноутбуке 458 слотов давали ~900 обращений по SMB за проход и
+    // занимали службу секунд на десять.
+    const claudeWtSessions = vi.fn().mockReturnValue({ ok: true, sessions: SESSIONS });
+    const { exporter } = make({ winMan: { claudeWtSessions } });
+    exporter.start();
+    expect(claudeWtSessions).toHaveBeenCalledWith({ openOnly: true });
+  });
+
+  it('openOnly: false — закрытые идут в слоты, и состояние читается у всех', () => {
+    const claudeWtSessions = vi.fn().mockReturnValue({ ok: true, sessions: SESSIONS });
+    const { exporter } = make({
+      winMan: { claudeWtSessions },
+      config: { homeassistant: { slots: 2, interval: 15, openOnly: false } },
+    });
+    exporter.start();
+    expect(claudeWtSessions).toHaveBeenCalledWith({ openOnly: false });
+  });
+
   it('сбой чтения сессий не роняет таймер', () => {
     const { exporter } = make({
       winMan: { claudeWtSessions: vi.fn(() => { throw new Error('SMB timeout'); }) },

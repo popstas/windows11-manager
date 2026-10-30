@@ -128,4 +128,17 @@ function buildSessionList({ slots, openMap, mons, progress = {}, meta = {}, agen
   });
 }
 
-export { monitorNumberForBounds, activeAgent, buildSessionList };
+/**
+ * Чьё состояние агента читать с диска: слоты и их фоновые агенты.
+ *
+ * `openIds` сужает набор до открытых сессий. Слоты не чистятся — в них живут
+ * позиция и стол окна для восстановления, — и копятся сотнями, а каждый id
+ * здесь — это stat и чтение по сети на V:. Тому, кто покажет только открытые
+ * (экспорт в HA), закрытые читать незачем.
+ */
+function agentIds({ slotIds, agents, openIds = null }) {
+  const own = openIds ? slotIds.filter(id => openIds.has(id)) : slotIds;
+  return [...new Set(own.concat(own.flatMap(id => (agents?.[id] ?? []).map(child => child.id))))];
+}
+
+export { monitorNumberForBounds, activeAgent, buildSessionList, agentIds };

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { monitorNumberForBounds, buildSessionList } from './view-helpers.js';
+import { monitorNumberForBounds, buildSessionList, agentIds } from './view-helpers.js';
 
 const mons = [
   {},
@@ -197,5 +197,29 @@ describe('buildSessionList with a PR', () => {
     });
     expect(row.branch).toBe('');
     expect(row.pr_url).toBe('');
+  });
+});
+
+describe('agentIds', () => {
+  const agents = { a: [{ id: 'a-bg' }], c: [{ id: 'c-bg' }] };
+
+  it('без списка открытых — все слоты и их фоновые агенты', () => {
+    expect(agentIds({ slotIds: ['a', 'b', 'c'], agents })).toEqual(['a', 'b', 'c', 'a-bg', 'c-bg']);
+  });
+
+  it('со списком открытых — только открытые и агенты открытых', () => {
+    // Слотов на машине копятся сотни, и каждый id — это stat по сети на V:;
+    // экспорту в HA нужны только открытые, и закрытая `c` со своим агентом
+    // читаться не должна.
+    expect(agentIds({ slotIds: ['a', 'b', 'c'], agents, openIds: new Set(['a', 'b']) }))
+      .toEqual(['a', 'b', 'a-bg']);
+  });
+
+  it('id без слота в списке открытых не появляется', () => {
+    expect(agentIds({ slotIds: ['a'], agents, openIds: new Set(['a', 'zzz']) })).toEqual(['a', 'a-bg']);
+  });
+
+  it('повторы схлопываются', () => {
+    expect(agentIds({ slotIds: ['a', 'a-bg'], agents })).toEqual(['a', 'a-bg']);
   });
 });

@@ -5,7 +5,7 @@ import { loadSessionIndex, loadBackgroundAgents } from './sessions.js';
 import { resolveSession } from './tracker-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
-import { buildSessionList } from './view-helpers.js';
+import { buildSessionList, agentIds } from './view-helpers.js';
 import { loadProgress } from './progress.js';
 import { loadMeta } from './meta.js';
 import { listSnapshots } from './snapshotter.js';
@@ -53,7 +53,7 @@ function openSessionMap(cfg, state) {
  * где `lastActivityAt()` и так падает на `slot.lastSeen`. Пикеру список нужен
  * целиком — ему полтора лишних поля и есть весь смысл списка.
  */
-function claudeWtSessions({ mark = noTiming, brief = false } = {}) {
+function claudeWtSessions({ mark = noTiming, brief = false, openOnly = false } = {}) {
   const cfg = getClaudeWtConfig();
   if (!cfg.enabled) return { ok: false, reason: 'claudeWt.enabled is false in config' };
   if (!cfg.statePath) return { ok: false, reason: 'claudeWt.statePath is not set in config' };
@@ -68,13 +68,17 @@ function claudeWtSessions({ mark = noTiming, brief = false } = {}) {
   // его файл никто бы не прочитал, и работающая сессия выглядела бы замершей
   // на том, что сказала перед уходом в фон.
   const agents = loadBackgroundAgents(cfg.sessionsFile, cfg.progressDir);
-  const ids = [...new Set(slotIds.concat(
-    slotIds.flatMap(id => (agents[id] ?? []).map(child => child.id)),
-  ))];
+  // `openOnly` — состояние и мета только у открытых: закрытые строки в списке
+  // остаются, но без полей агента. Окна уже сопоставлены (`openMap`), и это
+  // ничего не стоит, а слотов на машине копятся сотни — на ноутбуке 458 давали
+  // ~900 обращений по SMB за вызов и около десяти секунд занятой службы.
+  const openIds = openOnly ? new Set(openMap.keys()) : null;
+  const ids = agentIds({ slotIds, agents, openIds });
   mark('sessions:agents');
   const progress = brief ? {} : loadProgress(cfg.progressDir, ids);
   mark('sessions:progress');
-  const meta = brief ? {} : loadMeta(cfg.progressDir, slotIds);
+  const metaIds = openIds ? slotIds.filter(id => openIds.has(id)) : slotIds;
+  const meta = brief ? {} : loadMeta(cfg.progressDir, metaIds);
   mark('sessions:meta');
   const list = buildSessionList({
     slots: state.slots, openMap, mons: getMons(), progress, meta, agents,
