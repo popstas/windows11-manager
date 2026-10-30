@@ -98,8 +98,13 @@ fn log_output(label: &str, bytes: &[u8], is_err: bool) {
 ///
 /// `on_exit` вызывается и тогда, когда `Terminated` не пришёл вовсе (канал
 /// закрылся молча): для надзора «процесса нет» важнее, чем «известен код».
-pub fn pump_output<F>(kind: ChildKind, mut rx: Receiver<CommandEvent>, on_exit: F)
+///
+/// `on_line` видит каждую строку stdout первым; вернул `true` — строка
+/// служебная и в лог не идёт (так служба сообщает о связи с брокером, см.
+/// `mqtt_link`).
+pub fn pump_output<L, F>(kind: ChildKind, mut rx: Receiver<CommandEvent>, mut on_line: L, on_exit: F)
 where
+    L: FnMut(&str) -> bool + Send + 'static,
     F: FnOnce(String, u64) + Send + 'static,
 {
     let label = kind.label();
@@ -108,7 +113,11 @@ where
         let mut exit: Option<String> = None;
         while let Some(event) = rx.recv().await {
             match event {
-                CommandEvent::Stdout(bytes) => log_output(label, &bytes, false),
+                CommandEvent::Stdout(bytes) => {
+                    if !on_line(String::from_utf8_lossy(&bytes).trim_end_matches(['\r', '\n'])) {
+                        log_output(label, &bytes, false);
+                    }
+                }
                 CommandEvent::Stderr(bytes) => log_output(label, &bytes, true),
                 CommandEvent::Error(e) => error!("[{}] stream error: {}", label, e),
                 CommandEvent::Terminated(payload) => {

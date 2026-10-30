@@ -5,6 +5,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   commandFromTopic, readMqttSettings, notifyTopicFor, connectMqtt, parseMqttHost,
 } from './client.js';
+import { createLinkReporter } from './link.js';
 
 const connect = vi.hoisted(() => vi.fn());
 vi.mock('mqtt', () => ({ default: { connect } }));
@@ -262,6 +263,29 @@ describe('connectMqtt', () => {
     onConnect();
     expect(log).toHaveBeenCalledWith('MQTT connected to mqtts://broker.example:8883');
     expect(log.mock.calls.flat().join(' ')).not.toContain('secret');
+  });
+
+  it('переходы связи уходят в link: отказ, затем подключение', () => {
+    const client = fakeClient();
+    connect.mockReturnValue(client);
+    const lines = [];
+    connectMqtt({
+      settings: readMqttSettings({ W11M_MQTT_HOST: 'mqtt.lan', W11M_MQTT_BASE: BASE }),
+      onCommand: () => {},
+      log: () => {},
+      link: createLinkReporter((line) => lines.push(line)),
+    });
+    const fire = (event, ...args) => client.on.mock.calls
+      .filter(([name]) => name === event)
+      .forEach(([, handler]) => handler(...args));
+    fire('error', Object.assign(new Error('Connection refused: Not authorized'), { code: 5 }));
+    fire('close');
+    fire('connect');
+    expect(lines).toEqual([
+      '@@w11m-link {"state":"connecting"}',
+      '@@w11m-link {"state":"disconnected","reason":"not authorized"}',
+      '@@w11m-link {"state":"connected"}',
+    ]);
   });
 
   it('в onCommand приходит и топик — ради строки лога `< topic: payload`', () => {

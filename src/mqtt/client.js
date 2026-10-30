@@ -157,7 +157,7 @@ function readMqttSettings(env = process.env, log = () => {}) {
  * Assistant: stop() зовут только при чистой остановке, а падение процесса и
  * reboot оставляли бы retained-`online` висеть вечно.
  */
-function connectMqtt({ settings, onCommand, log, will }) {
+function connectMqtt({ settings, onCommand, log, will, link }) {
   const url = `${settings.tls ? 'mqtts' : 'mqtt'}://${settings.host}:${settings.port}`;
   const client = mqtt.connect(url, {
     clientId: `w11mgr-${process.pid}`,
@@ -180,6 +180,14 @@ function connectMqtt({ settings, onCommand, log, will }) {
 
   client.on('reconnect', () => log('MQTT reconnecting'));
   client.on('error', (err) => log(`MQTT error: ${err.message}`, 'error'));
+
+  // Трею — только переходы связи (см. link.js); строки лога выше остаются.
+  if (link) {
+    link.connecting();
+    client.on('connect', () => link.connected());
+    client.on('error', (err) => link.error(err));
+    client.on('close', () => link.closed());
+  }
 
   client.on('message', (topic, payload) => {
     const command = commandFromTopic(topic, settings.base);

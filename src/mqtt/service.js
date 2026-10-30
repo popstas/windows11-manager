@@ -15,6 +15,7 @@ import { buildCommandMap } from '../commands/build.js';
 import { createHaExport } from '../claude-wt/ha/export.js';
 import { topics } from '../claude-wt/ha/discovery.js';
 import { connectMqtt, readMqttSettings } from './client.js';
+import { createLinkReporter } from './link.js';
 import { createStatsPublisher } from './stats.js';
 import { startAutoplacer } from './autoplacer.js';
 import { startDaemonWatchdog } from './daemon-watchdog.js';
@@ -33,7 +34,13 @@ import { createDock } from '../claude-wt/dock/slots.js';
  */
 const FOREIGN_COMMANDS = new Set(['sleep', 'restart', 'restart_restore', 'shutdown']);
 
-function startService({ winMan, config, log, env = process.env }) {
+function startService({
+  winMan, config, log, env = process.env,
+  // Служебная строка для трея — в stdout без префикса `[mqtt]`: трей узнаёт
+  // её по началу строки (`mqtt_link::parse_line`).
+  writeLink = (line) => process.stdout.write(`${line}\n`),
+}) {
+  const link = createLinkReporter(writeLink);
   const settings = readMqttSettings(env, log);
   // Единственный объект конфига на всю службу: команда reload перезаписывает
   // его содержимое на месте, поэтому подменять ссылку никому нельзя.
@@ -80,12 +87,14 @@ function startService({ winMan, config, log, env = process.env }) {
   if (!settings) {
     // Причину непонятого адреса или корня readMqttSettings уже написала выше.
     log('MQTT: брокер не настроен (W11M_MQTT_HOST или W11M_MQTT_BASE не заданы или не разобраны) — работаем только по http', 'warn');
+    link.off();
   }
 
   if (settings) {
     client = connectMqtt({
       settings,
       log,
+      link,
       // Завещание брокеру: единственный способ снять доступность при падении,
       // kill и перезагрузке — stop() в этих случаях не зовут вовсе, а `online` и
       // все состояния слотов публикуются retained.
@@ -126,7 +135,7 @@ function startService({ winMan, config, log, env = process.env }) {
       httpServer.close();
     },
     httpPort: () => httpServer.address()?.port ?? 0,
-    mqttConnected: () => Boolean(client),
+    mqttConnected: () => Boolean(client?.connected),
     haExport: () => haExport,
   };
 }
