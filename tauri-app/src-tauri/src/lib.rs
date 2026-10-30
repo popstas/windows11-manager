@@ -743,7 +743,6 @@ fn update_tray_label(app: &tauri::AppHandle, kind: ChildKind, running: bool) {
                     .menu_label(),
             );
             if !running {
-                drop(items);
                 apply_mqtt_link(app, &mqtt_link::Link::Stopped);
             }
         }
