@@ -37,11 +37,22 @@ const TAG = '[telegram-inbox]';
 
 const defaultFs = {
   listDir(dir) {
-    return fs.readdirSync(dir, { withFileTypes: true }).map((d) => {
-      if (!d.isFile()) return { name: d.name, isFile: false };
-      const st = fs.statSync(path.join(dir, d.name));
-      return { name: d.name, isFile: true, size: st.size, mtimeMs: st.mtimeMs };
-    });
+    const out = [];
+    for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!d.isFile()) {
+        out.push({ name: d.name, isFile: false });
+        continue;
+      }
+      // Временный файл syncthing переименовывается между readdir и stat —
+      // такой просто пропускаем: на следующем проходе он уже под своим именем.
+      try {
+        const st = fs.statSync(path.join(dir, d.name));
+        out.push({ name: d.name, isFile: true, size: st.size, mtimeMs: st.mtimeMs });
+      } catch {
+        // исчез — не беда
+      }
+    }
+    return out;
   },
   readState(file) {
     try {
@@ -226,4 +237,4 @@ function startTelegramInbox({ winMan, log, deps = {} }) {
   };
 }
 
-export { startTelegramInbox };
+export { startTelegramInbox, defaultFs };

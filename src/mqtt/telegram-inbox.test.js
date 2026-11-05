@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { startTelegramInbox } from './telegram-inbox.js';
+import { startTelegramInbox, defaultFs } from './telegram-inbox.js';
 
 let root;
 let dir;
@@ -159,5 +159,23 @@ describe('startTelegramInbox', () => {
     await pass(); await pass(); await pass(); await pass();
     expect(winMan.openInboxSession).toHaveBeenCalledTimes(1);
     expect(logged).toContain('error: [telegram-inbox] failed to open a.md: claudeWt.launchInbox.args is empty (marked as opened, not retried)');
+  });
+
+  it('a file that vanishes between readdir and stat does not break the pass', () => {
+    put('keep.md');
+    const realStat = fs.statSync;
+    const spy = vi.spyOn(fs, 'statSync').mockImplementation((p, ...rest) => {
+      if (String(p).endsWith('keep.md')) {
+        const e = new Error('ENOENT: no such file'); e.code = 'ENOENT'; throw e;
+      }
+      return realStat(p, ...rest);
+    });
+    put('other.md');
+    try {
+      const names = defaultFs.listDir(dir).filter(e => e.isFile).map(e => e.name);
+      expect(names).toEqual(['other.md']);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
