@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   inboxSkipReason,
+  isSyncthingTemp,
   inboxSessionName,
   inboxRemoteFile,
   normalizeInboxConfig,
@@ -107,14 +108,22 @@ describe('planInboxTick', () => {
     expect(r).toMatchObject({ ready: [], skipped: [] });
   });
 
+  it('skips syncthing temp files silently', () => {
+    expect(isSyncthingTemp('.syncthing.x.md.tmp')).toBe(true);
+    expect(isSyncthingTemp('~syncthing~x.md.tmp')).toBe(true);
+    expect(isSyncthingTemp('.hidden.md')).toBe(false);
+    const r = planInboxTick({ entries: [file('.syncthing.x.md.tmp'), file('~syncthing~y.md.tmp')], now: 0 });
+    expect(r).toMatchObject({ ready: [], skipped: [] });
+  });
+
   it('skips opened, queued and filtered names; says why once', () => {
-    const entries = [file('done.md'), file('queued.md'), file('.syncthing.x.md.tmp'), file('new.md')];
+    const entries = [file('done.md'), file('queued.md'), file('.hidden.md'), file('new.md')];
     const processed = { 'done.md': 1 };
     const busy = new Set(['queued.md']);
     let r = planInboxTick({ entries, now: 0, processed, busy, settleMs: 0 });
     expect(r.skipped).toEqual([
       { name: 'done.md', reason: 'already opened' },
-      { name: '.syncthing.x.md.tmp', reason: 'hidden or syncthing temp file' },
+      { name: '.hidden.md', reason: 'hidden or syncthing temp file' },
     ]);
     r = planInboxTick({ entries, now: 1, seen: r.seen, reported: r.reported, processed, busy, settleMs: 0 });
     expect(r.skipped).toEqual([]);

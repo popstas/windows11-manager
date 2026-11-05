@@ -265,8 +265,8 @@ claudeWt:
   # Watch a local folder (synced by syncthing) and open a new window with
   # session `tg-<file name>` for every new *.md in its root — every file its
   # own session and window, the open one is never reused. Off by default.
-  # Ignored: hidden files and `.syncthing.*.tmp`, `~syncthing~*`,
-  # `*.sync-conflict-*`, subfolders (processed/). A file is opened once it
+  # Ignored: hidden files, `*.sync-conflict-*`, subfolders (processed/);
+  # syncthing temp files (`.syncthing.*.tmp`, `~syncthing~*`) silently. A file is opened once it
   # stopped growing for settleMs, and exactly once: opened names are kept in
   # statePath (default: telegram-inbox.json next to claudeWt.statePath).
   # Files already lying there on start count as new and open one by one,

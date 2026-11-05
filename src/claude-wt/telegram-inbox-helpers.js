@@ -36,6 +36,16 @@ function inboxSkipReason(name) {
   return null;
 }
 
+/**
+ * Временный файл syncthing: появляется на каждую доставку и тут же
+ * переименовывается в настоящий. Пропускается молча — строка «skip» на каждую
+ * пересылку была бы шумом, а не сведением.
+ */
+function isSyncthingTemp(name) {
+  const n = typeof name === 'string' ? name : '';
+  return n.startsWith('~syncthing~') || /^\.syncthing\..*\.tmp$/.test(n);
+}
+
 /** `2026-11-05-123.md` → `tg-2026-11-05-123`. */
 function inboxSessionName(name) {
   return `tg-${String(name).replace(/\.md$/i, '')}`;
@@ -102,7 +112,7 @@ function planInboxTick({ entries = [], now, seen = new Map(), processed = {}, bu
   const skipped = [];
   const present = new Set();
   for (const e of entries) {
-    if (!e || !e.isFile) continue;
+    if (!e || !e.isFile || isSyncthingTemp(e.name)) continue;
     present.add(e.name);
     const reason = inboxSkipReason(e.name)
       ?? (Object.hasOwn(processed, e.name) ? 'already opened' : null);
@@ -159,6 +169,7 @@ function serializeInboxState({ processed = {} } = {}) {
 
 export {
   inboxSkipReason,
+  isSyncthingTemp,
   inboxSessionName,
   inboxRemoteFile,
   normalizeInboxConfig,

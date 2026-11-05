@@ -124,7 +124,11 @@ describe('startTelegramInbox', () => {
     await pass();
     await pass();
     expect(opened).toEqual([]);
-    expect(logged.filter(l => l.includes('skip'))).toHaveLength(4);
+    // Временные syncthing — молча, остальные — строкой с причиной.
+    expect(logged.filter(l => l.includes('skip')).sort()).toEqual([
+      '[telegram-inbox] skip .hidden.md: hidden or syncthing temp file',
+      '[telegram-inbox] skip z.sync-conflict-20261105-1-AAA.md: syncthing conflict copy',
+    ]);
   });
 
   it('waits while the file keeps growing', async () => {
