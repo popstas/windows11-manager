@@ -19,6 +19,7 @@ import { createLinkReporter } from './link.js';
 import { createStatsPublisher } from './stats.js';
 import { startAutoplacer } from './autoplacer.js';
 import { startDaemonWatchdog } from './daemon-watchdog.js';
+import { startTelegramInbox } from './telegram-inbox.js';
 import { startHttpServer } from '../http-server.js';
 import { createDock } from '../claude-wt/dock/slots.js';
 
@@ -81,6 +82,9 @@ function startService({
   const httpServer = startHttpServer({ router, port: config?.httpPort ?? 9722, log, dock });
   const autoplacer = startAutoplacer({ winMan, config: withBase, log });
   const daemonWatchdog = startDaemonWatchdog({ winMan, log, notify });
+  // Входящие из Telegram: брокер не нужен и ему. Заводится всегда, а включается
+  // ключом `claudeWt.telegramInbox.enabled` — конфиг читается на каждом проходе.
+  const telegramInbox = startTelegramInbox({ winMan, log });
 
   const stats = settings ? createStatsPublisher({ winMan, publish, log, config: withBase }) : null;
 
@@ -131,6 +135,7 @@ function startService({
       stats?.stop();
       autoplacer.stop();
       daemonWatchdog.stop();
+      telegramInbox.stop();
       client?.end(true);
       httpServer.close();
     },

@@ -8,8 +8,8 @@
  * именем ключа, а не тихо проигнорированное поле.
  *
  * Сюда попали только скаляры. Структуры под `claudeWt` (`projects`,
- * `terminals`, `terminalExecutables`, `launch`, `launchNew`, `restore`,
- * `snapshots`) формой не выражаются без отдельного редактора и остаются в
+ * `terminals`, `terminalExecutables`, `launch`, `launchNew`, `launchInbox`,
+ * `telegramInbox`, `restore`, `snapshots`) формой не выражаются без отдельного редактора и остаются в
  * YAML; `tileZones` — список пар, у него своё поле и свой патчер
  * (`tile-zones-commands.js`).
  *

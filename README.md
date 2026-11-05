@@ -188,6 +188,25 @@ on start the daemon reports that sessions were open before the reboot but launch
 nothing unless `claudeWt.restore.auto` is set, because bringing up a handful of ssh
 sessions on boot is too visible to do silently.
 
+### Telegram inbox
+
+`claudeWt.telegramInbox` watches a local folder and opens a new terminal window with
+a Claude session for every new `*.md` that lands in its root — the folder is synced by
+syncthing from the host where a bot drops one file per forwarded message. Each file
+gets its own session named `tg-<file name>` and its own window, even if the previous
+one is still open. The remote command is `claudeWt.launchInbox` (placeholders `{cwd}`,
+`{script}`, `{file}`, `{name}`), so the session is started by a script on the ssh side
+rather than a bare `claude -n`; the terminal profile comes from `claudeWt.projects` by
+`cwd`, as for project hotkeys.
+
+The watcher lives in the service process (`node src mqtt`) and needs no broker. It
+polls the folder (`pollMs`), skips hidden and syncthing temp files, conflict copies and
+subfolders, waits until a file stops growing (`settleMs`), and remembers opened names
+in a state file next to `claudeWt.statePath`, so a restart does not reopen anything.
+Files already there on start are opened one by one. Every opened and every skipped
+file gets a `[telegram-inbox]` line in the app log. Off by default; see the example in
+[config.example.yaml](config.example.yaml).
+
 ### Known limits
 
 - Position is bound to a session, not a project: a new session in the same project is

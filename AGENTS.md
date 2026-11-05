@@ -144,6 +144,7 @@ mismatch.
 - `src/placement.js` exports: `placeWindows`, `placeWindowByConfig`
 - `src/claude-wt/index.js` exports: `startClaudeWt`, `stopClaudeWt`, `claudeWtStatus`, `getClaudeWtConfig`
 - `src/claude-wt/restore.js` exports: `restoreClaudeSessions`, `maybeRestoreOnStart`
+- `src/claude-wt/inbox.js` exports: `openInboxSession`
 
 ## claude-wt: связка четырёх мест
 
@@ -169,6 +170,21 @@ openHASP — на shome (`R:`). Состояние течёт в одну сто
 заводится по подключению к брокеру, а доске брокер не нужен. Гейт — ключ
 `streamdock` **верхнего уровня** конфига; блока нет — обоих путей нет.
 Плагин доски живёт отдельно: `/home/popstas/projects/js/streamdock-http-button`.
+
+**Входящие из Telegram — третий житель службы без брокера.**
+`src/mqtt/telegram-inbox.js` (чистая часть — `src/claude-wt/telegram-inbox-helpers.js`)
+опрашивает `claudeWt.telegramInbox.dir` и на каждый новый `*.md` в корне открывает
+окно сессии `tg-<имя>` через `openInboxSession` (`src/claude-wt/inbox.js`): дорога
+проектного хоткея без поиска открытого окна, но шаблон свой —
+`claudeWt.launchInbox`, `launchNew` не трогается. Конфиг читается на каждом
+проходе, так что включение не требует перезапуска. Имя файла пишется в
+состояние (`telegram-inbox.json` рядом с `claudeWt.statePath`) **до** запуска
+терминала: упавший запуск не повторяется, зато и пачкой на рестарте ничего не
+откроется. Очередь ждёт `focusSpawnedWindow` предыдущего окна и только потом
+открывает следующее — иначе окна дерутся за фокус. Окна в цикле не
+перечисляются, бюджет ниже не задет. Имена с `;`, кавычками, `$`, `\` и
+управляющими символами пропускаются: до удалённого шелла через wt → ssh они не
+доживут.
 
 ## claude-wt polling budget
 

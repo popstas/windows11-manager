@@ -41,11 +41,31 @@ const CLAUDE_WT_DEFAULTS = {
   launch: { args: [] },
   // Fresh session in a project folder (project hotkeys). Placeholders: {cwd}, {name}.
   launchNew: { args: [] },
+  // Сессия на входящий файл из Telegram (`telegramInbox`). Свой шаблон рядом с
+  // launchNew, а не он сам: удалённая команда другая — скрипт vault вместо
+  // голого `claude -n`. Placeholders: {cwd}, {script}, {file}, {name}.
+  launchInbox: { args: [] },
+  // Наблюдатель входящих: новый *.md в `dir` — новое окно с сессией
+  // `tg-<имя>`. Выключен по умолчанию; живёт в процессе службы
+  // (`src/mqtt/telegram-inbox.js`). `dir` — путь этой машины, `cwd` и
+  // `fileDir` — пути той стороны ssh: друг из друга они не выводятся.
+  telegramInbox: {
+    enabled: false,
+    dir: '',
+    cwd: '',
+    script: '.scripts/telegram-incoming',
+    fileDir: 'files/incoming-telegram',
+    terminal: '',
+    statePath: '',
+    pollMs: 3000,
+    settleMs: 2000,
+    gapMs: 3000,
+  },
   restore: { auto: false, windowTimeoutMs: 30000, launchDelayMs: 2000, settleMs: 500 },
   snapshots: { enabled: true, path: '', debounceMs: 60000, keep: 20 },
 };
 
-/** Deep-ish merge: launch / launchNew / restore / snapshots merged key by key. */
+/** Deep-ish merge: launch / launchNew / launchInbox / telegramInbox / restore / snapshots merged key by key. */
 function mergeClaudeWtConfig(raw) {
   const cfg = raw ?? {};
   return {
@@ -59,6 +79,12 @@ function mergeClaudeWtConfig(raw) {
       args: [...CLAUDE_WT_DEFAULTS.launchNew.args],
       ...(cfg.launchNew ?? {}),
     },
+    launchInbox: {
+      ...CLAUDE_WT_DEFAULTS.launchInbox,
+      args: [...CLAUDE_WT_DEFAULTS.launchInbox.args],
+      ...(cfg.launchInbox ?? {}),
+    },
+    telegramInbox: { ...CLAUDE_WT_DEFAULTS.telegramInbox, ...(cfg.telegramInbox ?? {}) },
     restore: { ...CLAUDE_WT_DEFAULTS.restore, ...(cfg.restore ?? {}) },
     snapshots: { ...CLAUDE_WT_DEFAULTS.snapshots, ...(cfg.snapshots ?? {}) },
     terminalExecutables: normalizeTerminalExecutables(cfg.terminalExecutables),

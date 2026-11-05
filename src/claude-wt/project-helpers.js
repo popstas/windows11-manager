@@ -119,11 +119,18 @@ function planWtLaunch({ launch, vars = {}, profile, terminal }) {
   const id = vars.id ?? '';
   const safeCwd = escapeForSingleQuoted(vars.cwd ?? '');
   const safeName = escapeForSingleQuoted(vars.name ?? '');
+  // `{file}` / `{script}` — у шаблона входящих из Telegram (`launchInbox`):
+  // путь файла относительно каталога и скрипт, которому его отдать. Экранируются
+  // так же, как `{cwd}`, — шаблон сам оборачивает их в `'…'`.
+  const safeFile = escapeForSingleQuoted(vars.file ?? '');
+  const safeScript = escapeForSingleQuoted(vars.script ?? '');
   const wanted = typeof profile === 'string' ? profile : '';
   const substitute = arg => String(arg)
     .replaceAll('{id}', id)
     .replaceAll('{cwd}', safeCwd)
     .replaceAll('{name}', safeName)
+    .replaceAll('{file}', safeFile)
+    .replaceAll('{script}', safeScript)
     .replaceAll('{profile}', wanted);
   const tail = launch?.args ?? [];
   if (!terminal?.command) {
