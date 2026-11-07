@@ -193,8 +193,13 @@ sessions on boot is too visible to do silently.
 `claudeWt.telegramInbox` watches a local folder and opens a new terminal window with
 a Claude session for every new `*.md` that lands in its root — the folder is synced by
 syncthing from the host where a bot drops one file per forwarded message. Each file
-gets its own session named `tg-<file name>` and its own window, even if the previous
-one is still open. The remote command is `claudeWt.launchInbox` (placeholders `{cwd}`,
+gets its own session and its own window, even if the previous one is still open. The
+session is named `tg-<file name>`, or by the `sessionName` template: for
+`2026-11-06_06-04-22_Olgazdez_424254.md`, `'{user}-tg-{date}'` gives
+`Olgazdez-tg-2026-11-06` (placeholders `{base}`, `{date}`, `{time}`, `{user}`, `{id}`;
+a file of another shape falls back to `tg-<file name>`). A name already issued gets
+`-2`, `-3`, so a second message from the same person on the same day opens as
+`Olgazdez-tg-2026-11-06-2`. The remote command is `claudeWt.launchInbox` (placeholders `{cwd}`,
 `{script}`, `{file}`, `{name}`), so the session is started by a script on the ssh side
 rather than a bare `claude -n`; the terminal profile comes from `claudeWt.projects` by
 `cwd`, as for project hotkeys.

@@ -26,11 +26,13 @@ import path from 'node:path';
 import {
   inboxRemoteFile,
   inboxSessionName,
+  keepSessionsOf,
   normalizeInboxConfig,
   parseInboxState,
   planInboxTick,
   pruneProcessed,
   serializeInboxState,
+  uniqueSessionName,
 } from '../claude-wt/telegram-inbox-helpers.js';
 
 const TAG = '[telegram-inbox]';
@@ -58,7 +60,7 @@ const defaultFs = {
     try {
       return parseInboxState(fs.readFileSync(file, 'utf8'));
     } catch {
-      return { processed: {} };
+      return { processed: {}, sessions: {} };
     }
   },
   writeState(file, state) {
@@ -117,9 +119,12 @@ function startTelegramInbox({ winMan, log, deps = {} }) {
   };
 
   async function openOne(name, cfg) {
-    const sessionName = inboxSessionName(name);
+    const { name: wanted, warning } = inboxSessionName(name, cfg.sessionName);
+    if (warning) log(`${TAG} ${name}: ${warning}`, 'warn');
+    const sessionName = uniqueSessionName(wanted, new Set(Object.values(state.sessions ?? {})));
     const file = inboxRemoteFile(cfg.fileDir, name);
     state.processed = { ...state.processed, [name]: now() };
+    state.sessions = { ...state.sessions, [name]: sessionName };
     persist();
     // Файл пролежит в корне, пока скрипт на той стороне не унесёт его в
     // processed/, — «пропущен: уже открыт» про только что открытый не пишем.
@@ -194,6 +199,8 @@ function startTelegramInbox({ winMan, log, deps = {} }) {
     const pruned = pruneProcessed(state.processed, plan.present, t);
     if (Object.keys(pruned).length !== Object.keys(state.processed).length) {
       state.processed = pruned;
+      // Выданное имя забывается вместе с файлом: дальше повтор ему не грозит.
+      state.sessions = keepSessionsOf(state.sessions, pruned);
       persist();
     }
 

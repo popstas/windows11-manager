@@ -263,7 +263,7 @@ claudeWt:
       - >-
         exec $SHELL -ic 'cd -- "$1" && exec "$2" "$3" "$4"' claude-wt '{cwd}' '{script}' '{file}' '{name}'
   # Watch a local folder (synced by syncthing) and open a new window with
-  # session `tg-<file name>` for every new *.md in its root — every file its
+  # session `tg-<file name>` (or by sessionName) for every new *.md in its root — every file its
   # own session and window, the open one is never reused. Off by default.
   # Ignored: hidden files, `*.sync-conflict-*`, subfolders (processed/);
   # syncthing temp files (`.syncthing.*.tmp`, `~syncthing~*`) silently. A file is opened once it
@@ -281,6 +281,12 @@ claudeWt:
     cwd: /home/popstas/projects/text/obsidian/ExpertizeMe
     script: .scripts/telegram-incoming
     fileDir: files/incoming-telegram
+    # Session name. {base} is the file name without .md; files named
+    # <date>_<time>_<user>_<id>.md (telegram-resender) also give {date}
+    # {time} {user} {id} — `_` inside {user} is fine. A file of another shape
+    # falls back to tg-{base}. A repeated name gets -2, -3: the window is found
+    # by its title, two windows of one name would fight for focus.
+    sessionName: '{user}-tg-{date}'   # default: tg-{base}
     # terminal: wt      # default: claudeWt.terminal
     # statePath: ''     # default: next to claudeWt.statePath
     pollMs: 3000

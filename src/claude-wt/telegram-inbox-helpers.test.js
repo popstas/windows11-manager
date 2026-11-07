@@ -3,6 +3,9 @@ import {
   inboxSkipReason,
   isSyncthingTemp,
   inboxSessionName,
+  parseInboxFileName,
+  uniqueSessionName,
+  keepSessionsOf,
   inboxRemoteFile,
   normalizeInboxConfig,
   inboxStatePathNextTo,
@@ -39,8 +42,59 @@ describe('inboxSkipReason', () => {
 });
 
 describe('names and paths', () => {
-  it('session name is tg-<basename>', () => {
-    expect(inboxSessionName('2026-11-05-msg.md')).toBe('tg-2026-11-05-msg');
+  it('session name is tg-<basename> without a template', () => {
+    expect(inboxSessionName('2026-11-05-msg.md')).toEqual({ name: 'tg-2026-11-05-msg', warning: null });
+    expect(inboxSessionName('2026-11-05-msg.md', '')).toEqual({ name: 'tg-2026-11-05-msg', warning: null });
+  });
+
+  it('parses <date>_<time>_<user>_<id>.md', () => {
+    expect(parseInboxFileName('2026-11-06_06-04-22_Olgazdez_424254.md')).toEqual({
+      base: '2026-11-06_06-04-22_Olgazdez_424254',
+      date: '2026-11-06',
+      time: '06-04-22',
+      user: 'Olgazdez',
+      id: '424254',
+    });
+    // `_` в имени пользователя Telegram разрешён: id — последний числовой кусок.
+    expect(parseInboxFileName('2026-11-06_06-04-22_Olga_zdez_1.md').user).toBe('Olga_zdez');
+    expect(parseInboxFileName('2026-11-05-msg.md')).toBeNull();
+    expect(parseInboxFileName('2026-11-06_06-04-22__424254.md')).toBeNull();
+  });
+
+  it('renders the template from the file name', () => {
+    const file = '2026-11-06_06-04-22_Olgazdez_424254.md';
+    expect(inboxSessionName(file, '{user}-tg-{date}')).toEqual({ name: 'Olgazdez-tg-2026-11-06', warning: null });
+    expect(inboxSessionName(file, '{user}-{date}-{time}-{id}').name).toBe('Olgazdez-2026-11-06-06-04-22-424254');
+    expect(inboxSessionName(file, 'x-{base}').name).toBe('x-2026-11-06_06-04-22_Olgazdez_424254');
+  });
+
+  it('leaves an unknown placeholder as is', () => {
+    expect(inboxSessionName('2026-11-06_06-04-22_Olgazdez_424254.md', '{user}-{chat}').name)
+      .toBe('Olgazdez-{chat}');
+  });
+
+  it('falls back to tg-<basename> when the file name does not fit the template', () => {
+    const res = inboxSessionName('2026-11-05-msg.md', '{user}-tg-{date}');
+    expect(res.name).toBe('tg-2026-11-05-msg');
+    expect(res.warning).toContain('does not match');
+    // {base} есть у любого файла: разбор не нужен, и откатываться не на что.
+    expect(inboxSessionName('2026-11-05-msg.md', 'x-{base}')).toEqual({ name: 'x-2026-11-05-msg', warning: null });
+  });
+
+  it('falls back when the rendered name cannot reach the remote shell', () => {
+    const file = '2026-11-06_06-04-22_Olgazdez_424254.md';
+    for (const tpl of ['{user};x', "{user}'x", '$HOME-{user}', '   ']) {
+      const res = inboxSessionName(file, tpl);
+      expect(res.name).toBe('tg-2026-11-06_06-04-22_Olgazdez_424254');
+      expect(res.warning).toBeTruthy();
+    }
+  });
+
+  it('numbers a repeated session name', () => {
+    expect(uniqueSessionName('a', new Set())).toBe('a');
+    expect(uniqueSessionName('a', new Set(['a']))).toBe('a-2');
+    expect(uniqueSessionName('a', new Set(['a', 'a-2']))).toBe('a-3');
+    expect(uniqueSessionName('a', new Set(['a-2']))).toBe('a');
   });
 
   it('remote file is vault-relative', () => {
@@ -74,6 +128,11 @@ describe('normalizeInboxConfig', () => {
   it('explicit statePath wins over the derived one', () => {
     const { cfg } = normalizeInboxConfig({ ...full, statePath: '/own.json' }, { statePath: '/s/claude-wt.json' });
     expect(cfg.statePath).toBe('/own.json');
+  });
+
+  it('session name template defaults to tg-{base}', () => {
+    expect(normalizeInboxConfig({}).cfg.sessionName).toBe('tg-{base}');
+    expect(normalizeInboxConfig({ sessionName: ' {user}-tg-{date} ' }).cfg.sessionName).toBe('{user}-tg-{date}');
   });
 
   it('falls back on bad numbers', () => {
@@ -147,14 +206,28 @@ describe('pruneProcessed', () => {
   });
 });
 
+describe('keepSessionsOf', () => {
+  it('keeps session names only of files still remembered', () => {
+    expect(keepSessionsOf({ 'a.md': 'x', 'b.md': 'y' }, { 'a.md': 1 })).toEqual({ 'a.md': 'x' });
+    expect(keepSessionsOf(undefined, { 'a.md': 1 })).toEqual({});
+  });
+});
+
 describe('state file', () => {
   it('round-trips', () => {
-    const text = serializeInboxState({ processed: { 'a.md': 5 } });
-    expect(parseInboxState(text)).toEqual({ processed: { 'a.md': 5 } });
+    const text = serializeInboxState({ processed: { 'a.md': 5 }, sessions: { 'a.md': 'tg-a' } });
+    expect(parseInboxState(text)).toEqual({ processed: { 'a.md': 5 }, sessions: { 'a.md': 'tg-a' } });
+  });
+
+  it('reads a state file written before session names were kept', () => {
+    expect(parseInboxState('{"version":1,"processed":{"a.md":5}}'))
+      .toEqual({ processed: { 'a.md': 5 }, sessions: {} });
   });
 
   it('broken file is an empty memory', () => {
-    expect(parseInboxState('{oops')).toEqual({ processed: {} });
-    expect(parseInboxState('{"processed":{"a.md":"x"}}')).toEqual({ processed: {} });
+    expect(parseInboxState('{oops')).toEqual({ processed: {}, sessions: {} });
+    expect(parseInboxState('{"processed":{"a.md":"x"}}')).toEqual({ processed: {}, sessions: {} });
+    expect(parseInboxState('{"processed":{"a.md":5},"sessions":{"a.md":7,"b.md":"x"}}'))
+      .toEqual({ processed: { 'a.md': 5 }, sessions: {} });
   });
 });

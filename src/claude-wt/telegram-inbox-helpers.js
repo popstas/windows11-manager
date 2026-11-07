@@ -4,7 +4,7 @@
  * Цепочка целиком: telegram-resender на pc-virt кладёт файл на каждую
  * пересылку в `files/incoming-telegram/` vault'а, syncthing довозит его сюда,
  * наблюдатель (`src/mqtt/telegram-inbox.js`) видит новый файл и открывает окно
- * терминала с сессией `tg-<имя>` — тем же путём, что проектный хоткей, только
+ * терминала с сессией `tg-<имя>` (или по шаблону `sessionName`) — тем же путём, что проектный хоткей, только
  * без поиска уже открытого окна: каждая пересылка — своя сессия и своё окно.
  */
 
@@ -46,9 +46,64 @@ function isSyncthingTemp(name) {
   return n.startsWith('~syncthing~') || /^\.syncthing\..*\.tmp$/.test(n);
 }
 
-/** `2026-11-05-123.md` → `tg-2026-11-05-123`. */
-function inboxSessionName(name) {
-  return `tg-${String(name).replace(/\.md$/i, '')}`;
+const DEFAULT_SESSION_NAME = 'tg-{base}';
+
+// Имя файла от telegram-resender: `2026-11-06_06-04-22_Olgazdez_424254.md`.
+// `_` в имени пользователя Telegram разрешён, поэтому id — последний числовой
+// кусок, а пользователь — всё между временем и им.
+const INBOX_FILE_NAME = /^(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})_(.+)_(\d+)\.md$/i;
+const PARSED_KEYS = ['date', 'time', 'user', 'id'];
+
+/** `<date>_<time>_<user>_<id>.md` → части имени; другой формат — `null`. */
+function parseInboxFileName(name) {
+  const m = INBOX_FILE_NAME.exec(String(name ?? ''));
+  if (!m) return null;
+  const [, date, time, user, id] = m;
+  return { base: String(name).replace(/\.md$/i, ''), date, time, user, id };
+}
+
+/**
+ * Имя сессии по шаблону `claudeWt.telegramInbox.sessionName`.
+ *
+ * Подстановки: `{base}` (имя без `.md`) у любого файла, `{date}`, `{time}`,
+ * `{user}`, `{id}` — у файла формата `<date>_<time>_<user>_<id>.md`.
+ * Незнакомая подстановка остаётся как есть. Не вышло — `tg-{base}` и
+ * `warning` для журнала: файл всё равно должен открыться.
+ */
+function inboxSessionName(file, template = DEFAULT_SESSION_NAME) {
+  const base = String(file).replace(/\.md$/i, '');
+  const fallback = `tg-${base}`;
+  const tpl = template || DEFAULT_SESSION_NAME;
+  const parsed = parseInboxFileName(file);
+  if (!parsed && PARSED_KEYS.some(k => tpl.includes(`{${k}}`))) {
+    return { name: fallback, warning: `name does not match <date>_<time>_<user>_<id>.md, session named ${fallback}` };
+  }
+  const vars = { base, ...parsed };
+  const name = tpl.replace(/\{(base|date|time|user|id)\}/g, (_, k) => vars[k]).trim();
+  if (!name || UNSAFE_NAME.test(name) || hasControlChar(name)) {
+    return { name: fallback, warning: `sessionName '${tpl}' gives a name the launch command cannot carry, session named ${fallback}` };
+  }
+  return { name, warning: null };
+}
+
+/**
+ * Повтор имени — с номером: `a`, `a-2`, `a-3`. Окно ищется по заголовку, а
+ * заголовок — имя сессии: два окна с одним именем путают фокус.
+ */
+function uniqueSessionName(name, used = new Set()) {
+  if (!used.has(name)) return name;
+  let n = 2;
+  while (used.has(`${name}-${n}`)) n += 1;
+  return `${name}-${n}`;
+}
+
+/** Выданные имена сессий — только у файлов, которые ещё помнятся. */
+function keepSessionsOf(sessions = {}, processed = {}) {
+  const out = {};
+  for (const [file, name] of Object.entries(sessions ?? {})) {
+    if (Object.hasOwn(processed, file) && typeof name === 'string') out[file] = name;
+  }
+  return out;
 }
 
 /** Путь файла относительно `cwd` той стороны: `files/incoming-telegram/<имя>.md`. */
@@ -72,6 +127,7 @@ function normalizeInboxConfig(raw = {}, { statePath = '' } = {}) {
     script: str(raw.script),
     fileDir: str(raw.fileDir),
     terminal: str(raw.terminal),
+    sessionName: str(raw.sessionName) || DEFAULT_SESSION_NAME,
     statePath: str(raw.statePath) || inboxStatePathNextTo(statePath),
     pollMs: Math.max(250, positive(raw.pollMs, 3000)),
     settleMs: positive(raw.settleMs, 2000),
@@ -147,7 +203,11 @@ function pruneProcessed(processed = {}, present = new Set(), now, keepMs = PROCE
   return out;
 }
 
-/** Разбор файла состояния; битый или чужой — пустая память, а не отказ. */
+/**
+ * Разбор файла состояния; битый или чужой — пустая память, а не отказ.
+ * `sessions` (файл → выданное имя сессии) появился позже `processed`: у
+ * старого файла его нет, и это не повод забыть открытые.
+ */
 function parseInboxState(text) {
   try {
     const data = JSON.parse(text);
@@ -157,20 +217,24 @@ function parseInboxState(text) {
         if (Number.isFinite(at)) processed[name] = at;
       }
     }
-    return { processed };
+    const raw = data && typeof data.sessions === 'object' && data.sessions ? data.sessions : {};
+    return { processed, sessions: keepSessionsOf(raw, processed) };
   } catch {
-    return { processed: {} };
+    return { processed: {}, sessions: {} };
   }
 }
 
-function serializeInboxState({ processed = {} } = {}) {
-  return `${JSON.stringify({ version: STATE_VERSION, processed }, null, 2)}\n`;
+function serializeInboxState({ processed = {}, sessions = {} } = {}) {
+  return `${JSON.stringify({ version: STATE_VERSION, processed, sessions }, null, 2)}\n`;
 }
 
 export {
   inboxSkipReason,
   isSyncthingTemp,
   inboxSessionName,
+  parseInboxFileName,
+  uniqueSessionName,
+  keepSessionsOf,
   inboxRemoteFile,
   normalizeInboxConfig,
   inboxStatePathNextTo,

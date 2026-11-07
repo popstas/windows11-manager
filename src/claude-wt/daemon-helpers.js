@@ -56,6 +56,9 @@ const CLAUDE_WT_DEFAULTS = {
     script: '.scripts/telegram-incoming',
     fileDir: 'files/incoming-telegram',
     terminal: '',
+    // Имя сессии: {base} — имя файла без .md; {date} {time} {user} {id} — у
+    // файлов `<date>_<time>_<user>_<id>.md`. Повтор получает `-2`, `-3`.
+    sessionName: 'tg-{base}',
     statePath: '',
     pollMs: 3000,
     settleMs: 2000,

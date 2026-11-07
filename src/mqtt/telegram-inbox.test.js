@@ -95,6 +95,57 @@ describe('startTelegramInbox', () => {
     expect(Object.keys(saved.processed).sort()).toEqual(['a.md', 'b.md']);
   });
 
+  it('names sessions by the template and numbers a repeat, across a restart too', async () => {
+    const inbox = { sessionName: '{user}-tg-{date}' };
+    const clock = { t: 0 };
+    put('2026-11-06_06-04-22_Olgazdez_424254.md');
+    put('2026-11-06_07-00-00_Olgazdez_424255.md');
+    const first = setup({ inbox, clock });
+    await first.pass();
+    await first.pass();
+    expect(first.opened.map(r => r.name)).toEqual(['Olgazdez-tg-2026-11-06', 'Olgazdez-tg-2026-11-06-2']);
+    expect(first.logged).toContain(
+      '[telegram-inbox] open 2026-11-06_07-00-00_Olgazdez_424255.md as Olgazdez-tg-2026-11-06-2 '
+      + '(files/incoming-telegram/2026-11-06_07-00-00_Olgazdez_424255.md)',
+    );
+    first.watcher.stop();
+
+    put('2026-11-06_08-00-00_Olgazdez_424256.md');
+    put('2026-11-07_08-00-00_Olgazdez_424257.md');
+    const second = setup({ inbox, clock });
+    await second.pass();
+    await second.pass();
+    expect(second.opened.map(r => r.name)).toEqual(['Olgazdez-tg-2026-11-06-3', 'Olgazdez-tg-2026-11-07']);
+    const saved = JSON.parse(fs.readFileSync(path.join(root, 'state', 'telegram-inbox.json'), 'utf8'));
+    expect(saved.sessions['2026-11-06_08-00-00_Olgazdez_424256.md']).toBe('Olgazdez-tg-2026-11-06-3');
+  });
+
+  it('a file that does not fit the template opens as tg-<name>, with a warning', async () => {
+    put('note.md');
+    const { opened, logged, pass } = setup({ inbox: { sessionName: '{user}-tg-{date}' } });
+    await pass();
+    await pass();
+    expect(opened.map(r => r.name)).toEqual(['tg-note']);
+    expect(logged.some(l => l.startsWith('warn: [telegram-inbox] note.md:') && l.includes('does not match'))).toBe(true);
+  });
+
+  it('forgets an issued session name together with its file', async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const inbox = { sessionName: '{user}-tg-{date}' };
+    const clock = { t: 0 };
+    const file = '2026-11-06_06-04-22_Olgazdez_424254.md';
+    put(file);
+    const { pass } = setup({ inbox, clock });
+    await pass();
+    await pass();
+    fs.renameSync(path.join(dir, file), path.join(dir, 'processed', file));
+    clock.t += 2 * day;
+    await pass();
+    const saved = JSON.parse(fs.readFileSync(path.join(root, 'state', 'telegram-inbox.json'), 'utf8'));
+    expect(saved.processed).toEqual({});
+    expect(saved.sessions).toEqual({});
+  });
+
   it('treats files already lying there at start as new, opening them one by one', async () => {
     put('1.md'); put('2.md'); put('3.md');
     const { winMan, opened, logged, pass } = setup();
