@@ -124,6 +124,33 @@ describe('buildWindowsFile', () => {
     expect(out.http).toEqual({ port: 9722 });
   });
 
+  // Имя машины (`host`) с pc-virt не резолвится (popstas-nb → EAI_AGAIN), и
+  // читателю нужен адрес, по которому до слушателя доходят оттуда. Его знает
+  // только человек — ключ `httpHost` конфига.
+  it('names the http host when one is configured', () => {
+    const out = buildWindowsFile({
+      windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000,
+      httpPort: 9722, httpHost: ' nb.popstas.pro ',
+    });
+    expect(out.http).toEqual({ port: 9722, host: 'nb.popstas.pro' });
+  });
+
+  it('omits http.host when it is empty or junk', () => {
+    for (const httpHost of ['', '  ', 42, null, undefined]) {
+      const out = buildWindowsFile({
+        windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000, httpPort: 9722, httpHost,
+      });
+      expect(out.http).toEqual({ port: 9722 });
+    }
+  });
+
+  it('a host without a port is still no http at all', () => {
+    const out = buildWindowsFile({
+      windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000, httpHost: 'nb.popstas.pro',
+    });
+    expect('http' in out).toBe(false);
+  });
+
   // Ключа нет вовсе, а не `null` и не ноль: читатель отличает «порта не знаю»
   // от «порт такой» наличием ключа, и это то же правило, по которому пустой
   // `mqttBase` значит «спроси свой конфиг».

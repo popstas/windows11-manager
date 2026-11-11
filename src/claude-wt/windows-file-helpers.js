@@ -35,7 +35,7 @@ const WINDOWS_FILE_HEARTBEAT_MS = 30_000;
  * видит, и без этой его список продолжал бы звать к сессии, на которую уже
  * сходили руками.
  */
-function buildWindowsFile({ windows, slots, host, pid, nowMs, snapshots, projects, httpPort }) {
+function buildWindowsFile({ windows, slots, host, pid, nowMs, snapshots, projects, httpPort, httpHost }) {
   const out = {};
   for (const w of windows ?? []) {
     const id = w?.sessionId;
@@ -81,8 +81,14 @@ function buildWindowsFile({ windows, slots, host, pid, nowMs, snapshots, project
   // наличием ключа, ровно как у `mqttBase` пустая строка значит «спроси свой
   // конфиг». Ноль и строка читаются как отсутствие — конфиг правит человек.
   const port = Number(httpPort);
+  //
+  // `host` — адрес, по которому слушатель доступен с той стороны (ключ
+  // `httpHost` конфига): имя машины из `host` выше с pc-virt может не
+  // резолвиться вовсе. Нет его — ключа нет, и читатель берёт имя машины, как
+  // раньше.
+  const reachableHost = typeof httpHost === 'string' ? httpHost.trim() : '';
   const http = Number.isFinite(port) && port > 0 && typeof httpPort === 'number'
-    ? { port }
+    ? { port, ...(reachableHost ? { host: reachableHost } : {}) }
     : null;
   // Секунды, а не миллисекунды: рядом лежит `lastSeen` в секундах, и читатель —
   // python на другой машине, которому проще сравнивать с time.time().
