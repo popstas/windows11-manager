@@ -32,10 +32,15 @@ const STALE_SLOT_SWEEP = 20;
 
 function createHaExport({ winMan, publish, log, config }) {
   const ha = config?.homeassistant ?? {};
+  // Выключенный на машине claude-wt (popstas-pc без V:) — экспорту нечего
+  // экспортировать: без этого отказ «claudeWt.enabled is false» шёл в лог
+  // error'ом на каждом тике. Об этом — одна строка на старте процесса.
+  const claudeWtOff = config?.claudeWt?.enabled === false;
+  let offLogged = false;
   const cfg = {
     slots: ha.slots ?? 10,
     interval: (ha.interval ?? 15) * 1000,
-    enabled: ha.enabled !== false,
+    enabled: ha.enabled !== false && !claudeWtOff,
     // Закрытые сессии на панели только мешают: строк там единицы, и каждая,
     // занятая давно закрытой сессией, вытесняет живую.
     openOnly: ha.openOnly !== false,
@@ -93,6 +98,10 @@ function createHaExport({ winMan, publish, log, config }) {
      * пятнадцати секунд с пустым устройством незачем.
      */
     start() {
+      if (claudeWtOff && ha.enabled !== false && !offLogged) {
+        offLogged = true;
+        log('home assistant: claudeWt.enabled is false, session slots are not exported');
+      }
       if (!cfg.enabled) return;
       announced = null;
       publishAll(removalMessages(base, cfg.slots + 1, cfg.slots + STALE_SLOT_SWEEP));

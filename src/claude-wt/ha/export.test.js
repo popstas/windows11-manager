@@ -24,6 +24,42 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe('createHaExport', () => {
+  // claude-wt выключен на машине (popstas-pc без V:): спрашивать сессии
+  // незачем — отказ «claudeWt.enabled is false» шёл в лог error'ом каждые 15 с.
+  describe('при claudeWt.enabled: false', () => {
+    function makeOff() {
+      const log = vi.fn();
+      const claudeWtSessions = vi.fn().mockReturnValue({ ok: false, reason: 'claudeWt.enabled is false in config' });
+      const publish = vi.fn();
+      const exporter = createHaExport({
+        winMan: { claudeWtSessions },
+        publish,
+        log,
+        config: { base: 'b', homeassistant: { slots: 2, interval: 15 }, claudeWt: { enabled: false } },
+      });
+      return { exporter, log, claudeWtSessions, publish };
+    }
+
+    it('не спрашивает сессий и не заводит таймера', () => {
+      const { exporter, claudeWtSessions, publish } = makeOff();
+      exporter.start();
+      vi.advanceTimersByTime(60000);
+      exporter.refresh(0);
+      vi.advanceTimersByTime(1000);
+      expect(claudeWtSessions).not.toHaveBeenCalled();
+      expect(publish).not.toHaveBeenCalled();
+    });
+
+    it('пишет в лог одну строку, сколько бы раз ни переподключались', () => {
+      const { exporter, log } = makeOff();
+      exporter.start();
+      exporter.start();
+      vi.advanceTimersByTime(60000);
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(log.mock.calls[0][0]).toContain('claudeWt.enabled is false');
+    });
+  });
+
   it('в слоты идут только открытые сессии', () => {
     const { exporter } = make();
     exporter.start();
