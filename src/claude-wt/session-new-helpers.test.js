@@ -20,6 +20,7 @@ describe('parseSessionNewRequest', () => {
         head: '-',
         headId: '-',
       },
+      zone: null,
     });
   });
 
@@ -92,6 +93,49 @@ describe('parseSessionNewRequest', () => {
     ['name', 'a\nb'],
   ])('400 for %s that the launch command cannot carry', (key, value) => {
     expect(parseSessionNewRequest({ ...BODY, [key]: value }, OPTS)).toMatchObject({ ok: false, status: 400 });
+  });
+
+  // Зона окна ребёнка (окна head и детей по зонам FancyZones): пара обязана
+  // быть из claudeWt.headZones, иначе 400 — голове есть кому сказать.
+  describe('zone', () => {
+    const HZ = { 1: [3, 4], 3: [1, 4] };
+
+    it('zone из headZones проходит', () => {
+      expect(parseSessionNewRequest({ ...BODY, zone: { monitor: 1, position: 4 } }, { ...OPTS, headZones: HZ }).zone)
+        .toEqual({ monitor: 1, position: 4 });
+    });
+
+    it('без zone — null', () => {
+      expect(parseSessionNewRequest(BODY, { ...OPTS, headZones: HZ }).zone).toBeNull();
+      expect(parseSessionNewRequest({ ...BODY, zone: null }, { ...OPTS, headZones: HZ }).zone).toBeNull();
+    });
+
+    it('zone не трогает переменные шаблона запуска', () => {
+      const res = parseSessionNewRequest({ ...BODY, zone: { monitor: 1, position: 4 } }, { ...OPTS, headZones: HZ });
+      expect(res.vars).not.toHaveProperty('zone');
+    });
+
+    it.each([
+      ['строки', { monitor: '1', position: '4' }],
+      ['дробь', { monitor: 1, position: 4.5 }],
+      ['не пара headZones', { monitor: 1, position: 1 }],
+      ['монитора нет', { monitor: 2, position: 1 }],
+      ['массив', [1, 4]],
+      ['строка', '1:4'],
+    ])('400 для zone: %s', (_, zone) => {
+      expect(parseSessionNewRequest({ ...BODY, zone }, { ...OPTS, headZones: HZ })).toMatchObject({ ok: false, status: 400 });
+    });
+
+    it('в отказе перечислены допустимые зоны', () => {
+      const res = parseSessionNewRequest({ ...BODY, zone: { monitor: 1, position: 1 } }, { ...OPTS, headZones: HZ });
+      expect(res.reason).toContain('1:3, 1:4, 3:1, 3:4');
+    });
+
+    it('zone при пустых headZones — 400 с причиной про headZones', () => {
+      const res = parseSessionNewRequest({ ...BODY, zone: { monitor: 1, position: 4 } }, OPTS);
+      expect(res).toMatchObject({ ok: false, status: 400 });
+      expect(res.reason).toContain('headZones');
+    });
   });
 
   it('accepts a JSON string body', () => {

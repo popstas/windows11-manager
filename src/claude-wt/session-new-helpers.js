@@ -43,11 +43,34 @@ function parseBody(raw) {
 const fail = (status, reason) => ({ ok: false, status, reason });
 
 /**
- * @param {object|string} raw тело просьбы
- * @param {{ projects: Array<{cwd: string}>, newId: () => string }} opts
- * @returns {{ ok: true, vars: object } | { ok: false, status: number, reason: string }}
+ * Зона окна ребёнка: `{monitor, position}`, целые числа, пара из
+ * `claudeWt.headZones`. Строки не принимаются — их шлёт не человек, а
+ * session-spawn, и `'1'` там означает ошибку на той стороне.
+ *
+ * Есть ли у зоны прямоугольник прямо сейчас (монитор может быть отключён),
+ * здесь не решается: это видно только по живым мониторам, и такой отказ —
+ * откат на прежнее место с warn, а не 400.
  */
-function parseSessionNewRequest(raw, { projects = [], newId } = {}) {
+function parseZone(raw, headZones) {
+  if (raw === undefined || raw === null) return { zone: null };
+  const known = Object.entries(headZones ?? {})
+    .flatMap(([monitor, pair]) => pair.map(position => `${monitor}:${position}`));
+  if (!known.length) return { error: 'zone given, but claudeWt.headZones is not set on this machine' };
+  const ok = raw && typeof raw === 'object' && !Array.isArray(raw)
+    && Number.isInteger(raw.monitor) && Number.isInteger(raw.position)
+    && known.includes(`${raw.monitor}:${raw.position}`);
+  if (!ok) return { error: `zone must be one of ${known.join(', ')}` };
+  return { zone: { monitor: raw.monitor, position: raw.position } };
+}
+
+/**
+ * @param {object|string} raw тело просьбы
+ * @param {{ projects: Array<{cwd: string}>, newId: () => string,
+ *   headZones?: Record<string,[number,number]> }} opts
+ * @returns {{ ok: true, vars: object, zone: {monitor:number, position:number}|null }
+ *   | { ok: false, status: number, reason: string }}
+ */
+function parseSessionNewRequest(raw, { projects = [], newId, headZones = {} } = {}) {
   const body = parseBody(raw);
   if (!body) return fail(400, 'body must be a JSON object');
 
@@ -90,6 +113,8 @@ function parseSessionNewRequest(raw, { projects = [], newId } = {}) {
   if (values.permissionMode && !PERMISSION_MODES.includes(values.permissionMode)) {
     return fail(400, `permissionMode must be one of ${PERMISSION_MODES.join(', ')}`);
   }
+  const { zone, error: zoneError } = parseZone(body.zone, headZones);
+  if (zoneError) return fail(400, zoneError);
 
   return {
     ok: true,
@@ -102,6 +127,7 @@ function parseSessionNewRequest(raw, { projects = [], newId } = {}) {
       head: values.head || EMPTY,
       headId: values.headId || EMPTY,
     },
+    zone,
   };
 }
 
