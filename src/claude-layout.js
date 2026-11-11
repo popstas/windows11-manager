@@ -17,6 +17,7 @@ import { orderSessions } from './claude-wt/ha/session-slots.js';
 import { normalizeSort } from './claude-wt/ha/session-groups.js';
 import { arrange, groupByDesktop, pickFocusTarget, toWindowSpace } from './claude-layout-helpers.js';
 import { startTiming } from './claude-wt/timing.js';
+import { arrangeGroup } from './claude-wt/group-layout.js';
 
 /**
  * Зоны из `claudeWt.tileZones`, разрешённые в прямоугольники.
@@ -276,7 +277,10 @@ async function resolveCurrentDesktop(items, activeId, log) {
  * безразличен (перекрытий нет), но поднимать её всё равно надо: раскладка
  * зовётся, чтобы увидеть сессии, а стоят они за чужими окнами.
  */
-async function arrangeClaudeWindows({ mode, ids = [], log = () => {} }) {
+async function arrangeClaudeWindows({ mode, ids = [], groups: headGroups = [], selected = null, log = () => {} }) {
+  // Группа «head + дети» раскладывается по claudeWt.headZones, а не по
+  // tileZones: своя дорога целиком (src/claude-wt/group-layout.js).
+  if (mode === 'group') return arrangeGroup({ groups: headGroups, selected, log });
   const mark = startTiming(`place ${mode}`);
   const zones = resolveZones(log, mode);
   mark('zones');

@@ -193,16 +193,16 @@ async function start() {
 
   claudeWt
     .command('place <mode>')
-    .description('разложить окна сессий claude: tile | cascade')
+    .description('разложить окна сессий claude: tile | cascade | \'{"mode":"group","groups":[[head, детей...]],"selected":id}\'')
     .action(async (mode) => {
       const { parseArrangePayload } = await import('./claude-layout-helpers.js');
       const parsed = parseArrangePayload(mode);
       if (!parsed) {
-        console.log(`unknown layout: ${mode} (ожидается tile или cascade)`);
+        console.log(`unknown layout: ${mode} (ожидается tile, cascade или json с mode: group)`);
         process.exit(1);
       }
       const res = await winMan.arrangeClaudeWindows({
-        mode: parsed.mode,
+        ...parsed,
         log: (message, level = 'info') => {
           if (level === 'error') console.error(message);
           else if (level === 'warn') console.warn(message);

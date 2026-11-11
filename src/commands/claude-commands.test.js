@@ -541,6 +541,15 @@ describe('claude-place', () => {
     );
   });
 
+  // Пикер шлёт группы «head + дети» и подсвеченную строку.
+  it('group доезжает с groups и selected', async () => {
+    const d = deps();
+    await claudeCommands(d)['claude-place']({ mode: 'group', groups: [['h', 'c']], selected: 'c' });
+    expect(d.winMan.arrangeClaudeWindows).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'group', groups: [['h', 'c']], selected: 'c' }),
+    );
+  });
+
   it('незнакомая раскладка — жалоба в журнал и ни одного движения', async () => {
     const d = deps();
     await claudeCommands(d)['claude-place']('mosaic');

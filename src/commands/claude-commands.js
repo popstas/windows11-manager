@@ -221,7 +221,9 @@ function claudeCommands({ winMan, log, notify, slots }) {
       }
       let res;
       try {
-        res = await winMan.arrangeClaudeWindows({ mode: parsed.mode, ids: parsed.ids, log });
+        res = await winMan.arrangeClaudeWindows({
+          mode: parsed.mode, ids: parsed.ids, groups: parsed.groups, selected: parsed.selected, log,
+        });
       } catch (e) {
         log(`claude-place ${parsed.mode}: ${e.message}`, 'error');
         notify(`claude-wt: ошибка раскладки — ${e.message}`);
