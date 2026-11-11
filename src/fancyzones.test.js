@@ -137,4 +137,26 @@ describe('fancyZonesToPos', () => {
     const pos = fancyZonesToPos({ monitor: 1, position: 1 });
     expect(pos).toEqual({ x: 735, y: 0, width: 810, height: 1382 });
   });
+
+  // headZones (окна head и детей) нельзя разрешать через positionsMap: зона
+  // отключённого монитора тихо легла бы на другой экран, и режим free
+  // посчитал бы одно место двумя свободными зонами.
+  it('positionsFallback: false не идёт в positionsMap за отсутствующей зоной', async () => {
+    const uuid = 'zone-uuid';
+    fs.writeFileSync(path.join(toPosDir, 'applied-layouts.json'), JSON.stringify({
+      'applied-layouts': [
+        { device: { monitor: 1 }, 'applied-layout': { type: 'custom', uuid } },
+      ],
+    }));
+    fs.writeFileSync(path.join(toPosDir, 'custom-layouts.json'), JSON.stringify({
+      'custom-layouts': [
+        { uuid, info: { zones: [{ X: 0, Y: 0, width: 960, height: 1080 }] } },
+      ],
+    }));
+    toPosConfig.positionsMap = [{ from: { monitor: 1, position: 9 }, to: { monitor: 1, position: 1 } }];
+
+    const { fancyZonesToPos } = await import('./fancyzones.js');
+    expect(fancyZonesToPos({ monitor: 1, position: 9 })).toEqual({ x: 0, y: 0, width: 768, height: 864 });
+    expect(fancyZonesToPos({ monitor: 1, position: 9 }, { positionsFallback: false })).toBeUndefined();
+  });
 });

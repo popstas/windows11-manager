@@ -3,7 +3,16 @@ import { getConfig } from './config.js';
 import { getFancyZoneMonitor } from './monitors.js';
 import { calcFancyZonePos } from './fancyzones-helpers.js';
 
-function getFancyZoneInfo(opts) {
+/**
+ * Монитор, раскладка и зона FancyZones по номерам.
+ *
+ * Зона не нашлась — правила размещения откатываются через `positionsMap`
+ * (`{ positionsFallback: false }` это выключает). Откат нужен правилам: им
+ * лучше похожая зона на живом мониторе, чем никакой. Зонам head и детей
+ * (`claudeWt.headZones`) он вреден — зона отключённого монитора тихо
+ * разрешилась бы на другом экране.
+ */
+function getFancyZoneInfo(opts, { positionsFallback = true } = {}) {
   let monitor, layout, zone;
   const config = getConfig();
   opts = { ...opts, monitor: Number(opts.monitor), position: Number(opts.position) };
@@ -23,7 +32,7 @@ function getFancyZoneInfo(opts) {
     if (!layout) return false;
     zone = layout.info.zones[opts.position - 1];
   }
-  if (!zone) {
+  if (!zone && positionsFallback) {
     const backup = config.positionsMap.find(p => p.from.monitor === opts.monitor && p.from.position === opts.position);
     if (backup) {
       const res = getFancyZoneInfo(backup.to);
@@ -36,8 +45,8 @@ function getFancyZoneInfo(opts) {
   return { monitor, layout, zone };
 }
 
-function fancyZonesToPos(opts) {
-  const { monitor, zone } = getFancyZoneInfo(opts);
+function fancyZonesToPos(opts, { positionsFallback = true } = {}) {
+  const { monitor, zone } = getFancyZoneInfo(opts, { positionsFallback });
   if (!zone) {
     console.log(`Zone not found: ${JSON.stringify(opts)}`);
     return;
