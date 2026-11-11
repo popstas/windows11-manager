@@ -17,6 +17,7 @@
 /** @typedef {{monitor:number|null, zone:number|null, slot:1|2|3|null}} Location */
 
 import { isMinimized } from '../windows-helpers.js';
+import { stackInCell } from '../claude-layout-helpers.js';
 
 const PLACEMENTS = ['stack', 'free'];
 
@@ -175,6 +176,97 @@ function locateWindow(bounds, layout) {
   };
 }
 
+/**
+ * Стопка детей одного head в зоне: где встанет новый и кто из своих сдвинется.
+ *
+ * `own` — видимые дети этого head, уже стоящие в зоне. Пока их меньше трёх,
+ * зона делится на `k + 1` равных мест, свои переставляются на места 1..k в
+ * порядке их нынешнего положения сверху вниз (перестановка при открытии —
+ * решение Стаса, на закрытие окна она не распространяется), новый — на
+ * место `k + 1`. С трёх и больше сетка остаётся из трёх мест, новый ложится
+ * поверх места `(k mod 3) + 1`, а остальные не двигаются: высота окна никогда
+ * не меньше трети зоны.
+ *
+ * @param {{ zone: Rect, own: {id: string, rect: Rect}[] }} opts
+ * @returns {{ moves: {id: string, pos: Rect}[], pos: Rect }}
+ */
+function stackPlan({ zone, own }) {
+  const k = own.length;
+  if (k >= MAX_SLOTS) return { moves: [], pos: stackInCell(zone, MAX_SLOTS)[k % MAX_SLOTS] };
+  const places = stackInCell(zone, k + 1);
+  const ordered = [...own].sort((a, b) => a.rect.y - b.rect.y);
+  return {
+    moves: ordered.map((c, i) => ({ id: c.id, pos: places[i] })),
+    pos: places[k],
+  };
+}
+
+/**
+ * Место поверх чужих окон: сетка из трёх, место `(count mod 3) + 1`, никто
+ * не двигается. Так режим `free` делит зону чужой группы, когда других
+ * вариантов нет.
+ */
+function overlayPos(zone, count) {
+  return stackInCell(zone, MAX_SLOTS)[count % MAX_SLOTS];
+}
+
+/**
+ * Зона ребёнка в режиме `stack`: соседняя основная зона монитора head, а если
+ * head не в основной зоне (развёрнут, перетащен руками) — вторая зона пары.
+ * Монитор head не в headZones или неизвестен — null, и окно ставится как
+ * раньше.
+ */
+function pickStackZone({ headLoc, headZones }) {
+  const pair = headLoc?.monitor != null ? headZones?.[headLoc.monitor] : null;
+  if (!pair) return null;
+  const position = headLoc.zone === pair[1] ? pair[0] : pair[1];
+  return { monitor: headLoc.monitor, position };
+}
+
+/**
+ * Порядок перебора зон режима `free`: сначала пара монитора head, потом
+ * остальные мониторы по возрастанию номера, внутри пары — её порядок. Только
+ * зоны, у которых сейчас есть прямоугольник (`available`).
+ */
+function freeCandidates({ headZones, headMonitor, available }) {
+  const byKey = new Map((available ?? []).map(z => [zoneKey(z.monitor, z.position), z]));
+  const monitors = Object.keys(headZones ?? {}).map(Number).sort((a, b) => a - b);
+  const order = monitors.includes(headMonitor)
+    ? [headMonitor, ...monitors.filter(m => m !== headMonitor)]
+    : monitors;
+  const out = [];
+  for (const m of order) {
+    for (const p of headZones[m]) {
+      const z = byKey.get(zoneKey(m, p));
+      if (z) out.push(z);
+    }
+  }
+  return out;
+}
+
+/**
+ * Зона режима `free`.
+ *
+ * `occupancy` по ключу зоны: `own` — видимые дети этого head, `foreign` —
+ * все остальные окна сессий со стола head, включая самого head. Порядок
+ * предпочтений:
+ * 1. пустая зона — первая по кандидатам;
+ * 2. зона только своих детей — где их меньше, при равенстве первая; дальше
+ *    правило стопки;
+ * 3. везде чужие — где окон меньше всего; новое окно ложится поверх
+ *    (`overlay`), чужие не двигаются.
+ */
+function pickFreeZone({ candidates, occupancy }) {
+  const occ = z => occupancy.get(zoneKey(z.monitor, z.position)) ?? { own: 0, foreign: 0 };
+  const empty = candidates.find(z => occ(z).own + occ(z).foreign === 0);
+  if (empty) return { zone: empty, how: 'stack' };
+  const minBy = (list, f) => list.reduce((best, z) => (best === null || f(z) < f(best) ? z : best), null);
+  const ownOnly = minBy(candidates.filter(z => occ(z).foreign === 0), z => occ(z).own);
+  if (ownOnly) return { zone: ownOnly, how: 'stack' };
+  const least = minBy(candidates, z => occ(z).own + occ(z).foreign);
+  return least ? { zone: least, how: 'overlay' } : null;
+}
+
 export {
   ZONE_MIN_SHARE,
   MAX_SLOTS,
@@ -187,4 +279,9 @@ export {
   slotInZone,
   monitorOfRect,
   locateWindow,
+  stackPlan,
+  overlayPos,
+  pickStackZone,
+  freeCandidates,
+  pickFreeZone,
 };
