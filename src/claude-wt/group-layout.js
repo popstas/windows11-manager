@@ -69,30 +69,31 @@ function pairRects(layout, headZones, monitor) {
  */
 async function arrangeGroup({ groups, selected, log = () => {} }, deps = {}) {
   const d = { ...DEFAULT_DEPS, ...deps };
-  if (!groups?.length) return { ok: false, reason: `${TAG}: группы не переданы` };
+  // Причины — без префикса: команда пишет их строкой `claude-place group: …`.
+  if (!groups?.length) return { ok: false, reason: 'группы не переданы' };
   const activeBefore = d.activeId();
   const res = d.sessions({ brief: true });
-  if (!res?.ok) return { ok: false, reason: res?.reason ?? `${TAG}: список сессий не прочитался` };
+  if (!res?.ok) return { ok: false, reason: res?.reason ?? 'список сессий не прочитался' };
   const open = res.sessions.filter(s => s.open && s.windowId);
   const activeSession = open.find(s => s.windowId === activeBefore)?.id ?? null;
   const group = pickGroup({ groups, selected, activeId: activeSession });
-  if (!group) return { ok: false, reason: `${TAG}: ни одна группа не содержит выбранную или активную сессию` };
+  if (!group) return { ok: false, reason: 'ни одна группа не содержит выбранную или активную сессию' };
 
   const [headId, ...kidIds] = group;
   const hs = open.find(s => s.id === headId);
   const headW = hs ? d.getWindow(hs.windowId) : null;
   const headRect = boundsOf(headW);
-  if (!headRect) return { ok: false, reason: `${TAG}: окно head ${headId} здесь не открыто или свёрнуто` };
+  if (!headRect) return { ok: false, reason: `окно head ${headId} здесь не открыто или свёрнуто` };
 
   const cfg = d.cfg();
   const layout = d.layout({ headZones: cfg.headZones, problems: cfg.headZonesProblems, log });
-  if (!layout) return { ok: false, reason: `${TAG}: основные зоны (claudeWt.headZones) не разрешились` };
+  if (!layout) return { ok: false, reason: 'основные зоны (claudeWt.headZones) не разрешились' };
   const monitor = locateWindow(headRect, layout).monitor;
   let rects = pairRects(layout, cfg.headZones, monitor);
   if (!rects) {
     const fallback = Object.keys(cfg.headZones).map(Number).sort((a, b) => a - b)
       .find(m => pairRects(layout, cfg.headZones, m));
-    if (fallback === undefined) return { ok: false, reason: `${TAG}: ни у одного монитора headZones нет обеих зон` };
+    if (fallback === undefined) return { ok: false, reason: 'ни у одного монитора headZones нет обеих зон' };
     log(`${TAG}: монитор head (${monitor ?? '?'}) не в claudeWt.headZones — раскладываю на мониторе ${fallback}`, 'warn');
     rects = pairRects(layout, cfg.headZones, fallback);
   }

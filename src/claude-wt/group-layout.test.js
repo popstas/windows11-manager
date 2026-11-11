@@ -143,7 +143,7 @@ describe('arrangeGroup', () => {
   it('пустые groups — отказ без единого placeWindow', async () => {
     const h = harness();
     const res = await arrangeGroup({ groups: [], selected: null, log: h.log }, h.deps);
-    expect(res).toEqual({ ok: false, reason: 'claude-place group: группы не переданы' });
+    expect(res).toEqual({ ok: false, reason: 'группы не переданы' });
     expect(h.deps.place).not.toHaveBeenCalled();
   });
 
@@ -151,6 +151,19 @@ describe('arrangeGroup', () => {
     const h = harness({ kids: 2 });
     await arrangeGroup({ groups: [h.group], selected: 'h', log: h.log }, h.deps);
     expect(h.placed.some(p => p.id === 90)).toBe(false);
+  });
+
+  // Причину отказа команда пишет сама, с префиксом `claude-place group:` —
+  // свой префикс в причине давал бы его в журнале дважды (поймано на nb).
+  it('причины отказа без префикса claude-place', async () => {
+    const h = harness({ active: 90 });
+    const reasons = [
+      (await arrangeGroup({ groups: [h.group], selected: null, log: h.log }, h.deps)).reason,
+      (await arrangeGroup({ groups: [['nope', 'c0']], selected: 'nope', log: h.log }, h.deps)).reason,
+    ];
+    h.deps.layout = () => null;
+    reasons.push((await arrangeGroup({ groups: [h.group], selected: 'h', log: h.log }, h.deps)).reason);
+    expect(reasons.every(r => typeof r === 'string' && !r.startsWith('claude-place'))).toBe(true);
   });
 
   it('свёрнутый head — отказ', async () => {
