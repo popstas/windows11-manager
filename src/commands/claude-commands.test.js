@@ -19,6 +19,7 @@ function deps(overrides = {}) {
       arrangeClaudeWindows: vi.fn().mockResolvedValue({ ok: true, placed: 2 }),
       openClaudeProject: vi.fn().mockResolvedValue({ ok: true, action: 'focus' }),
       resumeClaudeSession: vi.fn().mockResolvedValue({ ok: true, action: 'resume', sessionId: 'zzz' }),
+      openNewSession: vi.fn().mockResolvedValue({ ok: true, action: 'spawn', sessionId: 'u-1', name: 'task-a' }),
       virtualDesktop: {
         GetWindowDesktopNumber: vi.fn().mockResolvedValue(1),
         GoToDesktopNumber: vi.fn().mockResolvedValue(undefined),
@@ -562,5 +563,30 @@ describe('claude-place', () => {
     await claudeCommands(d)['claude-place']('tile');
     expect(d.log).toHaveBeenCalledWith(expect.stringContaining('boom'), 'error');
     expect(d.notify).toHaveBeenCalled();
+  });
+});
+
+describe('claude-session-new', () => {
+  const BODY = { cwd: '/vault', name: 'task-a', promptFile: '/tmp/a.md' };
+
+  it('возвращает id и имя — их ждёт http-ответ', async () => {
+    const d = deps();
+    const res = await claudeCommands(d)['claude-session-new'](BODY);
+    expect(d.winMan.openNewSession).toHaveBeenCalledWith(BODY);
+    expect(res).toEqual({ action: 'spawn', sessionId: 'u-1', name: 'task-a' });
+    expect(d.log).toHaveBeenCalledWith('claude-wt session-new task-a: spawn u-1');
+  });
+
+  it('отказ уходит кодом и текстом, а не голым return', async () => {
+    const d = deps({ winMan: { openNewSession: vi.fn().mockResolvedValue({ ok: false, status: 403, reason: 'cwd /etc is not in claudeWt.projects' }) } });
+    const res = await claudeCommands(d)['claude-session-new']({ ...BODY, cwd: '/etc' });
+    expect(res).toEqual({ httpStatus: 403, error: 'cwd /etc is not in claudeWt.projects' });
+    expect(d.log).toHaveBeenCalledWith('claude-wt session-new: cwd /etc is not in claudeWt.projects', 'warn');
+  });
+
+  it('отказ без кода — 500', async () => {
+    const d = deps({ winMan: { openNewSession: vi.fn().mockRejectedValue(new Error('boom')) } });
+    const res = await claudeCommands(d)['claude-session-new'](BODY);
+    expect(res).toEqual({ httpStatus: 500, error: 'boom' });
   });
 });

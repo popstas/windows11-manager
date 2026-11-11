@@ -13,6 +13,7 @@ export * from '../claude-wt/restore.js';
 export * from '../claude-wt/view.js';
 export * from '../claude-wt/project.js';
 export * from '../claude-wt/inbox.js';
+export * from '../claude-wt/session-new.js';
 export { invalidateSessionIndex } from '../claude-wt/sessions.js';
 // startHttpServer наружу не отдаётся намеренно. Поднятый внутри процесса демона
 // (так его звал windows-mqtt по ключу claudeWtHttpPort), он вешал событийный

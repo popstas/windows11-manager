@@ -20,6 +20,10 @@ describe('routeToCommand', () => {
     expect(routeToCommand('/claude-wt/session-open')).toBe('claude-session-open');
   });
 
+  it('новая сессия для head-session — свой маршрут, не session-open', () => {
+    expect(routeToCommand('/claude-wt/session-new')).toBe('claude-session-new');
+  });
+
   // Без этого маршрута пятая просьба пикера (раскладка) получала бы 404, и
   // человек видел бы «менеджер не отвечает» — неотличимо от лежащей службы.
   it('раскладка claude-wt ведёт в claude-place, а не в place окон', () => {
@@ -127,6 +131,27 @@ describe('startHttpServer', () => {
     // отдать перезагрузку и раскладку окон любому, кто откроет ссылку.
     const { server, port } = await listen({ router: { dispatch: async () => ({ ok: true }) }, dock: fakeDock });
     expect((await fetch(`http://127.0.0.1:${port}/claude-wt/focus`)).status).toBe(405);
+    server.close();
+  });
+
+  // Отказ, у которого есть свой код (400/403 у session-new), отдаётся этим
+  // кодом: голове надо отличить «каталог не в списке» от «служба упала».
+  it('httpStatus из результата команды становится кодом ответа', async () => {
+    const router = { dispatch: async () => ({ ok: true, result: { httpStatus: 403, error: 'cwd /etc is not in claudeWt.projects' } }) };
+    const { server, port } = await listen({ router });
+    const res = await fetch(`http://127.0.0.1:${port}/claude-wt/session-new`, { method: 'POST', body: '{}' });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'cwd /etc is not in claudeWt.projects' });
+    server.close();
+  });
+
+  it('удачный session-new отдаёт id и имя в теле', async () => {
+    const result = { action: 'spawn', sessionId: 'u-1', name: 'task-a' };
+    const router = { dispatch: async () => ({ ok: true, result }) };
+    const { server, port } = await listen({ router });
+    const res = await fetch(`http://127.0.0.1:${port}/claude-wt/session-new`, { method: 'POST', body: '{}' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, ...result });
     server.close();
   });
 });

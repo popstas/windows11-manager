@@ -45,6 +45,11 @@ const CLAUDE_WT_DEFAULTS = {
   // launchNew, а не он сам: удалённая команда другая — скрипт vault вместо
   // голого `claude -n`. Placeholders: {cwd}, {script}, {file}, {name}.
   launchInbox: { args: [] },
+  // Окно новой сессии по просьбе head-session (`POST /claude-wt/session-new`).
+  // Удалённая команда — обёртка `~/bin/claude-wt-new` на pc-virt, ей уходят
+  // {cwd} {name} {sessionId} {promptFile} {permissionMode} {head} {headId}
+  // позиционными аргументами. Пусто — маршрут отвечает 500.
+  launchSession: { args: [] },
   // Наблюдатель входящих: новый *.md в `dir` — новое окно с сессией
   // `tg-<имя>`. Выключен по умолчанию; живёт в процессе службы
   // (`src/mqtt/telegram-inbox.js`). `dir` — путь этой машины, `cwd` и
@@ -68,7 +73,7 @@ const CLAUDE_WT_DEFAULTS = {
   snapshots: { enabled: true, path: '', debounceMs: 60000, keep: 20 },
 };
 
-/** Deep-ish merge: launch / launchNew / launchInbox / telegramInbox / restore / snapshots merged key by key. */
+/** Deep-ish merge: launch / launchNew / launchInbox / launchSession / telegramInbox / restore / snapshots merged key by key. */
 function mergeClaudeWtConfig(raw) {
   const cfg = raw ?? {};
   return {
@@ -86,6 +91,11 @@ function mergeClaudeWtConfig(raw) {
       ...CLAUDE_WT_DEFAULTS.launchInbox,
       args: [...CLAUDE_WT_DEFAULTS.launchInbox.args],
       ...(cfg.launchInbox ?? {}),
+    },
+    launchSession: {
+      ...CLAUDE_WT_DEFAULTS.launchSession,
+      args: [...CLAUDE_WT_DEFAULTS.launchSession.args],
+      ...(cfg.launchSession ?? {}),
     },
     telegramInbox: { ...CLAUDE_WT_DEFAULTS.telegramInbox, ...(cfg.telegramInbox ?? {}) },
     restore: { ...CLAUDE_WT_DEFAULTS.restore, ...(cfg.restore ?? {}) },

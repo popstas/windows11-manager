@@ -92,6 +92,17 @@ describe('planWtLaunch', () => {
   });
 });
 
+describe('planWtLaunch: переменные session-new', () => {
+  it('подставляет sessionId/promptFile/permissionMode/head/headId с экранированием', () => {
+    const out = planWtLaunch({
+      launch: { args: ['ssh', "x '{sessionId}' '{promptFile}' '{permissionMode}' '{head}' '{headId}'"] },
+      vars: { sessionId: 'u-1', promptFile: "/tmp/it's.md", permissionMode: 'auto', head: 'boss', headId: 'h-1' },
+      terminal: { command: 'wt.exe', args: [] },
+    });
+    expect(out.args).toEqual(['ssh', "x 'u-1' '/tmp/it'\\''s.md' 'auto' 'boss' 'h-1'"]);
+  });
+});
+
 describe('planWtLaunch с реестром терминалов', () => {
   const launch = { args: ['ssh', '-t', 'host', 'ccfzf --session {id}'] };
 

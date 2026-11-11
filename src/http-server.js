@@ -27,6 +27,7 @@ const ROUTES = {
   '/claude-wt/restore': 'claude-wt-restore',
   '/claude-wt/focus': 'claude-focus',
   '/claude-wt/session-open': 'claude-session-open',
+  '/claude-wt/session-new': 'claude-session-new',
   '/claude-wt/session-unread': 'claude-session-unread',
   '/claude-wt/snapshot-restore': 'claude-snapshot-restore',
   '/claude-wt/place': 'claude-place',
@@ -82,6 +83,16 @@ function replyResult(res, log, url, result) {
     log(`POST ${url}: отброшено ограничителем частоты`, 'warn');
     res.writeHead(429, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'throttled' }));
+    return;
+  }
+  // Отказ со своим кодом (400/403 у session-new): голове надо отличить
+  // «каталог не в списке» от «служба упала». Ключ свой, а не `ok: false`,
+  // чтобы ни один прежний обработчик не поменял ответ случайно.
+  const status = result.result?.httpStatus;
+  if (Number.isInteger(status) && status >= 400) {
+    log(`POST ${url}: ${status} ${result.result.error}`, 'warn');
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: result.result.error }));
     return;
   }
   res.writeHead(200, { 'Content-Type': 'application/json' });

@@ -188,6 +188,21 @@ openHASP — на shome (`R:`). Состояние течёт в одну сто
 управляющими символами пропускаются: до удалённого шелла через wt → ssh они не
 доживут.
 
+**Окно новой сессии для head-session — единственная просьба с ответом.**
+`POST /claude-wt/session-new` → `claude-session-new` → `openNewSession`
+(`src/claude-wt/session-new.js`, разбор тела — `session-new-helpers.js`). Тело
+`{cwd, name, promptFile, sessionId?, permissionMode?, head?, headId?, terminal?, cursor?}`;
+ответ сразу после spawn — `200 {ok, action:'spawn', sessionId, name}`, окно не
+ждётся. Авторизации на 9722 нет, поэтому защита — `cwd` точным совпадением из
+`claudeWt.projects`, иначе 403; кривое тело — 400 (правила те же, что у
+обёртки: имя не с `-`, uuid у `sessionId`/`headId`, без `;`/кавычек/`$`/`{}`).
+Код отказа доезжает до http через ключ `httpStatus` в результате команды —
+свой ключ, а не `ok: false`, чтобы прежние обработчики ответ не меняли. Шаблон
+`claudeWt.launchSession` зовёт `~/bin/claude-wt-new` на pc-virt (живёт в репо
+ccfzf) семью позиционными аргументами, пустые — `-`; `cd` и `$SHELL -ic` делает
+сама обёртка. Пустой шаблон — 500, а не голый терминал. `claude-session-open`
+не тронут.
+
 ## claude-wt polling budget
 
 Three rules keep the once-a-second daemon off the CPU graph; each was paid for once already and must not be re-learned:

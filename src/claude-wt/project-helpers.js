@@ -124,6 +124,11 @@ function planWtLaunch({ launch, vars = {}, profile, terminal }) {
   // так же, как `{cwd}`, — шаблон сам оборачивает их в `'…'`.
   const safeFile = escapeForSingleQuoted(vars.file ?? '');
   const safeScript = escapeForSingleQuoted(vars.script ?? '');
+  // У шаблона окна для head-session (`launchSession`): всё, что обёртке
+  // `claude-wt-new` нужно сверх каталога и имени. Экранируются так же —
+  // шаблон оборачивает каждое в `'…'`.
+  const sessionVars = Object.fromEntries(['sessionId', 'promptFile', 'permissionMode', 'head', 'headId']
+    .map(key => [key, escapeForSingleQuoted(vars[key] ?? '')]));
   const wanted = typeof profile === 'string' ? profile : '';
   const substitute = arg => String(arg)
     .replaceAll('{id}', id)
@@ -131,6 +136,7 @@ function planWtLaunch({ launch, vars = {}, profile, terminal }) {
     .replaceAll('{name}', safeName)
     .replaceAll('{file}', safeFile)
     .replaceAll('{script}', safeScript)
+    .replace(/\{(sessionId|promptFile|permissionMode|head|headId)\}/g, (_, key) => sessionVars[key])
     .replaceAll('{profile}', wanted);
   const tail = launch?.args ?? [];
   if (!terminal?.command) {

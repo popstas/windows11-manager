@@ -407,6 +407,30 @@ function claudeCommands({ winMan, log, notify, slots }) {
       log(`claude-wt session-open: ${reason}`, 'warn');
       notify(`claude-wt: ${reason}`);
     },
+
+    /**
+     * Новая сессия по просьбе head-session — в отличие от session-open, с
+     * ответом: голове нужен id новой сессии, а отказ (каталог не в списке,
+     * кривое тело) — кодом. `httpStatus` http-слушатель превращает в код
+     * ответа; по MQTT ответа нет, там остаётся строка в журнале.
+     * Уведомления человеку нет: просит не он, а голова, и она же получит отказ.
+     */
+    async 'claude-session-new'(payload) {
+      let res;
+      try {
+        res = await winMan.openNewSession(payload);
+      } catch (e) {
+        log(`claude-wt session-new: ${e.message}`, 'error');
+        return { httpStatus: 500, error: e.message };
+      }
+      if (!res?.ok) {
+        const reason = res?.reason ?? 'не удалось открыть';
+        log(`claude-wt session-new: ${reason}`, 'warn');
+        return { httpStatus: res?.status ?? 500, error: reason };
+      }
+      log(`claude-wt session-new ${res.name}: ${res.action} ${res.sessionId}`);
+      return { action: res.action, sessionId: res.sessionId, name: res.name };
+    },
   };
 }
 

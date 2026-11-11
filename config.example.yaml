@@ -262,6 +262,21 @@ claudeWt:
       - -t
       - >-
         exec $SHELL -ic 'cd -- "$1" && exec "$2" "$3" "$4"' claude-wt '{cwd}' '{script}' '{file}' '{name}'
+  # New session window on request from head-session: POST /claude-wt/session-new
+  # {cwd, name, promptFile, sessionId?, permissionMode?, head?, headId?,
+  # terminal?, cursor?}. cwd must be one of `projects` (exact match), else 403.
+  # The remote side runs ~/bin/claude-wt-new on pc-virt with seven positional
+  # args; empty optional values arrive as `-`. No `cd`/`$SHELL -ic` here: the
+  # wrapper starts claude in an interactive shell itself. The wrapper must pass {name} to
+  # `claude -n` unchanged: the window is found by that title. Empty args -> 500.
+  launchSession:
+    args:
+      - ssh
+      - -A
+      - popstas@pc-virt.popstas.pro
+      - -t
+      - >-
+        exec ~/bin/claude-wt-new '{cwd}' '{name}' '{sessionId}' '{promptFile}' '{permissionMode}' '{head}' '{headId}'
   # Watch a local folder (synced by syncthing) and open a new window with
   # session `tg-<file name>` (or by sessionName) for every new *.md in its root — every file its
   # own session and window, the open one is never reused. Off by default.

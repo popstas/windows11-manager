@@ -67,6 +67,14 @@ describe('mergeClaudeWtConfig', () => {
     ]);
   });
 
+  // Шаблон окна сессии для head-session (`POST /claude-wt/session-new`).
+  // Пустой по умолчанию: без него маршрут отвечает 500, а не открывает голый
+  // терминал.
+  it('launchSession: empty by default, given args are kept', () => {
+    expect(mergeClaudeWtConfig(undefined).launchSession).toEqual({ args: [] });
+    expect(mergeClaudeWtConfig({ launchSession: { args: ['ssh', 'x'] } }).launchSession).toEqual({ args: ['ssh', 'x'] });
+  });
+
   it('merges the nested launch and restore blocks instead of replacing them', () => {
     // Задать один windowTimeoutMs, не продублировав auto, должно быть можно.
     const cfg = mergeClaudeWtConfig({
