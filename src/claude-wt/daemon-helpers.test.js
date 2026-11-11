@@ -37,9 +37,18 @@ describe('mergeClaudeWtConfig', () => {
       ...CLAUDE_WT_DEFAULTS,
       terminals: TERMINAL_DEFAULTS,
       terminalExecutables: TERMINAL_EXECUTABLES,
+      headZonesProblems: [],
     };
     expect(mergeClaudeWtConfig(undefined)).toEqual(expected);
     expect(mergeClaudeWtConfig(null)).toEqual(expected);
+  });
+
+  it('кладёт нормализованные headZones и умолчание stack', () => {
+    const cfg = mergeClaudeWtConfig({ headZones: { 1: [3, 4], 9: 'x' } });
+    expect(cfg.headZones).toEqual({ 1: [3, 4] });
+    expect(cfg.headZonesProblems).toHaveLength(1);
+    expect(cfg.childPlacement).toBe('stack');
+    expect(mergeClaudeWtConfig({ childPlacement: 'free' }).childPlacement).toBe('free');
   });
 
   it('пауза перед фокусом настраивается, умолчание — не ждать', () => {

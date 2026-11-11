@@ -3,6 +3,7 @@
 import { normalizeProjects } from './project-helpers.js';
 import { upsertSlot } from './state-helpers.js';
 import { normalizeTerminals } from './terminal-helpers.js';
+import { normalizeHeadZones, normalizeChildPlacement } from './head-zones-helpers.js';
 
 const CLAUDE_WT_DEFAULTS = {
   enabled: true,
@@ -71,6 +72,12 @@ const CLAUDE_WT_DEFAULTS = {
   },
   restore: { auto: false, windowTimeoutMs: 30000, launchDelayMs: 2000, settleMs: 500 },
   snapshots: { enabled: true, path: '', debounceMs: 60000, keep: 20 },
+  // Основные зоны мониторов для окон head и его детей: номер монитора
+  // FancyZones (нумерация кода, как у tileZones) → пара зон. Пусто — окна
+  // детей ставятся как раньше (курсор или слот).
+  headZones: {},
+  // Как ставить ребёнка head без явной зоны: stack | free.
+  childPlacement: 'stack',
 };
 
 /** Deep-ish merge: launch / launchNew / launchInbox / launchSession / telegramInbox / restore / snapshots merged key by key. */
@@ -101,6 +108,22 @@ function mergeClaudeWtConfig(raw) {
     restore: { ...CLAUDE_WT_DEFAULTS.restore, ...(cfg.restore ?? {}) },
     snapshots: { ...CLAUDE_WT_DEFAULTS.snapshots, ...(cfg.snapshots ?? {}) },
     terminalExecutables: normalizeTerminalExecutables(cfg.terminalExecutables),
+    ...headZonesFrom(cfg),
+  };
+}
+
+/**
+ * headZones нормализуются здесь, один раз на чтение конфига: читателей у них
+ * трое (трекер, session-new, раскладка группы), и разбирать их каждому — три
+ * места, где разбор разойдётся. Причины отказа едут рядом, полем
+ * `headZonesProblems`: писать их в журнал умеет только тот, у кого журнал есть.
+ */
+function headZonesFrom(cfg) {
+  const { zones, problems } = normalizeHeadZones(cfg.headZones);
+  return {
+    headZones: zones,
+    headZonesProblems: problems,
+    childPlacement: normalizeChildPlacement(cfg.childPlacement),
   };
 }
 
