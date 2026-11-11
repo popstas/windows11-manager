@@ -19,7 +19,8 @@
 import { isMinimized } from '../windows-helpers.js';
 import { stackInCell } from '../claude-layout-helpers.js';
 
-const PLACEMENTS = ['stack', 'free'];
+/** Режимы `claudeWt.childPlacement`; первый — умолчание. */
+const CHILD_PLACEMENTS = ['stack', 'free'];
 
 /** Доля площади окна внутри зоны, с которой окно считается стоящим в ней. */
 const ZONE_MIN_SHARE = 0.6;
@@ -76,7 +77,7 @@ function normalizeHeadZones(raw) {
 /** Как ставить ребёнка без явной зоны. Всё незнакомое — `stack`, умолчание. */
 function normalizeChildPlacement(raw) {
   const v = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
-  return PLACEMENTS.includes(v) ? v : 'stack';
+  return CHILD_PLACEMENTS.includes(v) ? v : CHILD_PLACEMENTS[0];
 }
 
 const isRect = r => r && [r.x, r.y, r.width, r.height].every(Number.isFinite) && r.width > 0 && r.height > 0;
@@ -306,6 +307,7 @@ function groupPlan({ first, second, n }) {
 }
 
 export {
+  CHILD_PLACEMENTS,
   ZONE_MIN_SHARE,
   MAX_SLOTS,
   NO_LOCATION,

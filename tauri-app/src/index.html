@@ -225,6 +225,18 @@
         <small>Windows Terminal profile. Empty = launched without <code>-p</code>.</small>
       </div>
 
+      <h3 class="group">Head session children</h3>
+
+      <div class="field">
+        <label for="cfg_claude_wt_child_placement">claudeWt.childPlacement</label>
+        <select id="cfg_claude_wt_child_placement" data-cfg="claudeWt.childPlacement" data-cfg-default="stack" data-cfg-type="string">
+          <option value="">(default — stack)</option>
+          <option value="stack">stack — in the head's neighbour zone, up to three stacked</option>
+          <option value="free">free — into a free main zone, any monitor</option>
+        </select>
+        <small>Where a child window of a head session opens when the request names no zone. The zones themselves are <code>claudeWt.headZones</code> in the YAML config; without them children open as before.</small>
+      </div>
+
       <h3 class="group">Session slots on the Home Assistant panel</h3>
       <p class="tab-note">Lives in the root <code>homeassistant</code> key of the node config, but these are claude-wt session slots — hence this tab.</p>
 

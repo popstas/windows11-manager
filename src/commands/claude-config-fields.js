@@ -9,9 +9,9 @@
  *
  * Сюда попали только скаляры. Структуры под `claudeWt` (`projects`,
  * `terminals`, `terminalExecutables`, `launch`, `launchNew`, `launchInbox`,
- * `telegramInbox`, `restore`, `snapshots`) формой не выражаются без отдельного редактора и остаются в
- * YAML; `tileZones` — список пар, у него своё поле и свой патчер
- * (`tile-zones-commands.js`).
+ * `telegramInbox`, `restore`, `snapshots`, `headZones`) формой не выражаются без отдельного
+ * редактора и остаются в YAML; `tileZones` — список пар, у него своё поле и
+ * свой патчер (`tile-zones-commands.js`).
  *
  * Умолчания продублированы здесь не как источник правды, а как подпись поля:
  * работают они в `CLAUDE_WT_DEFAULTS` (`src/claude-wt/daemon-helpers.js`) и в
@@ -19,6 +19,8 @@
  * плейсхолдером пустого поля. Тест сверяет обе стороны, чтобы подпись не
  * начала врать после правки умолчания.
  */
+
+import { CHILD_PLACEMENTS } from '../claude-wt/head-zones-helpers.js';
 
 /** Порядок сортировки слотов панели — тот же список, что у `normalizeSort`. */
 const SESSIONS_SORT_MODES = ['cost', 'oldest', 'newest', 'recent', 'name'];
@@ -39,6 +41,17 @@ const CLAUDE_CONFIG_FIELDS = [
   { name: 'claudeWt.progressDir', section: 'claudeWt', key: 'progressDir', type: 'string', default: '' },
   { name: 'claudeWt.terminal', section: 'claudeWt', key: 'terminal', type: 'string', default: 'wt' },
   { name: 'claudeWt.profile', section: 'claudeWt', key: 'profile', type: 'string', default: '' },
+
+  // Окна детей head-сессии: как ставить ребёнка без явной зоны. Сами зоны
+  // (`headZones`) — структура и живут в YAML.
+  {
+    name: 'claudeWt.childPlacement',
+    section: 'claudeWt',
+    key: 'childPlacement',
+    type: 'string',
+    default: 'stack',
+    choices: CHILD_PLACEMENTS,
+  },
 
   // Слоты сессий на панели openHASP. Живут в корневом `homeassistant`, но по
   // смыслу это настройки claude-wt — потому и стоят на этой вкладке.
