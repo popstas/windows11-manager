@@ -64,6 +64,18 @@ describe('parseSessionNewRequest', () => {
     expect(parseSessionNewRequest({ ...BODY, headId: 'boss' }, OPTS)).toMatchObject({ ok: false, status: 400 });
   });
 
+  // Решение Стаса (11.11): маршрут без авторизации, и любой в сети иначе
+  // открыл бы агента без единого вопроса. Остальные режимы — как есть.
+  it('400 for bypassPermissions', () => {
+    const res = parseSessionNewRequest({ ...BODY, permissionMode: 'bypassPermissions' }, OPTS);
+    expect(res).toMatchObject({ ok: false, status: 400 });
+    expect(res.reason).toContain('bypassPermissions');
+  });
+
+  it.each(['acceptEdits', 'auto', 'manual', 'dontAsk', 'plan'])('accepts permission mode %s', (mode) => {
+    expect(parseSessionNewRequest({ ...BODY, permissionMode: mode }, OPTS).vars.permissionMode).toBe(mode);
+  });
+
   it('400 for an unknown permission mode', () => {
     expect(parseSessionNewRequest({ ...BODY, permissionMode: 'yolo' }, OPTS)).toMatchObject({ ok: false, status: 400 });
   });

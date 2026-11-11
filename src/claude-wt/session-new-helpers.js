@@ -10,9 +10,11 @@
  * вторым аргументом, иначе проверять пришлось бы настоящим конфигом.
  */
 
-// Режимы `claude --permission-mode` (2.1.322). Чужое слово claude отвергнет
-// уже на той стороне ssh, и окно закроется молча — лучше 400 здесь.
-const PERMISSION_MODES = ['acceptEdits', 'auto', 'bypassPermissions', 'manual', 'dontAsk', 'plan'];
+// Режимы `claude --permission-mode` (2.1.322), которые маршрут пропускает.
+// Чужое слово claude отвергнет уже на той стороне ssh, и окно закроется
+// молча — лучше 400 здесь. bypassPermissions у claude есть, но отсюда
+// запрещён (см. ниже).
+const PERMISSION_MODES = ['acceptEdits', 'auto', 'manual', 'dontAsk', 'plan'];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -79,6 +81,11 @@ function parseSessionNewRequest(raw, { projects = [], newId } = {}) {
   }
   if (values.headId && !UUID.test(values.headId)) {
     return fail(400, 'headId must be a uuid');
+  }
+  // Решение Стаса (11.11): маршрут без авторизации, и bypassPermissions через
+  // него открыл бы агента без вопросов любому в сети. Такое — только руками.
+  if (values.permissionMode === 'bypassPermissions') {
+    return fail(400, 'permissionMode bypassPermissions is not allowed on this route');
   }
   if (values.permissionMode && !PERMISSION_MODES.includes(values.permissionMode)) {
     return fail(400, `permissionMode must be one of ${PERMISSION_MODES.join(', ')}`);
