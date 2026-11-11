@@ -207,8 +207,18 @@ async function focusSpawnedWindow(title, deps = {}) {
   // Место — раньше фокуса: окно, которое сначала получает ввод, а через
   // секунду прыгает в свою геометрию, человек читает как «открылось только
   // сейчас», и вся экономия предыдущих звеньев пропадает зря.
-  const desktop = await place(w, title, mark, cursor);
-  return focus(w.id, mark, desktop);
+  const placed = await place(w, title, mark, cursor);
+  // Ребёнок head-сессии отвечает объектом: `focus: false` — окно поставлено на
+  // стол head, а человек на другом столе. Фокус (`focusTerminalWindow` зовёт
+  // GoToDesktopNumber) увёл бы его туда, поэтому окно остаётся без фокуса.
+  if (placed && typeof placed === 'object') {
+    if (placed.focus === false) {
+      mark('focus:skipped');
+      return true;
+    }
+    return focus(w.id, mark, placed.desktop ?? null);
+  }
+  return focus(w.id, mark, placed);
 }
 
 /**

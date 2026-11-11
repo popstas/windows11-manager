@@ -57,6 +57,24 @@ describe('focusSpawnedWindow', () => {
     expect(h.calls.some(c => c.startsWith('focus:'))).toBe(false);
   });
 
+  // Ребёнок head, поставленный на стол head, когда человек на другом столе:
+  // фокус увёл бы его туда (GoToDesktopNumber внутри focusTerminalWindow).
+  it('place с focus: false — без фокуса, но окно считается поднятым', async () => {
+    const h = harness();
+    h.deps.place = (w) => { h.calls.push(`place:${w.id}`); return Promise.resolve({ desktop: 1, focus: false }); };
+    expect(await focusSpawnedWindow('skill-do', h.deps)).toBe(true);
+    expect(h.calls.some(c => c.startsWith('focus:'))).toBe(false);
+  });
+
+  it('place с focus: true — фокус со столом из ответа', async () => {
+    const h = harness();
+    const seen = [];
+    h.deps.place = () => Promise.resolve({ desktop: 2, focus: true });
+    h.deps.focus = (id, mark, desktop) => { seen.push([id, desktop]); return Promise.resolve(true); };
+    await focusSpawnedWindow('skill-do', h.deps);
+    expect(seen).toEqual([[77, 2]]);
+  });
+
   it('перестаёт ждать по таймауту, а не опрашивает вечно', async () => {
     const h = harness({ appearsAfterMs: Infinity });
     await focusSpawnedWindow('skill-do', h.deps);

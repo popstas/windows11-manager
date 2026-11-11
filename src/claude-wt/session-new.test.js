@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 
 // project.js тянет за собой нативный модуль окон — здесь он не нужен.
-vi.mock('./project.js', () => ({ focusSpawnedWindow: vi.fn(), focusNewTerminalWindow: vi.fn() }));
+vi.mock('./project.js', () => ({ focusSpawnedWindow: vi.fn(), focusNewTerminalWindow: vi.fn(), placeSpawnedWindow: vi.fn() }));
+vi.mock('./child-place.js', () => ({ placeChildWindow: vi.fn() }));
 vi.mock('./index.js', () => ({ getClaudeWtConfig: vi.fn() }));
 vi.mock('../windows.js', () => ({ getWindows: vi.fn(() => []) }));
 
@@ -72,5 +73,63 @@ describe('openNewSession', () => {
     const spawnProcess = vi.fn(() => { throw new Error('ENOENT wt.exe'); });
     const { res } = await run(BODY, { spawnProcess });
     expect(res).toEqual({ ok: false, status: 500, action: 'spawn', reason: 'ENOENT wt.exe' });
+  });
+
+  // Ребёнок head-сессии ставится по зоне: хвост идёт по имени сессии (там
+  // есть хук place), а курсор остаётся только для отката.
+  describe('ребёнок head', () => {
+    const ZCFG = mergeClaudeWtConfig({
+      launchSession: { args: ['ssh', '-A', 'popstas@pc-virt.popstas.pro', '-t', REMOTE] },
+      projects: [{ name: 'ExpertizeMe', cwd: '/vault', profiles: { wt: 'Expertize' } }],
+      headZones: { 1: [3, 4] },
+    });
+    const HEAD_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+
+    it('с headId хвост идёт по имени даже при cursor, и в нём есть place', async () => {
+      const { focusByTitle, focusNew } = await run({ ...BODY, headId: HEAD_ID, cursor: { x: 10, y: 20 } }, { cfg: ZCFG });
+      expect(focusNew).not.toHaveBeenCalled();
+      expect(focusByTitle).toHaveBeenCalledWith('task-a', expect.objectContaining({ place: expect.any(Function) }));
+    });
+
+    it('верная zone доезжает до placeChild', async () => {
+      const placeChild = vi.fn(async () => ({ desktop: 1, focus: true }));
+      const { focusByTitle } = await run({ ...BODY, zone: { monitor: 1, position: 4 } }, { cfg: ZCFG, placeChild });
+      const { place } = focusByTitle.mock.calls[0][1];
+      const w = { id: 5 };
+      expect(await place(w, 'task-a', () => 0, null)).toEqual({ desktop: 1, focus: true });
+      expect(placeChild).toHaveBeenCalledWith(w, expect.objectContaining({
+        sessionId: ID, headId: null, zone: { monitor: 1, position: 4 }, name: 'task-a',
+      }));
+    });
+
+    it('чужая zone — 400, и spawn не звался', async () => {
+      const { res, spawned } = await run({ ...BODY, zone: { monitor: 2, position: 1 } }, { cfg: ZCFG });
+      expect(res).toMatchObject({ ok: false, status: 400 });
+      expect(spawned).toEqual([]);
+    });
+
+    it('placeChild без плана — старая дорога placeSpawnedWindow', async () => {
+      const placeChild = vi.fn(async () => null);
+      const placeOld = vi.fn(async () => 2);
+      const { focusByTitle } = await run({ ...BODY, headId: HEAD_ID }, { cfg: ZCFG, placeChild, placeOld });
+      const { place } = focusByTitle.mock.calls[0][1];
+      const w = { id: 5 };
+      expect(await place(w, 'task-a', () => 0, null)).toBe(2);
+      expect(placeOld).toHaveBeenCalledWith(w, 'task-a', expect.any(Function), null);
+    });
+
+    it('placeChild бросил — тоже старая дорога, а не падение хвоста', async () => {
+      const placeChild = vi.fn(async () => { throw new Error('boom'); });
+      const placeOld = vi.fn(async () => null);
+      const { focusByTitle } = await run({ ...BODY, headId: HEAD_ID }, { cfg: ZCFG, placeChild, placeOld });
+      const { place } = focusByTitle.mock.calls[0][1];
+      await expect(place({ id: 5 }, 'task-a', () => 0, null)).resolves.toBeNull();
+      expect(placeOld).toHaveBeenCalled();
+    });
+
+    it('без headId и zone — хвост как раньше, без place', async () => {
+      const { focusByTitle } = await run(BODY, { cfg: ZCFG });
+      expect(focusByTitle.mock.calls[0][1]).not.toHaveProperty('place');
+    });
   });
 });

@@ -20,7 +20,8 @@ import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { getWindows } from '../windows.js';
 import { planWtLaunch, profileForTerminal, parseCursorPoint } from './project-helpers.js';
 import { chooseTerminal } from './terminal-helpers.js';
-import { focusSpawnedWindow, focusNewTerminalWindow } from './project.js';
+import { focusSpawnedWindow, focusNewTerminalWindow, placeSpawnedWindow } from './project.js';
+import { placeChildWindow } from './child-place.js';
 import { parseSessionNewRequest } from './session-new-helpers.js';
 import { startTiming } from './timing.js';
 
@@ -38,8 +39,10 @@ async function openNewSession(body, deps = {}) {
     focusByTitle = focusSpawnedWindow,
     focusNew = focusNewTerminalWindow,
     newId = randomUUID,
+    placeChild = placeChildWindow,
+    placeOld = placeSpawnedWindow,
   } = deps;
-  const parsed = parseSessionNewRequest(body, { projects: cfg.projects, newId });
+  const parsed = parseSessionNewRequest(body, { projects: cfg.projects, newId, headZones: cfg.headZones });
   if (!parsed.ok) return parsed;
   const { vars } = parsed;
 
@@ -63,7 +66,9 @@ async function openNewSession(body, deps = {}) {
   mark('plan');
   // Список окон снимается до запуска и только курсорной дороге: после spawn
   // новое окно уже не отличить, а без курсора окно ищется по заголовку.
-  const known = cursor ? new Set(listWindows().map(w => w.id)) : null;
+  const headId = vars.headId === '-' ? null : vars.headId;
+  const childPlan = Boolean(headId || parsed.zone);
+  const known = cursor && !childPlan ? new Set(listWindows().map(w => w.id)) : null;
   try {
     spawnProcess(command, args, { detached: true, stdio: 'ignore' }).unref();
   } catch (e) {
@@ -72,9 +77,20 @@ async function openNewSession(body, deps = {}) {
   mark('spawn');
   // Хвостом и с `.catch()` — по той же причине, что у `openClaudeProject`:
   // ответ ждут сейчас, а необработанное отклонение роняет служебный процесс.
-  const tail = cursor
-    ? focusNew(known, { ...deps, mark, cursor })
-    : focusByTitle(vars.name, { mark });
+  // Ребёнок head (или явная зона) ставится по основным зонам, и хвост тогда
+  // всегда по имени: у него есть хук `place`. Курсор остаётся откатом — нет
+  // плана (зоны не разрешились, окна head нет), окно встаёт как раньше.
+  const place = (w, title, m, c) => Promise.resolve()
+    .then(() => placeChild(w, { sessionId: vars.sessionId, headId, zone: parsed.zone, name: vars.name, mark: m }))
+    .catch((e) => {
+      console.error(`[claude-wt] session-new ${vars.name}: зона не применилась — ${e.message}`);
+      return null;
+    })
+    .then(r => r ?? placeOld(w, title, m, c));
+  let tail;
+  if (childPlan) tail = focusByTitle(vars.name, { mark, cursor, place });
+  else if (cursor) tail = focusNew(known, { ...deps, mark, cursor });
+  else tail = focusByTitle(vars.name, { mark });
   Promise.resolve(tail).catch((e) => {
     console.error(`[claude-wt] failed to focus ${vars.name}: ${e.message}`);
   });
