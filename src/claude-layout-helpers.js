@@ -15,7 +15,7 @@
 function layoutFromName(name) {
   if (typeof name !== 'string') return null;
   const n = name.trim().toLowerCase();
-  return n === 'tile' || n === 'cascade' ? n : null;
+  return n === 'tile' || n === 'cascade' || n === 'group' ? n : null;
 }
 
 /** Список сессий из тела: только непустые строки, обрезанные по краям. */
@@ -38,9 +38,11 @@ function normalizeIds(list) {
 function parseArrangePayload(payload) {
   let name;
   let ids = [];
+  let body = null;
   if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
     name = payload.mode;
     ids = normalizeIds(payload.ids);
+    body = payload;
   } else {
     const text = String(payload ?? '').trim();
     if (!text) return null;
@@ -53,6 +55,7 @@ function parseArrangePayload(payload) {
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       name = parsed.mode;
       ids = normalizeIds(parsed.ids);
+      body = parsed;
     } else if (typeof parsed === 'string') {
       name = parsed;
     } else {
@@ -60,7 +63,24 @@ function parseArrangePayload(payload) {
     }
   }
   const mode = layoutFromName(name);
+  if (mode === 'group') return { mode, ids: [], ...groupFields(body) };
   return mode ? { mode, ids } : null;
+}
+
+/**
+ * Поля режима `group`: группы «head + дети» от пикера и подсвеченная строка.
+ *
+ * Группа — непустые строки, не меньше двух: head без детей группой не
+ * считается, и пикер такую не шлёт. Голое слово `group` (панель, CLI) даёт
+ * пустой список — отказ с причиной решает раскладка, а не разбор: разбор
+ * отвечает «тело не разобрано», и человек не узнал бы, чего не хватило.
+ */
+function groupFields(body) {
+  const groups = Array.isArray(body?.groups)
+    ? body.groups.map(normalizeIds).filter(g => g.length >= 2)
+    : [];
+  const selected = typeof body?.selected === 'string' && body.selected.trim() ? body.selected.trim() : null;
+  return { groups, selected };
 }
 
 /**

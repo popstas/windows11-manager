@@ -267,6 +267,28 @@ function pickFreeZone({ candidates, occupancy }) {
   return least ? { zone: least, how: 'overlay' } : null;
 }
 
+/**
+ * Группа для раскладки: первая по порядку `groups`, где есть `selected`,
+ * иначе первая, где есть сессия активного окна (`activeId`).
+ *
+ * «Первая» — именно первая: пикер кладёт группы от самого глубокого head
+ * (защита от вложенности), и лучшую здесь не выбирают.
+ */
+function pickGroup({ groups, selected, activeId }) {
+  const find = id => (id ? (groups ?? []).find(g => g.includes(id)) ?? null : null);
+  return find(selected) ?? find(activeId);
+}
+
+/**
+ * Раскладка группы: head в первую зону пары, дети стопкой во вторую — мест
+ * `min(n, 3)`, ребёнок `i` на место `(i mod 3) + 1`, с четвёртого поверх.
+ */
+function groupPlan({ first, second, n }) {
+  if (!n) return { head: first, children: [] };
+  const places = stackInCell(second, Math.min(n, MAX_SLOTS));
+  return { head: first, children: Array.from({ length: n }, (_, i) => places[i % MAX_SLOTS]) };
+}
+
 export {
   ZONE_MIN_SHARE,
   MAX_SLOTS,
@@ -284,4 +306,6 @@ export {
   pickStackZone,
   freeCandidates,
   pickFreeZone,
+  pickGroup,
+  groupPlan,
 };

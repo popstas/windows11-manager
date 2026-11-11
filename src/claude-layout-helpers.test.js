@@ -320,3 +320,31 @@ describe('groupByDesktop', () => {
     expect(groupByDesktop([], 1)).toEqual([]);
   });
 });
+
+// Раскладка группы «head + дети» (окна head и детей по зонам FancyZones).
+// Контракт с пикером: группы — массивы id, первый — head.
+describe('parseArrangePayload — group', () => {
+  it('объект с группами и выбранной сессией', () => {
+    expect(parseArrangePayload({ mode: 'group', groups: [['h', 'c1', 'c2']], selected: 'c1' }))
+      .toEqual({ mode: 'group', ids: [], groups: [['h', 'c1', 'c2']], selected: 'c1' });
+  });
+
+  it('json-строка', () => {
+    expect(parseArrangePayload('{"mode":"group","groups":[["h","c"]],"selected":null}'))
+      .toEqual({ mode: 'group', ids: [], groups: [['h', 'c']], selected: null });
+  });
+
+  it('голое слово group — пустые группы, отказ решает раскладка', () => {
+    expect(parseArrangePayload('group')).toEqual({ mode: 'group', ids: [], groups: [], selected: null });
+  });
+
+  it('группа из одного id и мусор выбрасываются', () => {
+    expect(parseArrangePayload({ mode: 'group', groups: [['h'], 'x', [' h2 ', 'c', 7, '']], selected: 5 }))
+      .toEqual({ mode: 'group', ids: [], groups: [['h2', 'c']], selected: null });
+  });
+
+  it('tile и cascade разбираются по-прежнему, незнакомое слово — null', () => {
+    expect(parseArrangePayload({ mode: 'tile', ids: ['a'] })).toEqual({ mode: 'tile', ids: ['a'] });
+    expect(parseArrangePayload('yolo')).toBeNull();
+  });
+});

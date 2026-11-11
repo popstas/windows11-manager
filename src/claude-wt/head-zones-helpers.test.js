@@ -14,6 +14,8 @@ import {
   pickStackZone,
   freeCandidates,
   pickFreeZone,
+  pickGroup,
+  groupPlan,
 } from './head-zones-helpers.js';
 
 // Числа с popstas-nb (проба 2026-11-12, масштаб 1 на всех мониторах).
@@ -214,5 +216,40 @@ describe('free', () => {
 
   it('кандидатов нет — null', () => {
     expect(pickFreeZone({ candidates: [], occupancy: new Map() })).toBeNull();
+  });
+});
+
+describe('pickGroup', () => {
+  const G = [['h1', 'a', 'b'], ['h2', 'c'], ['h3', 'a']];
+  it('selected в первой группе', () => expect(pickGroup({ groups: G, selected: 'b', activeId: 'c' })).toEqual(G[0]));
+  it('selected важнее активного', () => expect(pickGroup({ groups: G, selected: 'h2', activeId: 'a' })).toEqual(G[1]));
+  it('selected неизвестен — по активному окну', () => expect(pickGroup({ groups: G, selected: 'zz', activeId: 'c' })).toEqual(G[1]));
+  it('id в двух группах — первая по порядку', () => {
+    expect(pickGroup({ groups: G, selected: 'a', activeId: null })).toEqual(G[0]);
+    expect(pickGroup({ groups: G, selected: null, activeId: 'a' })).toEqual(G[0]);
+  });
+  it('ни то ни другое — null', () => expect(pickGroup({ groups: G, selected: null, activeId: 'zz' })).toBeNull());
+});
+
+describe('groupPlan', () => {
+  const FIRST = { x: -8, y: 0, width: 916, height: 1208 };
+  const SECOND = { x: 892, y: 0, width: 838, height: 1208 };
+  const t = i => ({ x: 892, y: i * 402, width: 838, height: i === 2 ? 404 : 402 });
+
+  it('1 ребёнок — вся вторая зона', () => {
+    expect(groupPlan({ first: FIRST, second: SECOND, n: 1 })).toEqual({ head: FIRST, children: [SECOND] });
+  });
+  it('3 ребёнка — трети', () => {
+    expect(groupPlan({ first: FIRST, second: SECOND, n: 3 }).children).toEqual([t(0), t(1), t(2)]);
+  });
+  it('4 ребёнка — четвёртый на месте первого', () => {
+    expect(groupPlan({ first: FIRST, second: SECOND, n: 4 }).children).toEqual([t(0), t(1), t(2), t(0)]);
+  });
+  it('7 детей — по кругу 1-2-3', () => {
+    expect(groupPlan({ first: FIRST, second: SECOND, n: 7 }).children)
+      .toEqual([t(0), t(1), t(2), t(0), t(1), t(2), t(0)]);
+  });
+  it('0 детей — только head', () => {
+    expect(groupPlan({ first: FIRST, second: SECOND, n: 0 })).toEqual({ head: FIRST, children: [] });
   });
 });
