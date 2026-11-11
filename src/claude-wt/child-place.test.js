@@ -161,6 +161,12 @@ describe('placeChildWindow', () => {
     expect(h.placed.at(-1).pos).toEqual(R['1:4']);
   });
 
+  it('free: развёрнутый head занимает обе зоны своего монитора', async () => {
+    const h = harness({ childPlacement: 'free', headBounds: { x: -8, y: 0, width: 1738, height: 1208 } });
+    await h.run();
+    expect(h.placed.at(-1).pos).toEqual(R['2:1']);
+  });
+
   it('free: свободная на другом мониторе', async () => {
     const h = harness({ childPlacement: 'free', foreign: [{ bounds: R['1:4'] }] });
     await h.run();
@@ -211,6 +217,14 @@ describe('placeChildWindow', () => {
     const h = harness({ current: 2, headDesktop: 1 });
     expect(await h.run()).toEqual({ desktop: 1, focus: false });
     expect(h.placed.at(-1).desktop).toBe(1);
+  });
+
+  // Ревью: текущий стол не узнался (пустой стол, впереди оболочка) — фокус
+  // увёл бы человека на стол head через GoToDesktopNumber. Отказ от фокуса.
+  it('текущий стол неизвестен, стол head известен — без фокуса', async () => {
+    const h = harness();
+    h.deps.desktopOf = async () => undefined;
+    expect(await h.run()).toEqual({ desktop: 1, focus: false });
   });
 
   it('дети с другого стола в k не считаются', async () => {

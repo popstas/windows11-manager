@@ -16,6 +16,7 @@ import {
   pickFreeZone,
   pickGroup,
   groupPlan,
+  zonesCovered,
 } from './head-zones-helpers.js';
 
 // Числа с popstas-nb (проба 2026-11-12, масштаб 1 на всех мониторах).
@@ -253,3 +254,24 @@ describe('groupPlan', () => {
     expect(groupPlan({ first: FIRST, second: SECOND, n: 0 })).toEqual({ head: FIRST, children: [] });
   });
 });
+
+// Ревью: занятость зоны для free по одному правилу 60% пропускала
+// развёрнутое окно head — оно ни в одной зоне, и половину его закрывал ребёнок.
+describe('zonesCovered', () => {
+  const keys = list => list.map(z => `${z.monitor}:${z.position}`);
+  it('окно в зоне занимает только её, даже на перекрытии 3:1/3:4', () => {
+    const rect = R31();
+    expect(keys(zonesCovered(rect, locateWindow(rect, LAYOUT), LAYOUT.zones))).toEqual(['3:1']);
+  });
+  it('развёрнутое на мониторе окно занимает обе его зоны', () => {
+    const rect = { x: -8, y: 0, width: 1738, height: 1208 };
+    expect(keys(zonesCovered(rect, locateWindow(rect, LAYOUT), LAYOUT.zones))).toEqual(['1:3', '1:4']);
+  });
+  it('мелкое окно на стыке двух зон не занимает ничего', () => {
+    // по 54% в 1:3 и 1:4 — ни в одной, и меньше трети любой из них
+    const rect = { x: 800, y: 100, width: 200, height: 200 };
+    expect(zonesCovered(rect, locateWindow(rect, LAYOUT), LAYOUT.zones)).toEqual([]);
+  });
+});
+
+function R31() { return { x: 2036, y: 0, width: 1096, height: 1168 }; }

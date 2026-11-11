@@ -12,22 +12,25 @@ import { calcFancyZonePos } from './fancyzones-helpers.js';
  * (`claudeWt.headZones`) он вреден — зона отключённого монитора тихо
  * разрешилась бы на другом экране.
  */
-function getFancyZoneInfo(opts, { positionsFallback = true } = {}) {
+function getFancyZoneInfo(opts, { positionsFallback = true, quiet = false } = {}) {
   let monitor, layout, zone;
   const config = getConfig();
+  // quiet — для зовущих со своим журналом и дедупом причин (headZones):
+  // своя строка здесь шла бы на каждый пересчёт, раз в минуту.
+  const say = quiet ? () => {} : console.log;
   opts = { ...opts, monitor: Number(opts.monitor), position: Number(opts.position) };
-  if (!opts.monitor) { console.log('fancyZones.monitor is required'); return false; }
-  if (!opts.position) { console.log('fancyZones.position is required'); return false; }
+  if (!opts.monitor) { say('fancyZones.monitor is required'); return false; }
+  if (!opts.position) { say('fancyZones.position is required'); return false; }
   monitor = getFancyZoneMonitor(opts.monitor);
   const appliedLayouts = JSON.parse(fs.readFileSync(`${config.fancyZones.path}/applied-layouts.json`, 'utf8'))['applied-layouts'];
   const customLayouts = JSON.parse(fs.readFileSync(`${config.fancyZones.path}/custom-layouts.json`, 'utf8'))['custom-layouts'];
   if (monitor !== undefined) {
     const applied = appliedLayouts.find(lay => lay.device.monitor === monitor.monitor);
-    if (!applied) { console.log(`layout not found: ${opts}`); return false; }
+    if (!applied) { say(`layout not found: ${opts}`); return false; }
     if (applied['applied-layout'].type === 'custom') {
       layout = customLayouts.find(lay => lay.uuid === applied['applied-layout'].uuid);
     } else {
-      console.log(`fancyZonesToPos(${opts}): only custom zone sets supported, don't use layout templates!`);
+      say(`fancyZonesToPos(${opts}): only custom zone sets supported, don't use layout templates!`);
     }
     if (!layout) return false;
     zone = layout.info.zones[opts.position - 1];
@@ -45,10 +48,10 @@ function getFancyZoneInfo(opts, { positionsFallback = true } = {}) {
   return { monitor, layout, zone };
 }
 
-function fancyZonesToPos(opts, { positionsFallback = true } = {}) {
-  const { monitor, zone } = getFancyZoneInfo(opts, { positionsFallback });
+function fancyZonesToPos(opts, { positionsFallback = true, quiet = false } = {}) {
+  const { monitor, zone } = getFancyZoneInfo(opts, { positionsFallback, quiet });
   if (!zone) {
-    console.log(`Zone not found: ${JSON.stringify(opts)}`);
+    if (!quiet) console.log(`Zone not found: ${JSON.stringify(opts)}`);
     return;
   }
   // left-coordinate/top-coordinate живут в том же пространстве, что и

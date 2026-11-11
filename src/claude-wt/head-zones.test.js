@@ -48,9 +48,9 @@ describe('resolveHeadLayout', () => {
     expect(log).not.toHaveBeenCalled();
   });
 
-  it('fancyZonesToPos зовётся с positionsFallback: false', () => {
+  it('fancyZonesToPos зовётся с positionsFallback: false и quiet', () => {
     resolveHeadLayout({ headZones: { 1: [3, 4] }, log: vi.fn(), nowMs: 0 });
-    expect(fancy.fancyZonesToPos).toHaveBeenCalledWith({ monitor: 1, position: 3 }, { positionsFallback: false });
+    expect(fancy.fancyZonesToPos).toHaveBeenCalledWith({ monitor: 1, position: 3 }, { positionsFallback: false, quiet: true });
   });
 
   it('монитор не подключён — зоны пропущены', () => {

@@ -28,6 +28,7 @@ import { readChildren, recordChild, childrenOfHead } from './child-registry.js';
 import { isMinimized } from '../windows-helpers.js';
 import {
   MAX_SLOTS, locateWindow, stackPlan, overlayPos, pickStackZone, freeCandidates, pickFreeZone, zoneKey,
+  zonesCovered,
 } from './head-zones-helpers.js';
 
 const noTiming = () => 0;
@@ -140,9 +141,15 @@ async function placeChildNow(w, { sessionId, headId, zone, name, mark = noTiming
     if (ownWindows.has(s.windowId) || s.windowId === w.id) continue;
     if (!onHeadDesktop(s.desktop)) continue;
     const rect = s.windowId === head?.windowId ? head.rect : boundsOf(d.getWindow(s.windowId));
-    if (rect) foreign.push(locateWindow(rect, layout));
+    if (rect) foreign.push({ rect, loc: locateWindow(rect, layout) });
   }
   const inZone = (loc, z) => loc.monitor === z.monitor && loc.zone === z.position;
+  // Чем занята зона для free: чужие — по `zonesCovered` (развёрнутый head
+  // занимает обе зоны монитора), свои вне зон — туда же, как чужие: их правило
+  // стопки не переставляет, а место они закрывают.
+  const blockers = [...foreign, ...own.filter(o => o.loc.zone == null)]
+    .map(f => new Set(zonesCovered(f.rect, f.loc, layout.zones).map(z => zoneKey(z.monitor, z.position))));
+  const blockedBy = z => blockers.filter(b => b.has(zoneKey(z.monitor, z.position))).length;
   const findZone = z => z && layout.zones.find(r => r.monitor === z.monitor && r.position === z.position);
 
   let target = null;
@@ -160,7 +167,7 @@ async function placeChildNow(w, { sessionId, headId, zone, name, mark = noTiming
     if (others.length) candidates = others;
     const occupancy = new Map(candidates.map(z => [zoneKey(z.monitor, z.position), {
       own: own.filter(o => inZone(o.loc, z)).length,
-      foreign: foreign.filter(l => inZone(l, z)).length,
+      foreign: blockedBy(z),
     }]));
     const picked = pickFreeZone({ candidates, occupancy });
     if (!picked) return fallback('свободной основной зоны нет');
@@ -179,7 +186,7 @@ async function placeChildNow(w, { sessionId, headId, zone, name, mark = noTiming
   let slot;
   let places;
   if (how === 'overlay') {
-    const count = ownIn.length + foreign.filter(l => inZone(l, target)).length;
+    const count = ownIn.length + blockedBy(target);
     plan = { moves: [], pos: overlayPos(target.rect, count) };
     slot = (count % MAX_SLOTS) + 1;
     places = MAX_SLOTS;
@@ -207,7 +214,10 @@ async function placeChildNow(w, { sessionId, headId, zone, name, mark = noTiming
 
   const modeTail = how === 'overlay' ? `${mode}, поверх` : mode;
   log(`${tag}: зона ${zoneKey(target.monitor, target.position)} (${modeTail}), место ${slot} из ${places}, стол ${headDesktop ?? current ?? '?'}`);
-  return { desktop: headDesktop, focus: headDesktop == null || current == null || headDesktop === current };
+  // Фокус — только если стол head известен совпадающим с текущим (или стола
+  // нет вовсе). Текущий стол не узнался — без фокуса: focusTerminalWindow
+  // зовёт GoToDesktopNumber и увёл бы человека на стол head.
+  return { desktop: headDesktop, focus: headDesktop == null || headDesktop === current };
 }
 
 export { placeChildWindow };

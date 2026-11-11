@@ -114,6 +114,10 @@ async function arrangeGroup({ groups, selected, log = () => {} }, deps = {}) {
     kids.push({ w, desktop: s.desktop ?? null });
   }
   const plan = groupPlan({ first: rects.first, second: rects.second, n: kids.length });
+  // Текущий стол — до переносов: активное окно может быть ребёнком, который
+  // сейчас уедет на стол head, и вопрос «где человек» после этого отвечал бы
+  // столом head — подъём утащил бы человека туда.
+  const current = await currentDesktop(d, activeBefore);
 
   let placed = 0;
   const put = async (w, rule) => {
@@ -131,8 +135,9 @@ async function arrangeGroup({ groups, selected, log = () => {} }, deps = {}) {
     await put(w, { pos: plan.children[i], ...(move ? { desktop: headDesktop } : {}) });
   }
 
-  const current = await currentDesktop(d, activeBefore);
-  if (headDesktop == null || current == null || current === headDesktop) {
+  // Стол не узнался — не поднимать: подъём окна с чужого стола уводит туда
+  // оболочку, а угадывать за человека, где он, незачем.
+  if (headDesktop == null || current === headDesktop) {
     const all = [headW, ...kids.map(k => k.w)];
     for (const w of all) {
       try {

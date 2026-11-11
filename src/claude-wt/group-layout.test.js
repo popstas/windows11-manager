@@ -140,6 +140,32 @@ describe('arrangeGroup', () => {
     expect(h.deps.focus).not.toHaveBeenCalled();
   });
 
+  // Ревью: текущий стол читался после переносов — активный ребёнок уже уехал
+  // на стол head, и подъём утаскивал человека туда же.
+  it('активный ребёнок на другом столе — стол читается до переносов, подъёма нет', async () => {
+    const h = harness({ kids: 2, kidOverrides: { 0: { desktop: 2 } }, active: 10 });
+    const desk = new Map([[1, 1], [10, 2], [11, 1], [90, 1]]);
+    h.deps.desktopOf = async id => desk.get(id) - 1;
+    const place = h.deps.place;
+    h.deps.place = vi.fn(async (opts) => {
+      if (opts.rule.desktop) desk.set(opts.w.id, opts.rule.desktop);
+      return place(opts);
+    });
+    await arrangeGroup({ groups: [h.group], selected: 'h', log: h.log }, h.deps);
+    expect(h.placed.find(p => p.id === 10).desktop).toBe(1);
+    expect(h.windows.get(1).bringToTop).not.toHaveBeenCalled();
+    expect(h.deps.focus).not.toHaveBeenCalled();
+  });
+
+  it('текущий стол неизвестен — без подъёма и фокуса', async () => {
+    const h = harness({ kids: 1 });
+    h.deps.desktopOf = async () => undefined;
+    await arrangeGroup({ groups: [h.group], selected: 'h', log: h.log }, h.deps);
+    expect(h.placed).toHaveLength(2);
+    expect(h.windows.get(1).bringToTop).not.toHaveBeenCalled();
+    expect(h.deps.focus).not.toHaveBeenCalled();
+  });
+
   it('пустые groups — отказ без единого placeWindow', async () => {
     const h = harness();
     const res = await arrangeGroup({ groups: [], selected: null, log: h.log }, h.deps);

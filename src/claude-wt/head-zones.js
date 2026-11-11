@@ -80,7 +80,8 @@ function compute(headZones, problems) {
     for (const position of pair) {
       let rect;
       try {
-        rect = fancyZonesToPos({ monitor, position }, { positionsFallback: false });
+        // quiet: причину пишем сами, один раз на смену набора причин.
+        rect = fancyZonesToPos({ monitor, position }, { positionsFallback: false, quiet: true });
       } catch (e) {
         problems.push(`claude-wt headZones: зона ${zoneKey(monitor, position)} — ${e.message}, пропущена`);
         continue;

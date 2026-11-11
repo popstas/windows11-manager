@@ -159,4 +159,28 @@ describe('fancyZonesToPos', () => {
     expect(fancyZonesToPos({ monitor: 1, position: 9 })).toEqual({ x: 0, y: 0, width: 768, height: 864 });
     expect(fancyZonesToPos({ monitor: 1, position: 9 }, { positionsFallback: false })).toBeUndefined();
   });
+
+  // Ревью: зоны headZones пересчитываются раз в минуту, и своя строка
+  // «Zone not found» шла бы мимо дедупа причин в head-zones.js.
+  it('quiet: true не пишет в журнал о ненайденной зоне', async () => {
+    const uuid = 'zone-uuid';
+    fs.writeFileSync(path.join(toPosDir, 'applied-layouts.json'), JSON.stringify({
+      'applied-layouts': [
+        { device: { monitor: 1 }, 'applied-layout': { type: 'custom', uuid } },
+      ],
+    }));
+    fs.writeFileSync(path.join(toPosDir, 'custom-layouts.json'), JSON.stringify({
+      'custom-layouts': [{ uuid, info: { zones: [{ X: 0, Y: 0, width: 960, height: 1080 }] } }],
+    }));
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const { fancyZonesToPos } = await import('./fancyzones.js');
+      expect(fancyZonesToPos({ monitor: 1, position: 9 }, { positionsFallback: false, quiet: true })).toBeUndefined();
+      expect(spy).not.toHaveBeenCalled();
+      fancyZonesToPos({ monitor: 1, position: 9 }, { positionsFallback: false });
+      expect(spy).toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
