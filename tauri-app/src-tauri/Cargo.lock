@@ -5437,7 +5437,7 @@ dependencies = [
 
 [[package]]
 name = "windows11-manager-tray"
-version = "4.6.0"
+version = "4.6.1"
 dependencies = [
  "chrono",
  "fern",
