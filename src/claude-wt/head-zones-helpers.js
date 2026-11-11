@@ -16,7 +16,18 @@
 /** @typedef {{monitors: {monitor:number, rect:Rect}[], zones: ZoneRect[]}} HeadLayout */
 /** @typedef {{monitor:number|null, zone:number|null, slot:1|2|3|null}} Location */
 
+import { isMinimized } from '../windows-helpers.js';
+
 const PLACEMENTS = ['stack', 'free'];
+
+/** Доля площади окна внутри зоны, с которой окно считается стоящим в ней. */
+const ZONE_MIN_SHARE = 0.6;
+
+/** Мест в зоне по высоте: с четвёртого окна новое ложится поверх. */
+const MAX_SLOTS = 3;
+
+/** Окно нигде: свёрнуто, раскладки нет или вне всех мониторов. */
+const NO_LOCATION = Object.freeze({ monitor: null, zone: null, slot: null });
 
 const isPositiveInt = v => Number.isInteger(v) && v >= 1;
 
@@ -67,4 +78,113 @@ function normalizeChildPlacement(raw) {
   return PLACEMENTS.includes(v) ? v : 'stack';
 }
 
-export { zoneKey, normalizeHeadZones, normalizeChildPlacement };
+const isRect = r => r && [r.x, r.y, r.width, r.height].every(Number.isFinite) && r.width > 0 && r.height > 0;
+
+function overlapArea(a, b) {
+  const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+  const h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
+/**
+ * Прямоугольник монитора из `editor-parameters.json` в пространстве окон.
+ *
+ * Формула та же, что у зон (`calcFancyZonePos`): editor-parameters живёт в
+ * физических пикселях, окна — в логических, и между ними деление на dpi/96.
+ * Разойдись они, окно в зоне числилось бы на соседнем мониторе.
+ */
+function editorMonitorRect(entry) {
+  const scale = entry?.dpi ? entry.dpi / 96 : 1;
+  const raw = {
+    x: entry?.['left-coordinate'],
+    y: entry?.['top-coordinate'],
+    width: entry?.['work-area-width'],
+    height: entry?.['work-area-height'],
+  };
+  if (scale === 1) return raw;
+  return {
+    x: Math.round(raw.x / scale),
+    y: Math.round(raw.y / scale),
+    width: Math.round(raw.width / scale),
+    height: Math.round(raw.height / scale),
+  };
+}
+
+/**
+ * Основная зона, в которой стоит окно: не меньше 60% площади окна внутри неё.
+ *
+ * Зоны одного монитора законно перекрываются (на правом мониторе ноутбука —
+ * на 364 px), и окно в полосе перекрытия подходит обеим: побеждает большее
+ * пересечение, а при равенстве — первая по списку, то есть первая в паре.
+ */
+function zoneOfRect(rect, zones) {
+  if (!isRect(rect)) return null;
+  const area = rect.width * rect.height;
+  let best = null;
+  let bestArea = 0;
+  for (const zone of zones ?? []) {
+    const inter = overlapArea(rect, zone.rect);
+    if (inter / area >= ZONE_MIN_SHARE && inter > bestArea) {
+      best = zone;
+      bestArea = inter;
+    }
+  }
+  return best;
+}
+
+/**
+ * Место окна в зоне, 1–3, по верхней кромке и в целых числах.
+ *
+ * Пороги стоят посередине между верхними кромками, которые даёт
+ * `stackInCell` на 1, 2 и 3 места: окно на всю зону — место 1, половины — 1
+ * и 2, трети — 1, 2, 3. Округление `dy / (h/3)` отдало бы нижней половине
+ * (ровно 1.5) место 3, а счёт по центру окна — окну на всю зону место 2.
+ */
+function slotInZone(rect, zone) {
+  const p = Math.floor(zone.height / MAX_SLOTS);
+  const dy = rect.y - zone.y;
+  if (2 * dy < p) return 1;
+  if (4 * dy < 7 * p) return 2;
+  return 3;
+}
+
+/** Монитор FancyZones, на котором центр окна, или null. */
+function monitorOfRect(rect, monitors) {
+  if (!isRect(rect)) return null;
+  const cx = rect.x + rect.width / 2;
+  const cy = rect.y + rect.height / 2;
+  const hit = (monitors ?? []).find(({ rect: m }) => (
+    isRect(m) && cx >= m.x && cx < m.x + m.width && cy >= m.y && cy < m.y + m.height
+  ));
+  return hit ? hit.monitor : null;
+}
+
+/**
+ * Где стоит окно: монитор, основная зона и место в ней.
+ *
+ * Свёрнутое окно нигде не стоит и места не занимает — то же правило, что у
+ * плитки и у трекера (`isMinimized` из windows-helpers, по прямоугольнику).
+ */
+function locateWindow(bounds, layout) {
+  if (!layout || !isRect(bounds) || isMinimized(bounds)) return NO_LOCATION;
+  const zone = zoneOfRect(bounds, layout.zones);
+  return {
+    monitor: zone ? zone.monitor : monitorOfRect(bounds, layout.monitors),
+    zone: zone ? zone.position : null,
+    slot: zone ? slotInZone(bounds, zone.rect) : null,
+  };
+}
+
+export {
+  ZONE_MIN_SHARE,
+  MAX_SLOTS,
+  NO_LOCATION,
+  zoneKey,
+  normalizeHeadZones,
+  normalizeChildPlacement,
+  editorMonitorRect,
+  zoneOfRect,
+  slotInZone,
+  monitorOfRect,
+  locateWindow,
+};
