@@ -1,6 +1,28 @@
 # Changelog
 
 
+## v4.6.0 - 2026-11-11
+
+### Features
+
+- claude-wt: Session-new отказывает в bypassPermissions
+- claude-wt: Http.host в файле трекера из ключа httpHost
+- claude-wt: POST /claude-wt/session-new — окно новой сессии для head-session
+- claude-wt: Имя сессии входящих из Telegram по шаблону, повтор с номером
+- claude-wt: Окно сессии на каждый входящий файл из Telegram
+- tray: Связь службы с брокером — пункт меню и метка на значке
+
+### Bug Fixes
+
+- claude-wt: Временные файлы syncthing во входящих пропускаются без строки в логе
+- claude-wt: Файл, исчезнувший между readdir и stat, не роняет проход наблюдателя входящих
+- ha: Экспорт читает состояние агента только у открытых сессий
+- tray: Лишний drop состояния меню роняет clippy в CI
+
+### Documentation
+
+- claude-md: Деплой и конфиг ноутбука nb
+
 ## v4.5.0 - 2026-10-23
 
 ### Features
