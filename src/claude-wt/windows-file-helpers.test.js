@@ -39,6 +39,7 @@ describe('buildWindowsFile', () => {
     expect(out.windows.aaa).toEqual({
       title: 'ccfzf-picker', desktop: 2, lastSeen: 1700, focusedAt: 1650,
       app: 'WindowsTerminal.exe', minimized: false,
+      monitor: null, zone: null, slot: null,
     });
   });
 
@@ -98,7 +99,7 @@ describe('buildWindowsFile', () => {
     const out = buildWindowsFile({
       windows: [], slots: {}, host: 'pc', pid: 42, nowMs: 1_800_500,
     });
-    expect(out).toEqual({ host: 'pc', pid: 42, generated: 1800, windows: {}, snapshots: [], projects: [] });
+    expect(out).toEqual({ host: 'pc', pid: 42, generated: 1800, windows: {}, snapshots: [], projects: [], headZones: {} });
   });
 
   it('survives a window whose session has no slot yet', () => {
@@ -107,6 +108,7 @@ describe('buildWindowsFile', () => {
     });
     expect(out.windows.zzz).toEqual({
       title: 'fresh', desktop: null, lastSeen: 0, focusedAt: 0, app: '', minimized: false,
+      monitor: null, zone: null, slot: null,
     });
   });
 
@@ -449,5 +451,72 @@ describe('signalPath', () => {
     } finally {
       restore();
     }
+  });
+});
+
+// Где стоит сессия: монитор, основная зона и место. Читают это head на
+// pc-virt (session-find) и пикер — окон у них нет, а знать, куда класть
+// следующего ребёнка и где стоит группа, нужно. Числа — с popstas-nb.
+describe('buildWindowsFile — зоны head', () => {
+  const LAYOUT = {
+    monitors: [
+      { monitor: 1, rect: { x: 0, y: 0, width: 1722, height: 1200 } },
+      { monitor: 3, rect: { x: 1920, y: 0, width: 1920, height: 1160 } },
+    ],
+    zones: [
+      { monitor: 1, position: 3, rect: { x: -8, y: 0, width: 916, height: 1208 } },
+      { monitor: 1, position: 4, rect: { x: 892, y: 0, width: 838, height: 1208 } },
+    ],
+  };
+  const HEAD = { id: 21, title: 'head', sessionId: 'h', app: 'WindowsTerminal.exe', bounds: { x: -8, y: 0, width: 916, height: 1208 } };
+  const build = (windows, extra = {}) => buildWindowsFile({
+    windows, slots: {}, host: 'nb', pid: 1, nowMs: 1_800_000, ...extra,
+  });
+
+  it('у окна в зоне есть monitor, zone и slot', () => {
+    const child = { id: 22, title: 'c', sessionId: 'c', bounds: { x: 892, y: 604, width: 838, height: 604 } };
+    const out = build([HEAD, child], { layout: LAYOUT, headZones: { 1: [3, 4] } });
+    expect(out.windows.h).toMatchObject({ monitor: 1, zone: 3, slot: 1 });
+    expect(out.windows.c).toMatchObject({ monitor: 1, zone: 4, slot: 2 });
+  });
+
+  it('окно вне зон, но на мониторе — monitor есть, zone и slot null', () => {
+    const w = { id: 23, title: 'r', sessionId: 'r', bounds: { x: 2000, y: 100, width: 600, height: 400 } };
+    expect(build([w], { layout: LAYOUT }).windows.r).toMatchObject({ monitor: 3, zone: null, slot: null });
+  });
+
+  it('свёрнутое окно — три null', () => {
+    const w = { id: 24, title: 'm', sessionId: 'm', bounds: { x: -32000, y: -32000, width: 160, height: 28 } };
+    expect(build([w], { layout: LAYOUT }).windows.m).toMatchObject({ minimized: true, monitor: null, zone: null, slot: null });
+  });
+
+  it('без layout — три null, headZones: {}', () => {
+    const out = build([HEAD]);
+    expect(out.windows.h).toMatchObject({ monitor: null, zone: null, slot: null });
+    expect(out.headZones).toEqual({});
+  });
+
+  it('headZones — копия нормализованного конфига', () => {
+    expect(build([HEAD], { layout: LAYOUT, headZones: { 1: [3, 4] } }).headZones).toEqual({ 1: [3, 4] });
+  });
+
+  it('отпечаток меняется, когда окно переехало в другую зону', () => {
+    const a = build([HEAD], { layout: LAYOUT });
+    const b = build([{ ...HEAD, bounds: { x: 892, y: 0, width: 838, height: 1208 } }], { layout: LAYOUT });
+    expect(windowsFingerprint(a.windows)).not.toBe(windowsFingerprint(b.windows));
+  });
+
+  it('отпечаток меняется на смену места внутри зоны', () => {
+    const a = build([{ ...HEAD, bounds: { x: 892, y: 0, width: 838, height: 604 } }], { layout: LAYOUT });
+    const b = build([{ ...HEAD, bounds: { x: 892, y: 604, width: 838, height: 604 } }], { layout: LAYOUT });
+    expect(windowsFingerprint(a.windows)).not.toBe(windowsFingerprint(b.windows));
+  });
+
+  // Сигнал будит скрытый пикер ради хоткеев и состава. Зона его не касается
+  // намеренно: иначе каждое перетаскивание окна гоняло бы пикер по ssh.
+  it('signalPrint от зоны не зависит', () => {
+    const a = build([HEAD], { layout: LAYOUT });
+    const b = build([{ ...HEAD, bounds: { x: 892, y: 0, width: 838, height: 1208 } }], { layout: LAYOUT });
+    expect(signalPrint(a)).toBe(signalPrint(b));
   });
 });

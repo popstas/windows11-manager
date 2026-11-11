@@ -3,6 +3,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { isMinimized } from './tracker-helpers.js';
+import { locateWindow } from './head-zones-helpers.js';
 
 // Как часто файл переписывается, когда расклад не менялся. Свежесть читатель
 // судит по полю `generated` и только по нему: mtime не отличает «демон умер» от
@@ -35,7 +36,9 @@ const WINDOWS_FILE_HEARTBEAT_MS = 30_000;
  * видит, и без этой его список продолжал бы звать к сессии, на которую уже
  * сходили руками.
  */
-function buildWindowsFile({ windows, slots, host, pid, nowMs, snapshots, projects, httpPort, httpHost }) {
+function buildWindowsFile({
+  windows, slots, host, pid, nowMs, snapshots, projects, httpPort, httpHost, layout = null, headZones = {},
+}) {
   const out = {};
   for (const w of windows ?? []) {
     const id = w?.sessionId;
@@ -64,6 +67,11 @@ function buildWindowsFile({ windows, slots, host, pid, nowMs, snapshots, project
       // на той стороне показывал бы его обычным — и поймать это можно было бы
       // только глазами на живой машине.
       minimized: isMinimized(w),
+      // Где стоит окно: монитор FancyZones (нумерация кода, как у headZones),
+      // основная зона и место в ней (1–3). Читают head на pc-virt
+      // (session-find) и пикер — окон у них нет. Свёрнутое окно нигде не
+      // стоит, без раскладки (headZones не заданы) — тоже три null.
+      ...locateWindow(w.bounds, layout),
     };
   }
   // Адрес, по которому менеджер этой машины принимает просьбы напрямую.
@@ -112,6 +120,9 @@ function buildWindowsFile({ windows, slots, host, pid, nowMs, snapshots, project
         hotkey: p.hotkey.trim(),
       })),
     ...(http ? { http } : {}),
+    // Раскладка, по которой посчитаны zone/slot выше. Ключ на месте всегда:
+    // пустая карта значит «основные зоны здесь не заданы».
+    headZones: headZones ?? {},
   };
 }
 
@@ -160,7 +171,11 @@ function trimSnapshot(snap) {
  */
 function windowsFingerprint(windows, snapshots, projects) {
   const win = Object.entries(windows ?? {})
-    .map(([id, w]) => `${id}\u0000${w.desktop}\u0000${w.title}\u0000${w.focusedAt}\u0000${w.minimized}`)
+    // Монитор, зона и место — по той же причине, что и свёрнутость:
+    // перетащенное в другую зону окно иначе доезжало бы до head только
+    // сердцебиением, до тридцати секунд.
+    .map(([id, w]) => `${id}\u0000${w.desktop}\u0000${w.title}\u0000${w.focusedAt}\u0000${w.minimized}`
+      + `\u0000${w.monitor}\u0000${w.zone}\u0000${w.slot}`)
     .sort()
     .join('\u0001');
   // Состав, не содержимое: снимок неизменяем, кроме последнего, которому тик

@@ -44,6 +44,7 @@ import { loadProgress } from './progress.js';
 import { activeAgent } from './view-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { snapshotTick, resetSnapshotter, currentSnapshots } from './snapshotter.js';
+import { resolveHeadLayout } from './head-zones.js';
 
 function getClaudeWtConfig() {
   return mergeClaudeWtConfig(getConfig().claudeWt);
@@ -360,8 +361,18 @@ function publishWindows(cfg, windows, slots) {
   // Снимки берутся из кэша снапшотера, а не из файла: publishWindows зовётся
   // каждый тик, а файл снимков лежит там же, где состояние, — на диске.
   const snapshots = currentSnapshots();
+  // Основные зоны для полей monitor/zone/slot. Файлы FancyZones и список
+  // мониторов перечитываются не чаще раза в минуту (кэш в head-zones.js), и
+  // одна и та же причина отказа пишется в журнал один раз.
+  const layout = resolveHeadLayout({
+    headZones: cfg.headZones,
+    problems: cfg.headZonesProblems,
+    log: message => console.warn(`[claude-wt] ${message}`),
+    nowMs,
+  });
   const payload = buildWindowsFile({
     windows, slots, host: os.hostname(), pid: process.pid, nowMs, snapshots,
+    layout, headZones: cfg.headZones,
     projects: claudeWtProjects(),
     // Ключ верхнего уровня, не внутри claudeWt: вложенный молча ничего не
     // сделает — та же семья, что placeWindowOnOpen и publishStats. `cfg` тут —
