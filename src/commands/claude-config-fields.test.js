@@ -4,6 +4,7 @@ import { CLAUDE_CONFIG_FIELDS, SESSIONS_SORT_MODES, coerceFieldValue } from './c
 import { CHILD_PLACEMENTS, normalizeChildPlacement } from '../claude-wt/head-zones-helpers.js';
 import { CLAUDE_WT_DEFAULTS } from '../claude-wt/daemon-helpers.js';
 import { normalizeSort } from '../claude-wt/ha/session-groups.js';
+import { normalizeInboxConfig } from '../claude-wt/telegram-inbox-helpers.js';
 
 describe('CLAUDE_CONFIG_FIELDS', () => {
   it('несёт только скаляры — структуры формой не выражаются', () => {
@@ -29,6 +30,13 @@ describe('CLAUDE_CONFIG_FIELDS', () => {
       expect(CLAUDE_WT_DEFAULTS).toHaveProperty(field.key);
       expect(field.default).toBe(CLAUDE_WT_DEFAULTS[field.key]);
     }
+  });
+
+  it('умолчания claudeWt.telegramInbox совпадают с normalizeInboxConfig', () => {
+    const { cfg } = normalizeInboxConfig({});
+    const fields = CLAUDE_CONFIG_FIELDS.filter((f) => f.section === 'claudeWt.telegramInbox');
+    expect(fields.map((f) => f.key).sort()).toEqual(['background', 'gapMs']);
+    for (const f of fields) expect(f.default).toBe(cfg[f.key]);
   });
 
   // Переключатель «как ставить ребёнка head» на вкладке Claude.

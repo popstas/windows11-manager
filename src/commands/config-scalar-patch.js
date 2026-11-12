@@ -1,6 +1,11 @@
 /**
- * Точечная правка одного скалярного ключа второго уровня в YAML-конфиге:
+ * Точечная правка одного скалярного ключа в секции YAML-конфига:
  * `claudeWt.interval`, `homeassistant.slots` и прочие поля вкладки Claude.
+ * Секция — путь через точку: `claudeWt.telegramInbox` правит ключ третьего
+ * уровня. Отсутствующую секцию верхнего уровня патчер дописывает сам, а
+ * вложенную — нет: блоку вроде `telegramInbox` без `dir`/`cwd`/`script` толку
+ * нет, и собирать его по одному полю формы значило бы молча плодить
+ * неработающий конфиг.
  *
  * Тот же приём и по той же причине, что у соседнего `tile-zones-patch.js`:
  * конфиг человек ведёт руками, он весь в поясняющих комментариях, и прогон его
@@ -67,8 +72,15 @@ function findTarget(raw, section, key) {
     throw new Error(`Конфиг не разбирается${at}: ${e.message}`);
   }
 
-  const node = doc.get(section, true);
-  if (node === undefined || node === null) return { kind: 'append-section' };
+  const path = section.split('.');
+  const node = doc.getIn(path, true);
+  if (node === undefined || node === null) {
+    if (path.length === 1) return { kind: 'append-section' };
+    throw new Error(
+      `${section} в конфиге нет — вложенный блок патчер не создаёт; допишите блок ${section} вручную ` +
+      'и повторите сохранение. Файл не тронут.',
+    );
+  }
   if (!isMap(node)) {
     throw new Error(
       `${section} в конфиге — не отображение ключей, а список или отдельное значение; ` +
@@ -96,7 +108,9 @@ function findTarget(raw, section, key) {
 
   // `claudeWt: {}` — карта есть, но пустая: вставлять после «последнего
   // элемента» некуда, меняем всё её (пустое) значение целиком.
-  const topPair = doc.contents?.items?.find((p) => isScalar(p.key) && p.key.value === section);
+  const parent = path.length === 1 ? doc.contents : doc.getIn(path.slice(0, -1), true);
+  const last = path[path.length - 1];
+  const topPair = parent?.items?.find((p) => isScalar(p.key) && p.key.value === last);
   return { kind: 'replace-empty-map', topPair };
 }
 
@@ -119,7 +133,7 @@ function verifyPatch(result, section, key, value) {
       `(${e.message}). Запись отменена, файл не тронут.`,
     );
   }
-  const got = parsed?.[section]?.[key];
+  const got = [...section.split('.'), key].reduce((node, k) => node?.[k], parsed);
   const same = value === undefined
     ? got === undefined
     : JSON.stringify(got) === JSON.stringify(value);
@@ -173,7 +187,13 @@ function patchConfigScalar(raw, section, key, value) {
     let start = topPair.value.range[0];
     while (start > 0 && (raw[start - 1] === ' ' || raw[start - 1] === '\t')) start--;
     const end = topPair.value.range[1];
-    const block = toEol(`${eol}  ${key}: ${renderScalar(value)}\n`);
+    // Отступ — от ключа секции: у `claudeWt:` это 0 + 2, у вложенного
+    // `telegramInbox:` уже 2 + 2.
+    const pad = ' '.repeat(indentAt(raw, topPair.key.range[0]) + 2);
+    // Перевод строки после `{}` в тексте уже есть — свой второй дал бы пустую
+    // строку посреди секции.
+    const tail = raw[end] === '\n' || raw[end] === '\r' || end === raw.length ? '' : '\n';
+    const block = toEol(`${eol}${pad}${key}: ${renderScalar(value)}${tail}`);
     result = raw.slice(0, start) + block + raw.slice(end);
   } else if (value === undefined) {
     // Убрать существующий ключ: вырезается вся его строка целиком, вместе с

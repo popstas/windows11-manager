@@ -163,3 +163,55 @@ describe('verifyPatch', () => {
     expect(() => verifyPatch('claudeWt:\n  interval: 1000\n', 'claudeWt', 'interval', 1000)).not.toThrow();
   });
 });
+
+// Блок третьего уровня: `claudeWt.telegramInbox`. Рядом одноимённый ключ
+// уровнем выше — правка обязана попасть ровно во вложенный.
+const NESTED = `claudeWt:
+  gapMs: 5
+  telegramInbox:
+    enabled: true
+    # шаблон имени сессии
+    sessionName: '{user}-tg-{date}'
+    gapMs: 3000
+  restore: { auto: false }
+`;
+const NESTED_NO_GAP = NESTED.replace(/^ {4}gapMs: .*\n/m, '');
+
+describe('patchConfigScalar: вложенная секция', () => {
+  it('меняет вложенный ключ, не трогая одноимённый уровнем выше', () => {
+    const out = patchConfigScalar(NESTED, 'claudeWt.telegramInbox', 'gapMs', 1000);
+    expect(parse(out).claudeWt.telegramInbox.gapMs).toBe(1000);
+    expect(parse(out).claudeWt.gapMs).toBe(5);
+    expect(out).toBe(NESTED.replace('gapMs: 3000', 'gapMs: 1000'));
+  });
+
+  it('дописывает вложенный ключ с отступом блока', () => {
+    const out = patchConfigScalar(NESTED_NO_GAP, 'claudeWt.telegramInbox', 'gapMs', 1000);
+    expect(out).toContain("sessionName: '{user}-tg-{date}'\n    gapMs: 1000\n  restore:");
+  });
+
+  it('убирает вложенный ключ строкой целиком', () => {
+    const out = patchConfigScalar(NESTED, 'claudeWt.telegramInbox', 'gapMs', undefined);
+    expect(parse(out).claudeWt.telegramInbox).not.toHaveProperty('gapMs');
+    expect(out).toBe(NESTED_NO_GAP);
+  });
+
+  it('молчит, если вложенного ключа и так нет', () => {
+    expect(patchConfigScalar(NESTED_NO_GAP, 'claudeWt.telegramInbox', 'gapMs', undefined)).toBe(NESTED_NO_GAP);
+  });
+
+  it('отказывается, когда блока telegramInbox нет', () => {
+    expect(() => patchConfigScalar(SAMPLE, 'claudeWt.telegramInbox', 'gapMs', 1000)).toThrow(/claudeWt\.telegramInbox.*вручную/);
+  });
+
+  it('отказывается вставлять в непустую флоу-карту вложенного блока', () => {
+    const raw = 'claudeWt:\n  telegramInbox: { enabled: true }\n';
+    expect(() => patchConfigScalar(raw, 'claudeWt.telegramInbox', 'gapMs', 1000)).toThrow(/flow/);
+  });
+
+  it('наполняет пустую вложенную флоу-карту', () => {
+    const out = patchConfigScalar('claudeWt:\n  telegramInbox: {}\n  terminal: wt\n', 'claudeWt.telegramInbox', 'gapMs', 1000);
+    expect(parse(out).claudeWt).toEqual({ telegramInbox: { gapMs: 1000 }, terminal: 'wt' });
+    expect(out).toBe('claudeWt:\n  telegramInbox:\n    gapMs: 1000\n  terminal: wt\n');
+  });
+});

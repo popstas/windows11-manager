@@ -9,8 +9,10 @@
  *
  * Сюда попали только скаляры. Структуры под `claudeWt` (`projects`,
  * `terminals`, `terminalExecutables`, `launch`, `launchNew`, `launchInbox`,
- * `telegramInbox`, `restore`, `snapshots`, `headZones`) формой не выражаются без отдельного
- * редактора и остаются в YAML; `tileZones` — список пар, у него своё поле и
+ * `restore`, `snapshots`, `headZones`) формой не выражаются без отдельного
+ * редактора и остаются в YAML. Из `telegramInbox` на форме два скаляра
+ * (`gapMs`, `background`) — секция у них путём через точку, а сам блок по-прежнему
+ * пишется в YAML руками; `tileZones` — список пар, у него своё поле и
  * свой патчер (`tile-zones-commands.js`).
  *
  * Умолчания продублированы здесь не как источник правды, а как подпись поля:
@@ -52,6 +54,11 @@ const CLAUDE_CONFIG_FIELDS = [
     default: 'stack',
     choices: CHILD_PLACEMENTS,
   },
+
+  // Входящие из Telegram. Умолчания — из `normalizeInboxConfig`
+  // (`src/claude-wt/telegram-inbox-helpers.js`), тест сверяет.
+  { name: 'claudeWt.telegramInbox.gapMs', section: 'claudeWt.telegramInbox', key: 'gapMs', type: 'number', default: 1000 },
+  { name: 'claudeWt.telegramInbox.background', section: 'claudeWt.telegramInbox', key: 'background', type: 'boolean', default: true },
 
   // Слоты сессий на панели openHASP. Живут в корневом `homeassistant`, но по
   // смыслу это настройки claude-wt — потому и стоят на этой вкладке.
