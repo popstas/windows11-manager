@@ -1,6 +1,14 @@
 # Changelog
 
 
+## v4.7.1 - 2026-11-12
+
+### Features
+
+- settings: Поля claudeWt.telegramInbox.gapMs и background во вкладке Claude
+- telegram-inbox: Окна в фоне, пауза очереди 1000 мс
+- claude-wt: Окно сессии без фокуса по флагу raise
+
 ## v4.7.0 - 2026-11-12
 
 ### Features
