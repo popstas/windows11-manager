@@ -66,6 +66,14 @@ describe('focusSpawnedWindow', () => {
     expect(h.calls.some(c => c.startsWith('focus:'))).toBe(false);
   });
 
+  // Входящие из Telegram: окно приходит само, без просьбы человека, и
+  // поднимать его поверх того, чем он занят, нельзя.
+  it('raise: false — ставит на место, но не поднимает', async () => {
+    const h = harness();
+    expect(await focusSpawnedWindow('skill-do', { ...h.deps, raise: false })).toBe(true);
+    expect(h.calls).toEqual(['find:skill-do', 'wait:4000', 'place:77:skill-do']);
+  });
+
   it('place с focus: true — фокус со столом из ответа', async () => {
     const h = harness();
     const seen = [];

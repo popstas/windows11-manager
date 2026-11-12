@@ -67,6 +67,16 @@ describe('openInboxSession', () => {
     expect(spawned).toEqual([]);
   });
 
+  it('background: true — окно без фокуса', async () => {
+    const { focusByTitle } = await run({ ...REQ, background: true });
+    expect(focusByTitle).toHaveBeenCalledWith('tg-2026-11-05-msg', expect.objectContaining({ raise: false }));
+  });
+
+  it('без background — фокус как раньше', async () => {
+    const { focusByTitle } = await run();
+    expect(focusByTitle).toHaveBeenCalledWith('tg-2026-11-05-msg', expect.objectContaining({ raise: true }));
+  });
+
   it('a window that never showed up is ok but not focused', async () => {
     const { res } = await run(REQ, { focusByTitle: vi.fn().mockResolvedValue(false) });
     expect(res).toMatchObject({ ok: true, focused: false });

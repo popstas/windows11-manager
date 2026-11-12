@@ -190,6 +190,7 @@ async function focusSpawnedWindow(title, deps = {}) {
     place = placeSpawnedWindow,
     mark = noTiming,
     cursor = null,
+    raise = true,
   } = deps;
   const deadline = now() + waitMs;
   let w = findWindow(title);
@@ -208,6 +209,13 @@ async function focusSpawnedWindow(title, deps = {}) {
   // секунду прыгает в свою геометрию, человек читает как «открылось только
   // сейчас», и вся экономия предыдущих звеньев пропадает зря.
   const placed = await place(w, title, mark, cursor);
+  // `raise: false` — окно в фоне: место как у всех, но ни фокуса, ни
+  // переключения стола. Так открываются входящие из Telegram — окно приходит
+  // само, без просьбы человека, и выдёргивать его из работы нельзя.
+  if (!raise) {
+    mark('focus:skipped');
+    return true;
+  }
   // Ребёнок head-сессии отвечает объектом: `focus: false` — окно поставлено на
   // стол head, а человек на другом столе. Фокус (`focusTerminalWindow` зовёт
   // GoToDesktopNumber) увёл бы его туда, поэтому окно остаётся без фокуса.
