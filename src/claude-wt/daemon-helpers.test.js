@@ -43,6 +43,12 @@ describe('mergeClaudeWtConfig', () => {
     expect(mergeClaudeWtConfig(null)).toEqual(expected);
   });
 
+  it('нормализует childCwdRoot, умолчание пусто', () => {
+    expect(mergeClaudeWtConfig({}).childCwdRoot).toBe('');
+    expect(mergeClaudeWtConfig({ childCwdRoot: '/home/popstas/projects/' }).childCwdRoot).toBe('/home/popstas/projects');
+    expect(mergeClaudeWtConfig({ childCwdRoot: 'projects' }).childCwdRoot).toBe('');
+  });
+
   it('кладёт нормализованные headZones и умолчание stack', () => {
     const cfg = mergeClaudeWtConfig({ headZones: { 1: [3, 4], 9: 'x' } });
     expect(cfg.headZones).toEqual({ 1: [3, 4] });

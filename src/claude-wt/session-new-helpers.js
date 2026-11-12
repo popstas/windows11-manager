@@ -10,6 +10,8 @@
  * вторым аргументом, иначе проверять пришлось бы настоящим конфигом.
  */
 
+import path from 'node:path';
+
 // Режимы `claude --permission-mode` (2.1.322), которые маршрут пропускает.
 // Чужое слово claude отвергнет уже на той стороне ssh, и окно закроется
 // молча — лучше 400 здесь. bypassPermissions у claude есть, но отсюда
@@ -41,6 +43,37 @@ function parseBody(raw) {
 }
 
 const fail = (status, reason) => ({ ok: false, status, reason });
+
+const trimSlashes = p => (p.length > 1 ? p.replace(/\/+$/, '') : p);
+
+/**
+ * `claudeWt.childCwdRoot`: корень каталогов детей head на стороне ssh
+ * (pc-virt). Пусто, не строка, относительный путь или `/` — корня нет, и
+ * второго прохода у session-new нет: корнем всей машины ключ не бывает.
+ */
+function normalizeChildCwdRoot(raw) {
+  if (typeof raw !== 'string') return '';
+  const text = raw.trim();
+  if (!text.startsWith('/')) return '';
+  const norm = trimSlashes(path.posix.normalize(text));
+  return norm === '/' ? '' : norm;
+}
+
+/**
+ * Каталог строго под корнем, после нормализации: `..` и `.` разрешаются,
+ * двойные и хвостовые `/` снимаются. Сравнение — с `root + '/'`, иначе
+ * `/home/popstas/projectsX` числился бы под `/home/popstas/projects`. Сам
+ * корень не годится: ребёнку нужен подкаталог.
+ *
+ * Симлинков здесь не видно — менеджер на Windows сравнивает строки. Поэтому
+ * корень повторно проверяет обёртка `claude-wt-new` по `pwd -P`.
+ */
+function childCwdUnderRoot(cwd, root) {
+  if (typeof cwd !== 'string' || !cwd.startsWith('/')) return fail(400, 'cwd must be an absolute path');
+  const norm = trimSlashes(path.posix.normalize(cwd));
+  if (!norm.startsWith(`${root}/`)) return fail(403, `cwd ${norm} is not under claudeWt.childCwdRoot ${root}`);
+  return { ok: true, path: norm };
+}
 
 /**
  * Зона окна ребёнка: `{monitor, position}`, целые числа, пара из
@@ -131,4 +164,4 @@ function parseSessionNewRequest(raw, { projects = [], newId, headZones = {} } = 
   };
 }
 
-export { parseSessionNewRequest, PERMISSION_MODES };
+export { parseSessionNewRequest, PERMISSION_MODES, normalizeChildCwdRoot, childCwdUnderRoot };

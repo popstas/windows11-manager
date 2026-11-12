@@ -4,6 +4,7 @@ import { normalizeProjects } from './project-helpers.js';
 import { upsertSlot } from './state-helpers.js';
 import { normalizeTerminals } from './terminal-helpers.js';
 import { normalizeHeadZones, normalizeChildPlacement } from './head-zones-helpers.js';
+import { normalizeChildCwdRoot } from './session-new-helpers.js';
 
 const CLAUDE_WT_DEFAULTS = {
   enabled: true,
@@ -78,6 +79,10 @@ const CLAUDE_WT_DEFAULTS = {
   headZones: {},
   // Как ставить ребёнка head без явной зоны: stack | free.
   childPlacement: 'stack',
+  // Корень каталогов детей head на стороне ssh (pc-virt): ребёнок head может
+  // открыться в любом его подкаталоге, если проект head в projects или тоже
+  // под корнем. Пусто — ребёнок только из projects, как раньше.
+  childCwdRoot: '',
 };
 
 /** Deep-ish merge: launch / launchNew / launchInbox / launchSession / telegramInbox / restore / snapshots merged key by key. */
@@ -124,6 +129,7 @@ function headZonesFrom(cfg) {
     headZones: zones,
     headZonesProblems: problems,
     childPlacement: normalizeChildPlacement(cfg.childPlacement),
+    childCwdRoot: normalizeChildCwdRoot(cfg.childCwdRoot),
   };
 }
 

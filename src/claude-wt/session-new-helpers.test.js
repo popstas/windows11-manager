@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSessionNewRequest } from './session-new-helpers.js';
+import { parseSessionNewRequest, normalizeChildCwdRoot, childCwdUnderRoot } from './session-new-helpers.js';
 
 const PROJECTS = [{ name: 'ExpertizeMe', cwd: '/vault' }];
 const ID = '11111111-2222-4333-8444-555555555555';
@@ -144,5 +144,31 @@ describe('parseSessionNewRequest', () => {
 
   it('400 for a body that is not an object', () => {
     expect(parseSessionNewRequest('nope', OPTS)).toMatchObject({ ok: false, status: 400 });
+  });
+});
+
+// Корень каталогов детей head (spawn по проекту head): ребёнок может открыться
+// в любом подкаталоге корня, но не в нём самом и не снаружи.
+describe('childCwdRoot', () => {
+  const ROOT = '/home/popstas/projects';
+
+  it.each([
+    ['/home/popstas/projects', '/home/popstas/projects'],
+    ['/home/popstas/projects/', '/home/popstas/projects'],
+    [' /home/popstas//projects ', '/home/popstas/projects'],
+    ['projects', ''], ['/', ''], ['', ''], [undefined, ''], [42, ''],
+  ])('normalizeChildCwdRoot(%j) -> %j', (raw, want) => expect(normalizeChildCwdRoot(raw)).toBe(want));
+
+  it('путь под корнем проходит нормализованным', () => {
+    expect(childCwdUnderRoot('/home/popstas/projects//js/a/', ROOT)).toEqual({ ok: true, path: '/home/popstas/projects/js/a' });
+  });
+
+  it('пути-ловушки', () => {
+    expect(childCwdUnderRoot('/home/popstas/projects/../.ssh', ROOT)).toMatchObject({ ok: false, status: 403 });
+    expect(childCwdUnderRoot('/home/popstas/projectsX/a', ROOT)).toMatchObject({ ok: false, status: 403 });
+    expect(childCwdUnderRoot('/home/popstas/projects', ROOT)).toMatchObject({ ok: false, status: 403 });
+    expect(childCwdUnderRoot('/home/popstas/projects/', ROOT)).toMatchObject({ ok: false, status: 403 });
+    expect(childCwdUnderRoot('projects/js/a', ROOT)).toMatchObject({ ok: false, status: 400 });
+    expect(childCwdUnderRoot('/etc', ROOT).reason).toContain('claudeWt.childCwdRoot');
   });
 });
