@@ -245,6 +245,14 @@ claudeWt:
   # Как ставить ребёнка head без явной зоны: stack — в соседнюю основную зону
   # монитора head стопкой до трёх мест; free — в свободную основную зону.
   # childPlacement: stack
+  # Корень каталогов детей head на стороне ssh (pc-virt). Ребёнок head может
+  # открыться в любом подкаталоге корня, если окно head открыто на этой машине,
+  # а проект head есть в projects или тоже лежит под корнем. Каталог из projects
+  # проходит как раньше. Ключа нет — ребёнок только из projects. Корень уходит
+  # обёртке claude-wt-new в {childCwdRoot} (CCFZF_CHILD_CWD_ROOT в шаблоне
+  # launchSession), и она перепроверяет путь по pwd -P: симлинк наружу отсюда не
+  # виден. Передаётся только при проходе по корню, иначе пусто.
+  # childCwdRoot: /home/popstas/projects
   # launch.command не задан — терминал берётся из реестра выше. Заданный
   # здесь явный command пометил бы этот конфиг старым, и реестр перестал
   # бы действовать (см. isLegacyLaunch).
@@ -292,7 +300,7 @@ claudeWt:
       - popstas@pc-virt.popstas.pro
       - -t
       - >-
-        exec ~/bin/claude-wt-new '{cwd}' '{name}' '{sessionId}' '{promptFile}' '{permissionMode}' '{head}' '{headId}'
+        exec env CCFZF_CHILD_CWD_ROOT='{childCwdRoot}' ~/bin/claude-wt-new '{cwd}' '{name}' '{sessionId}' '{promptFile}' '{permissionMode}' '{head}' '{headId}'
   # Watch a local folder (synced by syncthing) and open a new window with
   # session `tg-<file name>` (or by sessionName) for every new *.md in its root — every file its
   # own session and window, the open one is never reused. Off by default.

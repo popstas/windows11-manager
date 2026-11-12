@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 // project.js тянет за собой нативный модуль окон — здесь он не нужен.
 vi.mock('./project.js', () => ({ focusSpawnedWindow: vi.fn(), focusNewTerminalWindow: vi.fn(), placeSpawnedWindow: vi.fn() }));
 vi.mock('./child-place.js', () => ({ placeChildWindow: vi.fn() }));
+vi.mock('./view.js', () => ({ claudeWtSessions: vi.fn(() => ({ ok: false })) }));
 vi.mock('./index.js', () => ({ getClaudeWtConfig: vi.fn() }));
 vi.mock('../windows.js', () => ({ getWindows: vi.fn(() => []) }));
 
@@ -130,6 +131,40 @@ describe('openNewSession', () => {
     it('без headId и zone — хвост как раньше, без place', async () => {
       const { focusByTitle } = await run(BODY, { cfg: ZCFG });
       expect(focusByTitle.mock.calls[0][1]).not.toHaveProperty('place');
+    });
+  });
+
+  // Spawn по проекту head: каталог под childCwdRoot, профиль от проекта head.
+  describe('ребёнок вне claudeWt.projects', () => {
+    const ENV_REMOTE = `exec env CCFZF_CHILD_CWD_ROOT='{childCwdRoot}' ~/bin/claude-wt-new '{cwd}' '{name}' '{sessionId}' '{promptFile}' '{permissionMode}' '{head}' '{headId}'`;
+    const RCFG = mergeClaudeWtConfig({
+      launchSession: { args: ['ssh', '-A', 'popstas@pc-virt.popstas.pro', '-t', ENV_REMOTE] },
+      projects: [{ name: 'ExpertizeMe', cwd: '/vault', profiles: { wt: 'Expertize' } }],
+      childCwdRoot: '/home/popstas/projects',
+    });
+    const HEAD_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const CHILD = { ...BODY, cwd: '/home/popstas/projects/js/amnezia', headId: HEAD_ID, headCwd: '/vault', profileCwd: '/vault' };
+
+    it('ребёнок под корнем — профиль от profileCwd и корень в команде', async () => {
+      const { res, spawned } = await run(CHILD, { cfg: RCFG, liveHeadIds: () => new Set([HEAD_ID]) });
+      expect(res.ok).toBe(true);
+      expect(spawned[0].args).toEqual(expect.arrayContaining(['-p', 'Expertize']));
+      expect(spawned[0].args.at(-1)).toContain("CCFZF_CHILD_CWD_ROOT='/home/popstas/projects'");
+      expect(spawned[0].args.at(-1)).toContain("'/home/popstas/projects/js/amnezia'");
+    });
+
+    it('head без окна — 403 и spawn не звался', async () => {
+      const { res, spawned } = await run(CHILD, { cfg: RCFG, liveHeadIds: () => new Set() });
+      expect(res).toMatchObject({ ok: false, status: 403 });
+      expect(spawned).toEqual([]);
+    });
+
+    it('liveHeadIds не зовётся для каталога из списка, корень обёртке не идёт', async () => {
+      const liveHeadIds = vi.fn(() => new Set());
+      const { res, spawned } = await run({ ...BODY, headId: HEAD_ID }, { cfg: RCFG, liveHeadIds });
+      expect(res.ok).toBe(true);
+      expect(liveHeadIds).not.toHaveBeenCalled();
+      expect(spawned[0].args.at(-1)).toContain("CCFZF_CHILD_CWD_ROOT=''");
     });
   });
 });

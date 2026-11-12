@@ -127,7 +127,9 @@ function planWtLaunch({ launch, vars = {}, profile, terminal }) {
   // У шаблона окна для head-session (`launchSession`): всё, что обёртке
   // `claude-wt-new` нужно сверх каталога и имени. Экранируются так же —
   // шаблон оборачивает каждое в `'…'`.
-  const sessionVars = Object.fromEntries(['sessionId', 'promptFile', 'permissionMode', 'head', 'headId']
+  // `childCwdRoot` — корень каталогов детей для обёртки
+  // (`CCFZF_CHILD_CWD_ROOT`), пусто — обёртка корень не проверяет.
+  const sessionVars = Object.fromEntries(['sessionId', 'promptFile', 'permissionMode', 'head', 'headId', 'childCwdRoot']
     .map(key => [key, escapeForSingleQuoted(vars[key] ?? '')]));
   const wanted = typeof profile === 'string' ? profile : '';
   const substitute = arg => String(arg)
@@ -136,7 +138,7 @@ function planWtLaunch({ launch, vars = {}, profile, terminal }) {
     .replaceAll('{name}', safeName)
     .replaceAll('{file}', safeFile)
     .replaceAll('{script}', safeScript)
-    .replace(/\{(sessionId|promptFile|permissionMode|head|headId)\}/g, (_, key) => sessionVars[key])
+    .replace(/\{(sessionId|promptFile|permissionMode|head|headId|childCwdRoot)\}/g, (_, key) => sessionVars[key])
     .replaceAll('{profile}', wanted);
   const tail = launch?.args ?? [];
   if (!terminal?.command) {

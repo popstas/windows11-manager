@@ -22,10 +22,22 @@ import { planWtLaunch, profileForTerminal, parseCursorPoint } from './project-he
 import { chooseTerminal } from './terminal-helpers.js';
 import { focusSpawnedWindow, focusNewTerminalWindow, placeSpawnedWindow } from './project.js';
 import { placeChildWindow } from './child-place.js';
+import { claudeWtSessions } from './view.js';
 import { parseSessionNewRequest } from './session-new-helpers.js';
 import { startTiming } from './timing.js';
 
 const terminalWindows = () => getWindows().filter(isTerminalWindow);
+
+/**
+ * Сессии с окном на этой машине — тот же источник, из которого демон строит
+ * `windows[]` файла трекера. Зовётся только вторым проходом session-new (каталог
+ * вне claudeWt.projects): живой head там — условие права на spawn.
+ */
+function openSessionIds() {
+  const res = claudeWtSessions({ brief: true });
+  if (!res?.ok) return new Set();
+  return new Set(res.sessions.filter(s => s.open && s.windowId).map(s => s.id));
+}
 
 /**
  * @returns {Promise<{ ok: true, action: 'spawn', sessionId: string, name: string }
@@ -41,8 +53,15 @@ async function openNewSession(body, deps = {}) {
     newId = randomUUID,
     placeChild = placeChildWindow,
     placeOld = placeSpawnedWindow,
+    liveHeadIds = openSessionIds,
   } = deps;
-  const parsed = parseSessionNewRequest(body, { projects: cfg.projects, newId, headZones: cfg.headZones });
+  const parsed = parseSessionNewRequest(body, {
+    projects: cfg.projects,
+    newId,
+    headZones: cfg.headZones,
+    childCwdRoot: cfg.childCwdRoot,
+    isLiveHead: id => liveHeadIds().has(id),
+  });
   if (!parsed.ok) return parsed;
   const { vars } = parsed;
 
@@ -57,7 +76,9 @@ async function openNewSession(body, deps = {}) {
   const { command, args } = planWtLaunch({
     launch: cfg.launchSession,
     vars,
-    profile: profileForTerminal(vars.cwd, chosen.name, cfg),
+    // Профиль — по проекту из списка: своему, иначе проекту head (spawn по
+    // проекту head), иначе глобальный.
+    profile: profileForTerminal(parsed.profileCwd, chosen.name, cfg),
     terminal: chosen.entry,
   });
   if (!command) {

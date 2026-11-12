@@ -101,6 +101,17 @@ describe('planWtLaunch: переменные session-new', () => {
     });
     expect(out.args).toEqual(['ssh', "x 'u-1' '/tmp/it'\\''s.md' 'auto' 'boss' 'h-1'"]);
   });
+
+  // Корень каталогов детей для обёртки (контракт с ccfzf 12.11): переменная
+  // окружения, семь позиционных аргументов не меняются.
+  it('{childCwdRoot} подставляется и экранируется, пусто — пустая строка', () => {
+    const launch = { args: ['ssh', "exec env CCFZF_CHILD_CWD_ROOT='{childCwdRoot}' x"] };
+    const terminal = { command: 'wt.exe', args: [] };
+    expect(planWtLaunch({ launch, terminal, vars: { childCwdRoot: '/home/popstas/projects' } }).args)
+      .toEqual(['ssh', "exec env CCFZF_CHILD_CWD_ROOT='/home/popstas/projects' x"]);
+    expect(planWtLaunch({ launch, terminal, vars: {} }).args)
+      .toEqual(['ssh', "exec env CCFZF_CHILD_CWD_ROOT='' x"]);
+  });
 });
 
 describe('planWtLaunch с реестром терминалов', () => {
