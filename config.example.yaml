@@ -313,6 +313,9 @@ claudeWt:
   # Files already lying there on start count as new and open one by one,
   # gapMs after the previous window showed up. The config is re-read on every
   # poll, so switching it on needs no restart.
+  # Windows open in the background by default: placed as usual, but they take
+  # no focus and do not switch the virtual desktop. `background: false` raises
+  # each new window, as before.
   # `dir` is this machine's path; `cwd` and `fileDir` are on the ssh side
   # ({file} = fileDir/<name>.md, relative to cwd) and cannot be derived from
   # `dir`. Profile: by `cwd` from `projects`, as for project hotkeys.
@@ -330,9 +333,10 @@ claudeWt:
     sessionName: '{user}-tg-{date}'   # default: tg-{base}
     # terminal: wt      # default: claudeWt.terminal
     # statePath: ''     # default: next to claudeWt.statePath
+    background: true    # default: true
     pollMs: 3000
     settleMs: 2000
-    gapMs: 3000
+    gapMs: 1000
   restore: { auto: false, windowTimeoutMs: 30000, launchDelayMs: 2000, settleMs: 500 }
 
 # backup positions for FancyZones
