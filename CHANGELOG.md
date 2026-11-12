@@ -1,6 +1,42 @@
 # Changelog
 
 
+## v4.7.0 - 2026-11-12
+
+### Features
+
+- tray: Режим deck и описания режимов childPlacement
+- claude-place: Deck в раскладке группы, выбранный сверху
+- claude-wt: Режим deck — ребёнок во второй зоне целиком
+- claude-wt: Корень детей в команду обёртки, профиль по проекту head
+- claude-wt: Session-new пускает ребёнка head под childCwdRoot
+- claude-wt: Ключ childCwdRoot и проверка каталога ребёнка
+- tray: Переключатель claudeWt.childPlacement на вкладке Claude
+- claude-place: Раскладка группы head и детей
+- claude-place: Разбор и план режима group
+- claude-wt: Окно ребёнка head встаёт по зоне
+- claude-wt: Планы stack и free для окна ребёнка
+- claude-wt: Session-new принимает zone
+- claude-wt: Монитор, зона и место сессии в файле трекера
+- claude-wt: Зоны headZones без отката positionsMap
+- claude-wt: В какой зоне и на каком месте стоит окно
+- claude-wt: Ключи headZones и childPlacement
+
+### Bug Fixes
+
+- claude-wt: Замечания ревью spawn по проекту head
+- claude-wt: Замечания ревью раскладки head-зон
+- claude-place: Причина отказа group без двойного префикса в журнале
+
+### Documentation
+
+- todo: Секрет для session-new и мелочи ревью spawn по проекту head
+- plan: Spawn по проекту head, режим deck и описания режимов в трее
+- spec: Ревью строителя и режим deck
+- spec: Head-session - spawn по проекту head и привязка чужих сессий
+- План раскладки окон head и детей по зонам, бэклог нумерации мониторов
+- Дизайн раскладки окон head и детей по зонам FancyZones
+
 ## v4.6.1 - 2026-11-11
 
 ### Bug Fixes
