@@ -191,6 +191,34 @@ describe('placeChildWindow', () => {
     expect(h.placed).toEqual([{ id: 100, pos: third(R['1:4'], 1), desktop: 1 }]);
   });
 
+  // Режим deck (Стас 12.11): ребёнок во второй зоне целиком, братья стоят.
+  it('deck: ребёнок в 1:4 целиком, братья не двигаются', async () => {
+    const top = { x: 892, y: 0, width: 838, height: 604 };
+    const bottom = { x: 892, y: 604, width: 838, height: 604 };
+    const h = harness({ childPlacement: 'deck', children: [{ bounds: top }, { bounds: bottom }] });
+    expect(await h.run()).toEqual({ desktop: 1, focus: true });
+    expect(h.placed).toEqual([{ id: 100, pos: R['1:4'], desktop: 1 }]);
+    expect(h.log).toHaveBeenCalledWith(expect.stringContaining('(deck), место 1 из 1'));
+  });
+
+  it('deck: пятый ребёнок — вся зона', async () => {
+    const h = harness({ childPlacement: 'deck', children: [0, 1, 2, 3].map(() => ({ bounds: R['1:4'] })) });
+    await h.run();
+    expect(h.placed).toEqual([{ id: 100, pos: R['1:4'], desktop: 1 }]);
+  });
+
+  it('deck: head вне основной зоны — вторая зона пары', async () => {
+    const h = harness({ childPlacement: 'deck', headBounds: { x: 100, y: 100, width: 1400, height: 900 } });
+    await h.run();
+    expect(h.placed.at(-1).pos).toEqual(R['1:4']);
+  });
+
+  it('deck с явной zone — вся зона, свои не двигаются', async () => {
+    const h = harness({ childPlacement: 'deck', children: [{ bounds: R['3:4'] }] });
+    await h.run({ zone: { monitor: 3, position: 4 } });
+    expect(h.placed).toEqual([{ id: 100, pos: R['3:4'], desktop: 1 }]);
+  });
+
   it('явная zone без headId — целиком в зону, стол не задан', async () => {
     const h = harness();
     const res = await h.run({ headId: null, zone: { monitor: 3, position: 4 } });

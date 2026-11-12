@@ -20,7 +20,7 @@ import { isMinimized } from '../windows-helpers.js';
 import { stackInCell } from '../claude-layout-helpers.js';
 
 /** Режимы `claudeWt.childPlacement`; первый — умолчание. */
-const CHILD_PLACEMENTS = ['stack', 'free'];
+const CHILD_PLACEMENTS = ['stack', 'free', 'deck'];
 
 /** Доля площади окна внутри зоны, с которой окно считается стоящим в ней. */
 const ZONE_MIN_SHARE = 0.6;

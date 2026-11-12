@@ -29,7 +29,7 @@ describe('writeClaudeConfig — claudeWt.childPlacement', () => {
   });
 
   it('чужое значение — отказ, файл не тронут', () => {
-    expect(() => writeClaudeConfig({ 'claudeWt.childPlacement': 'mosaic' })).toThrow(/ожидается одно из stack \| free/);
+    expect(() => writeClaudeConfig({ 'claudeWt.childPlacement': 'mosaic' })).toThrow(/ожидается одно из stack \| free \| deck/);
     expect(fs.readFileSync(file, 'utf8')).toBe(YAML);
   });
 });

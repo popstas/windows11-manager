@@ -174,18 +174,29 @@ async function placeChildNow(w, { sessionId, headId, zone, name, mark = noTiming
     target = picked.zone;
     how = picked.how;
   } else {
-    mode = 'stack';
+    // deck выбирает зону так же, как stack, — вторую основную зону монитора
+    // head; отличается только тем, что зона не делится (ниже).
+    mode = cfg.childPlacement === 'deck' ? 'deck' : 'stack';
     const z = pickStackZone({ headLoc: head.loc, headZones: cfg.headZones });
     if (!z) return fallback(`монитор head (${head.loc.monitor ?? '?'}) не в claudeWt.headZones`);
     target = findZone(z);
     if (!target) return fallback(`зона ${zoneKey(z.monitor, z.position)} сейчас не разрешилась`);
   }
 
+  // deck (Стас 12.11): ребёнок занимает зону целиком, братья не ужимаются и не
+  // двигаются, новый оказывается сверху. С явной зоной — так же: «зона не
+  // делится» — свойство режима, а не способа выбрать зону.
+  if (cfg.childPlacement === 'deck' && how === 'stack') how = 'deck';
+
   const ownIn = own.filter(o => inZone(o.loc, target));
   let plan;
   let slot;
   let places;
-  if (how === 'overlay') {
+  if (how === 'deck') {
+    plan = { moves: [], pos: target.rect };
+    slot = 1;
+    places = 1;
+  } else if (how === 'overlay') {
     const count = ownIn.length + blockedBy(target);
     plan = { moves: [], pos: overlayPos(target.rect, count) };
     slot = (count % MAX_SLOTS) + 1;
@@ -212,7 +223,9 @@ async function placeChildNow(w, { sessionId, headId, zone, name, mark = noTiming
   mark('child:place');
   if (headId) d.recordChild({ sessionId, headId, windowId: w.id, desktop: headDesktop ?? current });
 
-  const modeTail = how === 'overlay' ? `${mode}, поверх` : mode;
+  let modeTail = mode;
+  if (how === 'overlay') modeTail = `${mode}, поверх`;
+  else if (how === 'deck' && mode !== 'deck') modeTail = `${mode}, deck`;
   log(`${tag}: зона ${zoneKey(target.monitor, target.position)} (${modeTail}), место ${slot} из ${places}, стол ${headDesktop ?? current ?? '?'}`);
   // Фокус — только если стол head известен совпадающим с текущим (или стола
   // нет вовсе). Текущий стол не узнался — без фокуса: focusTerminalWindow

@@ -59,7 +59,7 @@ describe('normalizeHeadZones', () => {
 });
 
 describe('normalizeChildPlacement', () => {
-  it.each([['stack', 'stack'], ['free', 'free'], [' FREE ', 'free'], ['yolo', 'stack'], [undefined, 'stack']])(
+  it.each([['stack', 'stack'], ['free', 'free'], [' FREE ', 'free'], ['deck', 'deck'], ['DECK ', 'deck'], ['yolo', 'stack'], [undefined, 'stack']])(
     'childPlacement %s -> %s', (raw, want) => expect(normalizeChildPlacement(raw)).toBe(want));
 });
 

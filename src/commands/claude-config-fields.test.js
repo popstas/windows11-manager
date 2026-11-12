@@ -32,10 +32,10 @@ describe('CLAUDE_CONFIG_FIELDS', () => {
   });
 
   // Переключатель «как ставить ребёнка head» на вкладке Claude.
-  it('claudeWt.childPlacement — выбор stack | free, тот же список, что знает нормализация', () => {
+  it('claudeWt.childPlacement — выбор stack | free | deck, тот же список, что знает нормализация', () => {
     const field = CLAUDE_CONFIG_FIELDS.find((f) => f.name === 'claudeWt.childPlacement');
     expect(field).toMatchObject({ type: 'string', default: 'stack', choices: CHILD_PLACEMENTS });
-    expect(CHILD_PLACEMENTS).toEqual(['stack', 'free']);
+    expect(CHILD_PLACEMENTS).toEqual(['stack', 'free', 'deck']);
     for (const mode of CHILD_PLACEMENTS) expect(normalizeChildPlacement(mode)).toBe(mode);
   });
 
@@ -96,7 +96,7 @@ describe('coerceFieldValue', () => {
     expect(coerceFieldValue('claudeWt.childPlacement', ' stack ')).toBe('stack');
     expect(coerceFieldValue('claudeWt.childPlacement', '')).toBeUndefined();
     for (const bad of ['FREE', 'yolo', 'стопка']) {
-      expect(() => coerceFieldValue('claudeWt.childPlacement', bad)).toThrow(/claudeWt\.childPlacement: ожидается одно из stack \| free/);
+      expect(() => coerceFieldValue('claudeWt.childPlacement', bad)).toThrow(/claudeWt\.childPlacement: ожидается одно из stack \| free \| deck/);
     }
   });
 

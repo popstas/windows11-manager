@@ -77,7 +77,7 @@ const CLAUDE_WT_DEFAULTS = {
   // FancyZones (нумерация кода, как у tileZones) → пара зон. Пусто — окна
   // детей ставятся как раньше (курсор или слот).
   headZones: {},
-  // Как ставить ребёнка head без явной зоны: stack | free.
+  // Как ставить ребёнка head без явной зоны: stack | free | deck.
   childPlacement: 'stack',
   // Корень каталогов детей head на стороне ssh (pc-virt): ребёнок head может
   // открыться в любом его подкаталоге, если проект head в projects или тоже
