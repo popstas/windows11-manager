@@ -99,11 +99,34 @@ function parseZone(raw, headZones) {
 /**
  * @param {object|string} raw тело просьбы
  * @param {{ projects: Array<{cwd: string}>, newId: () => string,
- *   headZones?: Record<string,[number,number]> }} opts
- * @returns {{ ok: true, vars: object, zone: {monitor:number, position:number}|null }
+ *   headZones?: Record<string,[number,number]>, childCwdRoot?: string,
+ *   isLiveHead?: (headId: string) => boolean }} opts
+ * @returns {{ ok: true, vars: object, zone: {monitor:number, position:number}|null, profileCwd: string }
  *   | { ok: false, status: number, reason: string }}
  */
-function parseSessionNewRequest(raw, { projects = [], newId, headZones = {} } = {}) {
+/**
+ * Второй проход (решение Стаса 12.11: право на spawn даёт проект head):
+ * `cwd` не в списке, но строго под `childCwdRoot`; `headCwd` в списке или тоже
+ * под корнем; у `headId` открыто окно на этой машине. Живость — последней: она
+ * стоит чтения сессий.
+ */
+function rootPass(values, { childCwdRoot, inList, isLiveHead }) {
+  const notListed = `cwd ${values.cwd} is not in claudeWt.projects`;
+  if (!values.headId) return fail(403, notListed);
+  if (!childCwdRoot) return fail(403, `${notListed}, and claudeWt.childCwdRoot is not set`);
+  const child = childCwdUnderRoot(values.cwd, childCwdRoot);
+  if (!child.ok) return child;
+  if (!values.headCwd) return fail(403, `headCwd is required for a cwd outside claudeWt.projects`);
+  if (!inList(values.headCwd) && !childCwdUnderRoot(values.headCwd, childCwdRoot).ok) {
+    return fail(403, `headCwd ${values.headCwd} is neither in claudeWt.projects nor under claudeWt.childCwdRoot ${childCwdRoot}`);
+  }
+  if (!isLiveHead(values.headId)) return fail(403, `head ${values.headId} has no window on this machine`);
+  return child;
+}
+
+function parseSessionNewRequest(raw, {
+  projects = [], newId, headZones = {}, childCwdRoot = '', isLiveHead = () => false,
+} = {}) {
   const body = parseBody(raw);
   if (!body) return fail(400, 'body must be a JSON object');
 
@@ -115,6 +138,11 @@ function parseSessionNewRequest(raw, { projects = [], newId, headZones = {} } = 
     permissionMode: str(body.permissionMode),
     head: str(body.head),
     headId: str(body.headId),
+    // Только для второго прохода и профиля: каталог head и проект, от
+    // которого брать профиль терминала. В команду запуска не идут, но сито то
+    // же — подсунутая строка не должна значить больше, чем путь.
+    headCwd: str(body.headCwd),
+    profileCwd: str(body.profileCwd),
   };
   for (const key of ['cwd', 'name', 'promptFile']) {
     if (!values[key]) return fail(400, `${key} is required`);
@@ -124,8 +152,18 @@ function parseSessionNewRequest(raw, { projects = [], newId, headZones = {} } = 
       return fail(400, `${key} has characters the launch command cannot carry`);
     }
   }
-  if (!projects.some(p => p?.cwd === values.cwd)) {
-    return fail(403, `cwd ${values.cwd} is not in claudeWt.projects`);
+  const inList = cwd => projects.some(p => p?.cwd === cwd);
+  // Старый проход — точное совпадение со списком, как раньше: с headId или
+  // без, с окном head здесь или без. Корень обёртке тогда не передаётся:
+  // проект из списка может лежать вне него (или быть симлинком наружу), и
+  // проверка обёртки отказала бы тому, что список разрешил.
+  let cwd = values.cwd;
+  let rootForWrapper = '';
+  if (!inList(cwd)) {
+    const root = rootPass(values, { childCwdRoot, inList, isLiveHead });
+    if (!root.ok) return root;
+    cwd = root.path;
+    rootForWrapper = childCwdRoot;
   }
   if (values.sessionId && !UUID.test(values.sessionId)) {
     return fail(400, 'sessionId must be a uuid');
@@ -152,15 +190,22 @@ function parseSessionNewRequest(raw, { projects = [], newId, headZones = {} } = 
   return {
     ok: true,
     vars: {
-      cwd: values.cwd,
+      cwd,
       name: values.name,
       sessionId: values.sessionId || newId(),
       promptFile: values.promptFile,
       permissionMode: values.permissionMode || EMPTY,
       head: values.head || EMPTY,
       headId: values.headId || EMPTY,
+      // Корень для обёртки (`CCFZF_CHILD_CWD_ROOT`): только когда cwd прошёл по
+      // правилу корня, иначе пусто — проверки нет.
+      childCwdRoot: rootForWrapper,
     },
     zone,
+    // Каталог, по которому берётся профиль терминала: свой из списка, иначе
+    // присланный из списка (проект head или выше по цепочке), иначе свой —
+    // и тогда профиль глобальный.
+    profileCwd: inList(cwd) ? cwd : (inList(values.profileCwd) ? values.profileCwd : cwd),
   };
 }
 

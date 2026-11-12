@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { parseSessionNewRequest, normalizeChildCwdRoot, childCwdUnderRoot } from './session-new-helpers.js';
 
 const PROJECTS = [{ name: 'ExpertizeMe', cwd: '/vault' }];
@@ -19,8 +19,10 @@ describe('parseSessionNewRequest', () => {
         permissionMode: '-',
         head: '-',
         headId: '-',
+        childCwdRoot: '',
       },
       zone: null,
+      profileCwd: '/vault',
     });
   });
 
@@ -170,5 +172,86 @@ describe('childCwdRoot', () => {
     expect(childCwdUnderRoot('/home/popstas/projects/', ROOT)).toMatchObject({ ok: false, status: 403 });
     expect(childCwdUnderRoot('projects/js/a', ROOT)).toMatchObject({ ok: false, status: 400 });
     expect(childCwdUnderRoot('/etc', ROOT).reason).toContain('claudeWt.childCwdRoot');
+  });
+});
+
+// Второй проход: каталог ребёнка не в claudeWt.projects, но под childCwdRoot,
+// проект head — в списке или тоже под корнем, окно head открыто здесь.
+describe('ребёнок head вне claudeWt.projects', () => {
+  const ROOT = '/home/popstas/projects';
+  const EXP = '/home/popstas/projects/text/obsidian/ExpertizeMe';
+  const PROJ = [{ cwd: '/vault' }, { cwd: EXP }];
+  const HEAD = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const AMN = '/home/popstas/projects/js/amnezia-shared-panel';
+  const CHILD = { ...BODY, cwd: AMN, headId: HEAD, headCwd: EXP };
+  const opts = (live = vi.fn(id => id === HEAD), extra = {}) => ({
+    projects: PROJ, newId: () => ID, childCwdRoot: ROOT, isLiveHead: live, ...extra,
+  });
+
+  it('ребёнок head под корнем проходит', () => {
+    const live = vi.fn(id => id === HEAD);
+    const res = parseSessionNewRequest(CHILD, opts(live));
+    expect(res.ok).toBe(true);
+    expect(res.vars.cwd).toBe(AMN);
+    expect(res.vars.childCwdRoot).toBe(ROOT);
+    expect(live).toHaveBeenCalledWith(HEAD);
+  });
+
+  it('profileCwd: свой из списка, иначе присланный из списка, иначе свой', () => {
+    expect(parseSessionNewRequest({ ...CHILD, profileCwd: '/vault' }, opts()).profileCwd).toBe('/vault');
+    expect(parseSessionNewRequest({ ...CHILD, profileCwd: '/nope' }, opts()).profileCwd).toBe(AMN);
+    expect(parseSessionNewRequest({ ...BODY, profileCwd: EXP }, opts()).profileCwd).toBe('/vault');
+  });
+
+  it('выдуманный headId — 403', () => {
+    const fake = '11111111-2222-4333-8444-555555555555';
+    const live = vi.fn(() => false);
+    const res = parseSessionNewRequest({ ...CHILD, headId: fake }, opts(live));
+    expect(res).toMatchObject({ ok: false, status: 403 });
+    expect(res.reason).toContain('no window');
+    expect(live).toHaveBeenCalledWith(fake);
+  });
+
+  it('без headId вне списка — 403 как раньше', () => {
+    const noHead = { ...CHILD, headId: undefined };
+    const res = parseSessionNewRequest(noHead, opts());
+    expect(res).toMatchObject({ ok: false, status: 403 });
+    expect(res.reason).toContain('is not in claudeWt.projects');
+  });
+
+  it('без childCwdRoot нового прохода нет', () => {
+    const live = vi.fn(() => true);
+    const res = parseSessionNewRequest(CHILD, opts(live, { childCwdRoot: '' }));
+    expect(res).toMatchObject({ ok: false, status: 403 });
+    expect(res.reason).toContain('childCwdRoot is not set');
+    expect(live).not.toHaveBeenCalled();
+  });
+
+  it('старый проход не спрашивает живость и не передаёт корень', () => {
+    const live = vi.fn(() => false);
+    const res = parseSessionNewRequest({ ...BODY, headId: HEAD }, opts(live));
+    expect(res.ok).toBe(true);
+    expect(live).not.toHaveBeenCalled();
+    expect(res.vars.childCwdRoot).toBe('');
+  });
+
+  it('headCwd: корень, чужой, мусор', () => {
+    expect(parseSessionNewRequest({ ...CHILD, headCwd: ROOT }, opts())).toMatchObject({ ok: false, status: 403 });
+    expect(parseSessionNewRequest({ ...CHILD, headCwd: '/opt/x' }, opts())).toMatchObject({ ok: false, status: 403 });
+    const noHeadCwd = { ...CHILD, headCwd: undefined };
+    const missing = parseSessionNewRequest(noHeadCwd, opts());
+    expect(missing).toMatchObject({ ok: false, status: 403 });
+    expect(missing.reason).toContain('headCwd');
+    expect(parseSessionNewRequest({ ...CHILD, headCwd: '/home/popstas/projects/a;b' }, opts())).toMatchObject({ ok: false, status: 400 });
+  });
+
+  it('headCwd под корнем годится — внук', () => {
+    const res = parseSessionNewRequest({ ...CHILD, headCwd: AMN, cwd: '/home/popstas/projects/js/other' }, opts());
+    expect(res.ok).toBe(true);
+  });
+
+  it('пути-ловушки через запрос', () => {
+    expect(parseSessionNewRequest({ ...CHILD, cwd: '/home/popstas/projects/../.ssh' }, opts())).toMatchObject({ ok: false, status: 403 });
+    expect(parseSessionNewRequest({ ...CHILD, cwd: 'js/a' }, opts())).toMatchObject({ ok: false, status: 400 });
   });
 });
