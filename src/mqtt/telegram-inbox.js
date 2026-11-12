@@ -19,7 +19,8 @@
  * перезапуске не откроется тоже. На старте лежащие в корне файлы, которых нет в
  * состоянии, считаются новыми: скрипт на той стороне сразу уносит файл в
  * `processed/`, так что лежащий файл никто ещё не забрал. Открываются они по
- * одному, с паузой `gapMs` после того, как окно предыдущего нашлось.
+ * одному, с паузой `gapMs` после того, как окно предыдущего нашлось. Окна по
+ * умолчанию в фоне (`background`): ставятся на место, но фокус не берут.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -134,6 +135,7 @@ function startTelegramInbox({ winMan, log, deps = {} }) {
     try {
       res = await winMan.openInboxSession({
         file, name: sessionName, cwd: cfg.cwd, script: cfg.script, terminal: cfg.terminal,
+        background: cfg.background,
       });
     } catch (e) {
       res = { ok: false, reason: e.message };

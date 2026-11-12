@@ -72,7 +72,15 @@ describe('startTelegramInbox', () => {
       cwd: '/home/popstas/projects/text/obsidian/ExpertizeMe',
       script: '.scripts/telegram-incoming',
       terminal: '',
+      background: true,
     }]);
+  });
+
+  it('background: false из конфига доходит до openInboxSession', async () => {
+    const { opened, pass } = setup({ inbox: { background: false } });
+    put('a.md');
+    await pass(); await pass(); await pass();
+    expect(opened.map(r => r.background)).toEqual([false]);
   });
 
   it('does not reopen after a restart: the state file remembers', async () => {

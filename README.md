@@ -208,7 +208,9 @@ The watcher lives in the service process (`node src mqtt`) and needs no broker. 
 polls the folder (`pollMs`), skips hidden and syncthing temp files, conflict copies and
 subfolders, waits until a file stops growing (`settleMs`), and remembers opened names
 in a state file next to `claudeWt.statePath`, so a restart does not reopen anything.
-Files already there on start are opened one by one. Every opened and every skipped
+Files already there on start are opened one by one, `gapMs` (1000 ms) apart. Windows
+open in the background: they are placed as usual but take no focus and do not switch the
+virtual desktop (`background: false` raises them, as before). Every opened and every skipped
 file gets a `[telegram-inbox]` line in the app log. Off by default; see the example in
 [config.example.yaml](config.example.yaml).
 

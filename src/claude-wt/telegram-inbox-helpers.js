@@ -131,7 +131,10 @@ function normalizeInboxConfig(raw = {}, { statePath = '' } = {}) {
     statePath: str(raw.statePath) || inboxStatePathNextTo(statePath),
     pollMs: Math.max(250, positive(raw.pollMs, 3000)),
     settleMs: positive(raw.settleMs, 2000),
-    gapMs: positive(raw.gapMs, 3000),
+    gapMs: positive(raw.gapMs, 1000),
+    // Окно в фоне — по умолчанию: входящее приходит само, и выдёргивать
+    // человека из работы фокусом нельзя. Старое поведение — `background: false`.
+    background: raw.background !== false,
   };
   let problem = null;
   if (!cfg.dir) problem = 'claudeWt.telegramInbox.dir is not set';

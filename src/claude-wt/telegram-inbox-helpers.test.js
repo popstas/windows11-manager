@@ -141,6 +141,16 @@ describe('normalizeInboxConfig', () => {
     expect(cfg.settleMs).toBe(2000);
     expect(cfg.gapMs).toBe(0);
   });
+
+  it('background по умолчанию включён, выключается только false', () => {
+    expect(normalizeInboxConfig({}).cfg.background).toBe(true);
+    expect(normalizeInboxConfig({ background: 'no' }).cfg.background).toBe(true);
+    expect(normalizeInboxConfig({ background: false }).cfg.background).toBe(false);
+  });
+
+  it('gapMs по умолчанию 1000', () => {
+    expect(normalizeInboxConfig({}).cfg.gapMs).toBe(1000);
+  });
 });
 
 describe('planInboxTick', () => {
