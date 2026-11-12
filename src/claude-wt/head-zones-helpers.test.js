@@ -250,6 +250,12 @@ describe('groupPlan', () => {
     expect(groupPlan({ first: FIRST, second: SECOND, n: 7 }).children)
       .toEqual([t(0), t(1), t(2), t(0), t(1), t(2), t(0)]);
   });
+  it('deck: все дети — вся вторая зона', () => {
+    expect(groupPlan({ first: FIRST, second: SECOND, n: 4, mode: 'deck' }).children).toEqual([SECOND, SECOND, SECOND, SECOND]);
+  });
+  it('без mode — как stack', () => {
+    expect(groupPlan({ first: FIRST, second: SECOND, n: 4 }).children).toEqual([t(0), t(1), t(2), t(0)]);
+  });
   it('0 детей — только head', () => {
     expect(groupPlan({ first: FIRST, second: SECOND, n: 0 })).toEqual({ head: FIRST, children: [] });
   });

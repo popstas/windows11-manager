@@ -299,9 +299,12 @@ function pickGroup({ groups, selected, activeId }) {
 /**
  * Раскладка группы: head в первую зону пары, дети стопкой во вторую — мест
  * `min(n, 3)`, ребёнок `i` на место `(i mod 3) + 1`, с четвёртого поверх.
+ * В режиме `deck` — все дети во второй зоне целиком.
  */
-function groupPlan({ first, second, n }) {
+function groupPlan({ first, second, n, mode = 'stack' }) {
   if (!n) return { head: first, children: [] };
+  // deck: все дети во второй зоне целиком, друг на друге.
+  if (mode === 'deck') return { head: first, children: Array.from({ length: n }, () => second) };
   const places = stackInCell(second, Math.min(n, MAX_SLOTS));
   return { head: first, children: Array.from({ length: n }, (_, i) => places[i % MAX_SLOTS]) };
 }

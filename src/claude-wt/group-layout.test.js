@@ -166,6 +166,39 @@ describe('arrangeGroup', () => {
     expect(h.deps.focus).not.toHaveBeenCalled();
   });
 
+  // deck (Стас 12.11): дети во второй зоне целиком, выбранный ребёнок сверху.
+  describe('deck', () => {
+    function deckHarness(opts) {
+      const h = harness(opts);
+      h.deps.cfg = () => ({ headZones: HZ, headZonesProblems: [], childPlacement: 'deck' });
+      const raised = [];
+      for (const w of h.windows.values()) w.bringToTop = vi.fn(() => raised.push(w.id));
+      return { ...h, raised };
+    }
+
+    it('дети во второй зоне целиком', async () => {
+      const h = deckHarness();
+      await arrangeGroup({ groups: [h.group], selected: 'h', log: h.log }, h.deps);
+      expect(h.placed).toEqual([
+        { id: 1, pos: R['3:1'] },
+        ...[10, 11, 12, 13].map(id => ({ id, pos: R['3:4'] })),
+      ]);
+    });
+
+    it('выбранный ребёнок поднят последним, остальные дети не поднимаются', async () => {
+      const h = deckHarness();
+      await arrangeGroup({ groups: [h.group], selected: 'c1', log: h.log }, h.deps);
+      expect(h.raised).toEqual([1, 11]);
+      expect(h.deps.focus).toHaveBeenCalledWith(11);
+    });
+
+    it('выбран head — дети не поднимаются', async () => {
+      const h = deckHarness();
+      await arrangeGroup({ groups: [h.group], selected: 'h', log: h.log }, h.deps);
+      expect(h.raised).toEqual([1]);
+    });
+  });
+
   it('пустые groups — отказ без единого placeWindow', async () => {
     const h = harness();
     const res = await arrangeGroup({ groups: [], selected: null, log: h.log }, h.deps);

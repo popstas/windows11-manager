@@ -111,9 +111,10 @@ async function arrangeGroup({ groups, selected, log = () => {} }, deps = {}) {
       log(`${TAG}: окно сессии ${id} свёрнуто или исчезло — пропущено`);
       continue;
     }
-    kids.push({ w, desktop: s.desktop ?? null });
+    kids.push({ id, w, desktop: s.desktop ?? null });
   }
-  const plan = groupPlan({ first: rects.first, second: rects.second, n: kids.length });
+  const deck = cfg.childPlacement === 'deck';
+  const plan = groupPlan({ first: rects.first, second: rects.second, n: kids.length, mode: deck ? 'deck' : 'stack' });
   // Текущий стол — до переносов: активное окно может быть ребёнком, который
   // сейчас уедет на стол head, и вопрос «где человек» после этого отвечал бы
   // столом head — подъём утащил бы человека туда.
@@ -138,7 +139,10 @@ async function arrangeGroup({ groups, selected, log = () => {} }, deps = {}) {
   // Стол не узнался — не поднимать: подъём окна с чужого стола уводит туда
   // оболочку, а угадывать за человека, где он, незачем.
   if (headDesktop == null || current === headDesktop) {
-    const all = [headW, ...kids.map(k => k.w)];
+    // deck: дети лежат друг на друге, и подъём всех переставил бы колоду. Сверху
+    // — выбранный, если он ребёнок; иначе порядок детей по глубине не трогаем.
+    const picked = deck ? kids.find(k => k.id === selected) ?? null : null;
+    const all = deck ? [headW, ...(picked ? [picked.w] : [])] : [headW, ...kids.map(k => k.w)];
     for (const w of all) {
       try {
         w.bringToTop();
@@ -146,7 +150,8 @@ async function arrangeGroup({ groups, selected, log = () => {} }, deps = {}) {
         log(`${TAG}: ${w.id} не поднялось — ${e.message}`, 'warn');
       }
     }
-    const focusId = pickFocusTarget(all.map(w => w.id), activeBefore);
+    // Выбранный ребёнок колоды — тот, ради кого нажимали: фокус ему.
+    const focusId = picked ? picked.w.id : pickFocusTarget(all.map(w => w.id), activeBefore);
     if (focusId !== null && !d.focus(focusId)) log(`${TAG}: фокус не дошёл до окна ${focusId}`, 'warn');
   }
   log(`${TAG}: head ${hs.title ?? headId}, детей ${kids.length} из ${kidIds.length}`);
