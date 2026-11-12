@@ -230,12 +230,39 @@
       <div class="field">
         <label for="cfg_claude_wt_child_placement">claudeWt.childPlacement</label>
         <select id="cfg_claude_wt_child_placement" data-cfg="claudeWt.childPlacement" data-cfg-default="stack" data-cfg-type="string">
-          <option value="">(default — stack)</option>
-          <option value="stack">stack — in the head's neighbour zone, up to three stacked</option>
-          <option value="free">free — into a free main zone, any monitor</option>
-          <option value="deck">deck — all in the second zone, whole, on top of each other</option>
+          <option value="">(по умолчанию — stack)</option>
+          <option value="stack">stack — стопкой во второй зоне</option>
+          <option value="free">free — в свободные зоны</option>
+          <option value="deck">deck — колодой во второй зоне</option>
         </select>
-        <small>Where a child window of a head session opens when the request names no zone. The zones themselves are <code>claudeWt.headZones</code> in the YAML config; without them children open as before.</small>
+        <div class="placement-help" data-placement-help="stack">
+<pre class="schema">┌────┬────┐
+│ H  │ c1 │
+│    ├────┤
+│    │ c2 │
+│    ├────┤
+│    │ c3 │
+└────┴────┘</pre>
+          <p>ребёнок во второй зоне монитора head; зона делится по вертикали, до трёх мест, четвёртый ложится поверх первого.</p>
+        </div>
+        <div class="placement-help" data-placement-help="free" hidden>
+<pre class="schema">┌────┬────┐
+│ H  │ c1 │
+│    │    │
+└────┴────┘
+c2, c3 — в свободные зоны
+других мониторов</pre>
+          <p>ребёнок в свободную основную зону любого монитора; свободных нет — делит зону со своими, затем поверх.</p>
+        </div>
+        <div class="placement-help" data-placement-help="deck" hidden>
+<pre class="schema">┌────┬────┐
+│ H  │ c3 │
+│    │(c2)│
+│    │(c1)│
+└────┴────┘</pre>
+          <p>все дети во второй зоне целиком, друг на друге; видно верхнего, остальные через пикер.</p>
+        </div>
+        <small>Ctrl+Win+F10 раскладывает группу по этому же режиму. H — head, c1, c2, c3 — его дети. Сами зоны — <code>claudeWt.headZones</code> в YAML-конфиге; без них дети открываются как раньше.</small>
       </div>
 
       <h3 class="group">Session slots on the Home Assistant panel</h3>

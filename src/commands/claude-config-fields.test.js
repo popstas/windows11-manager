@@ -133,4 +133,21 @@ describe('разметка вкладки Claude', () => {
       expect(values).toEqual(['', ...field.choices]);
     }
   });
+
+  // Тексты — дословно из спеки 2026-11-12, часть 3.
+  it('у каждого режима childPlacement — блок подсказки с текстом из спеки', () => {
+    const TEXTS = {
+      stack: 'ребёнок во второй зоне монитора head; зона делится по вертикали, до трёх мест, четвёртый ложится поверх первого.',
+      free: 'ребёнок в свободную основную зону любого монитора; свободных нет — делит зону со своими, затем поверх.',
+      deck: 'все дети во второй зоне целиком, друг на друге; видно верхнего, остальные через пикер.',
+    };
+    for (const mode of CHILD_PLACEMENTS) {
+      const start = html.indexOf(`data-placement-help="${mode}"`);
+      expect(start, mode).toBeGreaterThan(-1);
+      const block = html.slice(start, html.indexOf('</div>', start));
+      expect(block).toContain(TEXTS[mode]);
+      expect(block).toContain('<pre class="schema">');
+    }
+    expect(html.split('Ctrl+Win+F10 раскладывает группу по этому же режиму').length - 1).toBe(1);
+  });
 });

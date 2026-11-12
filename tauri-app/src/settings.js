@@ -1,3 +1,5 @@
+import { syncPlacementHelp } from './placement-help.js';
+
 const { invoke } = window.__TAURI__.core;
 
 const form = document.getElementById('settings-form');
@@ -159,6 +161,7 @@ async function loadSettings() {
       // Разбор здесь, а не в Rust: список полей ведёт node, и лишний тип на
       // стороне трея пришлось бы держать с ним в согласии.
       fillClaudeConfig(JSON.parse(claudeConfigResult.value));
+      syncPlacementHelp(document, document.getElementById('cfg_claude_wt_child_placement').value);
       claudeConfigLoadFailed = false;
     } catch (e) {
       claudeConfigLoadFailed = true;
@@ -322,3 +325,8 @@ document.getElementById('tabs').addEventListener('click', (event) => {
 });
 
 loadSettings();
+
+// Описание и схема режима childPlacement — под селектом, по выбранному значению.
+const childPlacementSelect = document.getElementById('cfg_claude_wt_child_placement');
+childPlacementSelect.addEventListener('change', () => syncPlacementHelp(document, childPlacementSelect.value));
+syncPlacementHelp(document, childPlacementSelect.value);

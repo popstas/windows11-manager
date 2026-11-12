@@ -342,3 +342,13 @@ section[data-tab].active {
   line-height: 1.45;
   white-space: pre;
 }
+
+/* Мини-схема режима childPlacement во вкладке Claude. */
+.placement-help pre.schema {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  line-height: 1.1;
+  margin: 6px 0 2px;
+}
+.placement-help p {
+  margin: 2px 0 6px;
+}
