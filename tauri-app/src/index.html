@@ -265,6 +265,23 @@ c2, c3 — в свободные зоны
         <small>Ctrl+Win+F10 раскладывает группу по этому же режиму. H — head, c1, c2, c3 — его дети. Сами зоны — <code>claudeWt.headZones</code> в YAML-конфиге; без них дети открываются как раньше.</small>
       </div>
 
+      <h3 class="group">Telegram inbox</h3>
+      <p class="tab-note">Keys of the <code>claudeWt.telegramInbox</code> block. The block itself (<code>dir</code>, <code>cwd</code>, <code>script</code>) is written in the YAML config by hand — without it these fields refuse to save.</p>
+
+      <div class="field">
+        <label for="cfg_tg_inbox_gap_ms">claudeWt.telegramInbox.gapMs (ms)</label>
+        <input type="number" id="cfg_tg_inbox_gap_ms" data-cfg="claudeWt.telegramInbox.gapMs" data-cfg-default="1000" data-cfg-type="number" min="0" placeholder="1000">
+        <small>Pause between two inbox windows when several files arrive at once.</small>
+      </div>
+
+      <div class="field checkbox">
+        <label>
+          <input type="checkbox" id="cfg_tg_inbox_background" data-cfg="claudeWt.telegramInbox.background" data-cfg-default="true" data-cfg-type="boolean">
+          claudeWt.telegramInbox.background — open windows without taking focus
+        </label>
+        <small>Off: the new window is raised and its virtual desktop is switched to, as before.</small>
+      </div>
+
       <h3 class="group">Session slots on the Home Assistant panel</h3>
       <p class="tab-note">Lives in the root <code>homeassistant</code> key of the node config, but these are claude-wt session slots — hence this tab.</p>
 

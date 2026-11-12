@@ -33,7 +33,7 @@ function readClaudeConfig() {
   const config = getConfig();
   const out = {};
   for (const field of CLAUDE_CONFIG_FIELDS) {
-    const value = config?.[field.section]?.[field.key];
+    const value = [...field.section.split('.'), field.key].reduce((node, k) => node?.[k], config);
     out[field.name] = value === undefined ? null : value;
   }
   return out;
