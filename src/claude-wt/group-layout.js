@@ -141,7 +141,11 @@ async function arrangeGroup({ groups, selected, log = () => {} }, deps = {}) {
   if (headDesktop == null || current === headDesktop) {
     // deck: дети лежат друг на друге, и подъём всех переставил бы колоду. Сверху
     // — выбранный, если он ребёнок; иначе порядок детей по глубине не трогаем.
-    const picked = deck ? kids.find(k => k.id === selected) ?? null : null;
+    // По хоткею пикер скрыт и selected — null: тогда «выбранный» — ребёнок
+    // активного окна, иначе фокус уходил бы к head из того ребёнка, где человек
+    // работал.
+    const pickedId = selected ?? activeSession;
+    const picked = deck ? kids.find(k => k.id === pickedId) ?? null : null;
     const all = deck ? [headW, ...(picked ? [picked.w] : [])] : [headW, ...kids.map(k => k.w)];
     for (const w of all) {
       try {

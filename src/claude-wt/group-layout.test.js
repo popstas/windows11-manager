@@ -192,6 +192,15 @@ describe('arrangeGroup', () => {
       expect(h.deps.focus).toHaveBeenCalledWith(11);
     });
 
+    // Ревью 12.11: по хоткею пикер скрыт, selected — null. Фокус обязан
+    // остаться у ребёнка, в котором человек работал, а не уйти к head.
+    it('selected null, активен ребёнок — он сверху и с фокусом', async () => {
+      const h = deckHarness({ active: 12 });
+      await arrangeGroup({ groups: [h.group], selected: null, log: h.log }, h.deps);
+      expect(h.raised).toEqual([1, 12]);
+      expect(h.deps.focus).toHaveBeenCalledWith(12);
+    });
+
     it('выбран head — дети не поднимаются', async () => {
       const h = deckHarness();
       await arrangeGroup({ groups: [h.group], selected: 'h', log: h.log }, h.deps);

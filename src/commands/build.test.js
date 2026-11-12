@@ -135,7 +135,9 @@ describe('claude-dock-press', () => {
 
     expect(dock.resolve).toHaveBeenCalledWith(2);
     expect(winMan.focusTerminalWindow).toHaveBeenCalledWith(7, expect.anything());
-    expect(result).toEqual({ id: 'sess-1' });
+    // id сессии в ответ не идёт: ответ уходит по http без авторизации, а живой
+    // sessionId head — пропуск для второго прохода session-new (ревью 12.11).
+    expect(result).toEqual({ pressed: true });
   });
 
   it('пустой слот не зовёт фокус и не молчит', async () => {
@@ -209,3 +211,17 @@ describe('claude-dock-press', () => {
     expect(log.mock.calls.some(([msg]) => String(msg).includes('пуст'))).toBe(false);
   });
 });
+
+// Ревью 12.11: ответ http не должен выдавать id сессий — живой sessionId head
+// открывает второй проход session-new (каталог под childCwdRoot).
+describe('claude-wt-restore: ответ без id сессий', () => {
+  it('отдаёт счётчики, а не списки id', async () => {
+    vi.doMock('../claude-wt/restore.js', () => ({
+      restoreClaudeSessions: vi.fn(async () => ({ restored: ['a1'], skipped: ['h1', 'h2'] })),
+    }));
+    const map = makeMap({});
+    expect(await map['claude-wt-restore']('{}')).toEqual({ restored: 1, skipped: 2 });
+    vi.doUnmock('../claude-wt/restore.js');
+  });
+});
+

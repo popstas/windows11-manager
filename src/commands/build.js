@@ -97,7 +97,10 @@ function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = 
         // сессию подняла. По http строка пути сюда не доходит вовсе: ветка
         // нажатия в http-server.js отвечает раньше общего `POST <url>`.
         log(`streamdock: слот ${slot} — поднята сессия ${found.id}`);
-        return { id: found.id };
+        // id сессии — только в журнал. Ответ уходит по http без авторизации, а
+        // живой sessionId head открывает второй проход session-new (каталог под
+        // childCwdRoot): выдавать его каждому, кто нажмёт слот, нельзя.
+        return { pressed: true };
       }),
       {
         // Окно ограничения — на слот, а не на команду целиком: кнопок на доске
@@ -117,7 +120,11 @@ function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = 
     async 'claude-wt-restore'(payload) {
       const { restoreClaudeSessions } = await import('../claude-wt/restore.js');
       const body = typeof payload === 'string' ? JSON.parse(payload || '{}') : (payload ?? {});
-      return restoreClaudeSessions({ force: Boolean(body.force), sessionIds: body.sessionIds });
+      const res = await restoreClaudeSessions({ force: Boolean(body.force), sessionIds: body.sessionIds });
+      // Счётчики вместо списков id — по той же причине, что у нажатия слота:
+      // отказ restore при открытых сессиях перечислял бы все живые id, а это
+      // пропуск для второго прохода session-new. Списки остаются в журнале.
+      return { restored: res?.restored?.length ?? 0, skipped: res?.skipped?.length ?? 0 };
     },
   };
 

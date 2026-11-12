@@ -68,6 +68,16 @@ async function openNewSession(body, deps = {}) {
   if (!Array.isArray(cfg.launchSession?.args) || !cfg.launchSession.args.length) {
     return { ok: false, status: 500, reason: 'claudeWt.launchSession.args is empty' };
   }
+  // Второй проход держится на двух проверках: строковой здесь и `pwd -P` в
+  // обёртке. Шаблон без {childCwdRoot} молча выключил бы вторую — симлинк под
+  // корнем, ведущий наружу, прошёл бы. Отказ вместо тишины.
+  if (vars.childCwdRoot && !cfg.launchSession.args.some(a => String(a).includes('{childCwdRoot}'))) {
+    return {
+      ok: false,
+      status: 500,
+      reason: 'claudeWt.launchSession has no {childCwdRoot}: the wrapper would not re-check claudeWt.childCwdRoot',
+    };
+  }
   const raw = body && typeof body === 'object' ? body : {};
   const cursor = parseCursorPoint(raw.cursor, { noAutoplace: raw.noAutoplace === true });
   const mark = deps.mark ?? startTiming(`session-new ${vars.name}`);

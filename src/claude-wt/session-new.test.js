@@ -153,6 +153,30 @@ describe('openNewSession', () => {
       expect(spawned[0].args.at(-1)).toContain("'/home/popstas/projects/js/amnezia'");
     });
 
+    // Ревью 12.11: без {childCwdRoot} в шаблоне обёртка корень не перепроверит,
+    // и симлинк под корнем, ведущий наружу, прошёл бы молча. Отказ, а не тишина.
+    it('шаблон без {childCwdRoot} — 500 на втором проходе, spawn не звался', async () => {
+      const old = mergeClaudeWtConfig({
+        launchSession: { args: ['ssh', '-A', 'popstas@pc-virt.popstas.pro', '-t', REMOTE] },
+        projects: [{ name: 'ExpertizeMe', cwd: '/vault', profiles: { wt: 'Expertize' } }],
+        childCwdRoot: '/home/popstas/projects',
+      });
+      const { res, spawned } = await run(CHILD, { cfg: old, liveHeadIds: () => new Set([HEAD_ID]) });
+      expect(res).toMatchObject({ ok: false, status: 500 });
+      expect(res.reason).toContain('{childCwdRoot}');
+      expect(spawned).toEqual([]);
+    });
+
+    it('старый шаблон не мешает каталогу из списка', async () => {
+      const old = mergeClaudeWtConfig({
+        launchSession: { args: ['ssh', '-A', 'popstas@pc-virt.popstas.pro', '-t', REMOTE] },
+        projects: [{ name: 'ExpertizeMe', cwd: '/vault', profiles: { wt: 'Expertize' } }],
+        childCwdRoot: '/home/popstas/projects',
+      });
+      const { res } = await run({ ...BODY, headId: HEAD_ID }, { cfg: old });
+      expect(res.ok).toBe(true);
+    });
+
     it('head без окна — 403 и spawn не звался', async () => {
       const { res, spawned } = await run(CHILD, { cfg: RCFG, liveHeadIds: () => new Set() });
       expect(res).toMatchObject({ ok: false, status: 403 });
