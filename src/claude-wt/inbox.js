@@ -22,6 +22,10 @@ import { startTiming } from './timing.js';
 /**
  * Открыть окно и дождаться, пока оно найдётся и получит фокус.
  *
+ * `background: true` — окно ставится на место, но фокус не берёт и стол не
+ * переключает (`raise: false` у `focusSpawnedWindow`). `focused` в ответе тогда
+ * значит «окно нашлось», а не «получило фокус».
+ *
  * В отличие от `openClaudeProject`, хвост с фокусом здесь ждут: зовёт не
  * роутер, которому надо ответить сразу, а очередь наблюдателя, и следующую
  * пересылку она откроет только после того, как окно этой нашлось, — иначе
@@ -29,7 +33,7 @@ import { startTiming } from './timing.js';
  *
  * @returns {Promise<{ ok: boolean, action?: string, reason?: string, sessionName?: string, focused?: boolean }>}
  */
-async function openInboxSession({ file, name, cwd, script, terminal } = {}, deps = {}) {
+async function openInboxSession({ file, name, cwd, script, terminal, background = false } = {}, deps = {}) {
   const {
     cfg = getClaudeWtConfig(),
     spawnProcess = spawn,
@@ -62,7 +66,7 @@ async function openInboxSession({ file, name, cwd, script, terminal } = {}, deps
   mark('spawn');
   let focused = false;
   try {
-    focused = Boolean(await focusByTitle(name, { mark }));
+    focused = Boolean(await focusByTitle(name, { mark, raise: !background }));
   } catch (e) {
     console.error(`[claude-wt] failed to focus ${name}: ${e.message}`);
   }
