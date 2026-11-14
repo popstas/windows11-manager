@@ -9,11 +9,11 @@
  *
  * Сюда попали только скаляры. Структуры под `claudeWt` (`projects`,
  * `terminals`, `terminalExecutables`, `launch`, `launchNew`, `launchInbox`,
- * `restore`, `snapshots`, `headZones`) формой не выражаются без отдельного
- * редактора и остаются в YAML. Из `telegramInbox` на форме два скаляра
- * (`gapMs`, `background`) — секция у них путём через точку, а сам блок по-прежнему
- * пишется в YAML руками; `tileZones` — список пар, у него своё поле и
- * свой патчер (`tile-zones-commands.js`).
+ * `restore`, `snapshots`) формой не выражаются без отдельного редактора и
+ * остаются в YAML. Из `telegramInbox` на форме два скаляра (`gapMs`,
+ * `background`) — секция у них путём через точку, а сам блок по-прежнему
+ * пишется в YAML руками; `tileZones` и `headZones` — у каждого своё текстовое
+ * поле и своя команда (`tile-zones-commands.js`, `head-zones-commands.js`).
  *
  * Умолчания продублированы здесь не как источник правды, а как подпись поля:
  * работают они в `CLAUDE_WT_DEFAULTS` (`src/claude-wt/daemon-helpers.js`) и в
@@ -45,7 +45,7 @@ const CLAUDE_CONFIG_FIELDS = [
   { name: 'claudeWt.profile', section: 'claudeWt', key: 'profile', type: 'string', default: '' },
 
   // Окна детей head-сессии: как ставить ребёнка без явной зоны. Сами зоны
-  // (`headZones`) — структура и живут в YAML.
+  // (`headZones`) — своё поле формы, см. head-zones-commands.js.
   {
     name: 'claudeWt.childPlacement',
     section: 'claudeWt',

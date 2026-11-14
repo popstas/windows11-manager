@@ -149,11 +149,15 @@ function verifyPatch(result, section, key, value) {
  * Собрать новый текст конфига с точечно применённым `value` по адресу
  * `section.key`. `value === undefined` — убрать ключ.
  *
+ * `render` — как превратить значение в однострочный кусок YAML. Умолчание —
+ * `renderScalar`; `claudeWt.headZones` передаёт свой рендер flow-карты
+ * (`{ 1: [3, 4] }`), потому что `stringify` карту пишет блоком в несколько строк.
+ *
  * Кидает читаемую ошибку и не трогает `raw`, если файл не разбирается, секция
  * не отображение ключей, секция — flow-карта с полями, или результат правки не
  * прошёл проверку (см. `verifyPatch`).
  */
-function patchConfigScalar(raw, section, key, value) {
+function patchConfigScalar(raw, section, key, value, { render = renderScalar } = {}) {
   const target = findTarget(raw, section, key);
   const eol = detectEol(raw);
   const toEol = eolConverter(eol);
@@ -165,7 +169,7 @@ function patchConfigScalar(raw, section, key, value) {
   let result;
 
   if (target.kind === 'append-section') {
-    const block = toEol(`${section}:\n  ${key}: ${renderScalar(value)}\n`);
+    const block = toEol(`${section}:\n  ${key}: ${render(value)}\n`);
     const needsLeadingEol = raw.length > 0 && !raw.endsWith('\n');
     result = raw + (needsLeadingEol ? eol : '') + block;
   } else if (target.kind === 'insert-key') {
@@ -175,7 +179,7 @@ function patchConfigScalar(raw, section, key, value) {
     // (списка, вложенной карты) строк несколько, и вставлять надо после всех.
     const anchor = afterPair.value ? afterPair.value.range[2] : lineEndAt(raw, afterPair.key.range[2]) + 1;
     const needsLeadingEol = anchor > 0 && raw[anchor - 1] !== '\n';
-    const block = toEol(`${pad}${key}: ${renderScalar(value)}\n`);
+    const block = toEol(`${pad}${key}: ${render(value)}\n`);
     result = raw.slice(0, anchor) + (needsLeadingEol ? eol : '') + block + raw.slice(anchor);
   } else if (target.kind === 'replace-empty-map') {
     const { topPair } = target;
@@ -193,7 +197,7 @@ function patchConfigScalar(raw, section, key, value) {
     // Перевод строки после `{}` в тексте уже есть — свой второй дал бы пустую
     // строку посреди секции.
     const tail = raw[end] === '\n' || raw[end] === '\r' || end === raw.length ? '' : '\n';
-    const block = toEol(`${eol}${pad}${key}: ${renderScalar(value)}${tail}`);
+    const block = toEol(`${eol}${pad}${key}: ${render(value)}${tail}`);
     result = raw.slice(0, start) + block + raw.slice(end);
   } else if (value === undefined) {
     // Убрать существующий ключ: вырезается вся его строка целиком, вместе с
@@ -210,7 +214,10 @@ function patchConfigScalar(raw, section, key, value) {
     }
     const start = lineStartAt(raw, pair.key.range[0]);
     const valueEnd = pair.value?.range ? pair.value.range[1] : pair.key.range[2];
-    const end = Math.min(lineEndAt(raw, valueEnd) + 1, raw.length);
+    // Блочное значение (карта или список строками ниже ключа) кончается уже
+    // после своего перевода строки — дорезать «до конца строки» значило бы
+    // снести следующий ключ.
+    const end = raw[valueEnd - 1] === '\n' ? valueEnd : Math.min(lineEndAt(raw, valueEnd) + 1, raw.length);
     result = raw.slice(0, start) + raw.slice(end);
   } else {
     // Существующий ключ: меняется только его значение. Ключ, двоеточие и всё,
@@ -218,9 +225,23 @@ function patchConfigScalar(raw, section, key, value) {
     // пределами), остаются исходными байтами.
     const { pair } = target;
     const valueNode = pair.value;
-    const rendered = renderScalar(value);
+    const rendered = render(value);
+    const blockValue = valueNode?.range
+      && raw.slice(pair.key.range[1], valueNode.range[0]).includes('\n');
 
-    if (!valueNode || !valueNode.range) {
+    if (blockValue) {
+      // Значение записано блоком строками ниже ключа (`headZones:\n    1: [3, 4]`).
+      // Новое однострочное встаёт сразу за двоеточием, хвостовой комментарий
+      // строки ключа остаётся за ним, а прежний блок уходит целиком — вместе
+      // со своим переводом строки, иначе следующий ключ приклеился бы к
+      // значению.
+      const colon = raw.indexOf(':', pair.key.range[1]);
+      const keyLineEnd = lineEndAt(raw, colon);
+      const tail = raw.slice(colon + 1, keyLineEnd).trim();
+      const end = valueNode.range[1];
+      const closingEol = raw[end - 1] === '\n' ? eol : '';
+      result = raw.slice(0, colon + 1) + ` ${rendered}${tail ? ` ${tail}` : ''}${closingEol}` + raw.slice(end);
+    } else if (!valueNode || !valueNode.range) {
       // `debug:` без значения на строке. Node обычно всё равно даёт узел
       // нулевой ширины с валидным range, так что путь запасной.
       const colon = raw.indexOf(':', pair.key.range[2] - 1);

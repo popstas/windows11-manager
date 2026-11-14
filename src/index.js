@@ -326,6 +326,28 @@ async function start() {
     });
 
   claudeWt
+    .command('head-zones <action> [text]')
+    .description('read/write claudeWt.headZones в живом конфиге: get | set <text>')
+    .action(async (action, text) => {
+      const mod = await import('./commands/head-zones-commands.js');
+      try {
+        if (action === 'get') {
+          console.log(mod.readHeadZonesText());
+        } else if (action === 'set') {
+          const zones = mod.writeHeadZonesText(text ?? '');
+          console.log(`[claude-wt] headZones сохранены: ${Object.keys(zones).length} монитор(а)`);
+        } else {
+          console.error(`unknown action: ${action} (ожидается get или set)`);
+          process.exit(1);
+        }
+      } catch (e) {
+        console.error(e.message);
+        process.exit(1);
+      }
+      process.exit(0);
+    });
+
+  claudeWt
     .command('config <action> [json]')
     .description('read/write скалярные поля claudeWt/homeassistant в живом конфиге: get | set <json>')
     // Спрашивает и пишет окно настроек трея (вкладка Claude): YAML Rust не

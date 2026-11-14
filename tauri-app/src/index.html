@@ -228,6 +228,12 @@
       <h3 class="group">Head session children</h3>
 
       <div class="field">
+        <label for="head_zones">Head zones (one "monitor: head,children" line per monitor)</label>
+        <textarea id="head_zones" rows="3" placeholder="1: 3,4&#10;2: 5,6&#10;3: 1,4"></textarea>
+        <small>FancyZones zones for head-session windows and their children: first zone — head, second — its children. Lives in the node config (claudeWt.headZones), saved separately and only when changed. Empty = children are placed as before (cursor or slot).</small>
+      </div>
+
+      <div class="field">
         <label for="cfg_claude_wt_child_placement">claudeWt.childPlacement</label>
         <select id="cfg_claude_wt_child_placement" data-cfg="claudeWt.childPlacement" data-cfg-default="stack" data-cfg-type="string">
           <option value="">(по умолчанию — stack)</option>

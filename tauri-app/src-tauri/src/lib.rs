@@ -1118,6 +1118,20 @@ async fn save_tile_zones(app: tauri::AppHandle, text: String) -> Result<(), Stri
     Ok(())
 }
 
+/// Прочитать `claudeWt.headZones` из живого YAML-конфига node-части.
+#[tauri::command]
+async fn get_head_zones(app: tauri::AppHandle) -> Result<String, String> {
+    node_config_command(&app, &["src/index.js", "claude-wt", "head-zones", "get"]).await
+}
+
+/// Записать `claudeWt.headZones` в живой YAML-конфиг node-части. Разбор и
+/// точечная правка — на стороне node, как у `save_tile_zones`.
+#[tauri::command]
+async fn save_head_zones(app: tauri::AppHandle, text: String) -> Result<(), String> {
+    node_config_command(&app, &["src/index.js", "claude-wt", "head-zones", "set", &text]).await?;
+    Ok(())
+}
+
 /// Прочитать скалярные поля вкладки Claude из живого YAML-конфига node-части.
 ///
 /// Отдаётся сырая строка JSON: разбирать её здесь незачем — трей в эти поля не
@@ -1859,7 +1873,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(Mutex::new(AppState::new()))
-        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version, read_log, save_store_match_list, get_tile_zones, save_tile_zones, get_claude_config, save_claude_config])
+        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version, read_log, save_store_match_list, get_tile_zones, save_tile_zones, get_head_zones, save_head_zones, get_claude_config, save_claude_config])
         .setup(|app| {
             let project_path = get_project_path(app.handle());
             logging::init(&project_path);

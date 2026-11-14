@@ -13,6 +13,13 @@ const status = document.getElementById('status');
 // запрещает такое сохранение, пока окно не откроют заново.
 let tileZonesLoadFailed = false;
 
+// headZones — та же история, что у tileZones (YAML node-части, свои вызовы
+// get_head_zones/save_head_zones, тот же флаг неудачного чтения). Отличие одно:
+// сохраняется только изменённое поле. Иначе любой сабмит переписывал бы
+// headZones, записанный в конфиге руками блоком с комментариями, в одну строку.
+let headZonesLoadFailed = false;
+let headZonesLoaded = '';
+
 // Поля вкладки Claude, что живут в том же YAML-конфиге (claudeWt.* и слоты
 // панели из homeassistant.*): читаются get_claude_config, пишутся
 // save_claude_config. Флаг — та же страховка, что у зон рядом, и по той же
@@ -111,11 +118,12 @@ async function loadSettings() {
   // try: последовательный await get_tile_zones() между заполнением полей
   // держал остальную форму (включая mqtt_*) пустой на время своего запроса, и
   // сабмит в этот момент сохранил бы пустые настройки MQTT.
-  const [settingsResult, tileZonesResult, versionResult, claudeConfigResult] = await Promise.allSettled([
+  const [settingsResult, tileZonesResult, versionResult, claudeConfigResult, headZonesResult] = await Promise.allSettled([
     invoke('get_settings'),
     invoke('get_tile_zones'),
     invoke('get_app_version'),
     invoke('get_claude_config'),
+    invoke('get_head_zones'),
   ]);
 
   if (settingsResult.status === 'fulfilled') {
@@ -154,6 +162,16 @@ async function loadSettings() {
     // Не в console.error и молчок: человек должен увидеть в самом окне,
     // почему поле пустое и почему сабмит его не тронет.
     showLoadWarning(`Tile zones failed to load (${tileZonesResult.reason}) — the field will not be saved until you reopen this window`);
+  }
+
+  if (headZonesResult.status === 'fulfilled') {
+    headZonesLoadFailed = false;
+    headZonesLoaded = headZonesResult.value;
+    document.getElementById('head_zones').value = headZonesResult.value;
+  } else {
+    headZonesLoadFailed = true;
+    console.error('Failed to load head zones:', headZonesResult.reason);
+    showLoadWarning(`Head zones failed to load (${headZonesResult.reason}) — the field will not be saved until you reopen this window`);
   }
 
   if (claudeConfigResult.status === 'fulfilled') {
@@ -212,6 +230,7 @@ form.addEventListener('submit', async (e) => {
   };
 
   const tileZonesText = document.getElementById('tile_zones').value;
+  const headZonesText = document.getElementById('head_zones').value;
 
   try {
     // Совпавшие хоткеи не блокируют сохранение (см. save_settings) — пустая
@@ -232,6 +251,24 @@ form.addEventListener('submit', async (e) => {
         await invoke('save_tile_zones', { text: tileZonesText });
       } catch (e) {
         tileZonesError = String(e);
+      }
+    }
+
+    // headZones — только если поле изменили (см. headZonesLoaded). Сравнение
+    // по строкам без пробелов по краям: лишний перевод строки в конце правкой
+    // не считается.
+    let headZonesError = '';
+    const headZonesNorm = (t) => t.split('\n').map((l) => l.trim()).filter(Boolean).join('\n');
+    if (headZonesNorm(headZonesText) !== headZonesNorm(headZonesLoaded)) {
+      if (headZonesLoadFailed) {
+        headZonesError = 'not saved — the field did not load when the window opened, reopen settings';
+      } else {
+        try {
+          await invoke('save_head_zones', { text: headZonesText });
+          headZonesLoaded = headZonesText;
+        } catch (e) {
+          headZonesError = String(e);
+        }
       }
     }
 
@@ -260,11 +297,12 @@ form.addEventListener('submit', async (e) => {
     // наоборот) — все независимы, и показывается каждое, что случилось.
     const messages = [];
     if (tileZonesError) messages.push('Tile zones: ' + tileZonesError);
+    if (headZonesError) messages.push('Head zones: ' + headZonesError);
     if (claudeConfigError) messages.push('Claude config: ' + claudeConfigError);
     if (warning) messages.push(warning);
 
     if (messages.length) {
-      status.style.color = (tileZonesError || claudeConfigError) ? '#f38ba8' : '#f9e2af';
+      status.style.color = (tileZonesError || headZonesError || claudeConfigError) ? '#f38ba8' : '#f9e2af';
       status.textContent = messages.join(' · ');
       setTimeout(() => { status.textContent = ''; }, 8000);
     } else {
