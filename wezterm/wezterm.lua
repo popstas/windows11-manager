@@ -153,13 +153,23 @@ config.exit_behavior = 'CloseOnCleanExit'
 -- w11m и пикер закрывают окна без диалога.
 config.window_close_confirmation = 'NeverPrompt'
 
--- copyOnSelect: false, как в wt: выделение мышью не уходит в буфер обмена.
+-- copyOnSelect: false, как в wt: выделение мышью остаётся выделением, в буфер
+-- его кладёт Ctrl+C. По умолчанию WezTerm копирует на отпускании кнопки
+-- (CompleteSelection), и PrimarySelection тут не спасает: на Windows
+-- set_clipboard вид буфера не различает, это тот же системный буфер.
+-- Поэтому все отпускания, что копируют по умолчанию (одиночный клик с
+-- NONE/SHIFT/ALT/ALT|SHIFT, двойной и тройной), — Nop. SHIFT нужен для Claude:
+-- он включает отчёт мыши, и выделять там приходится с Shift.
+local function no_copy_on(streak, mods)
+  return { event = { Up = { streak = streak, button = 'Left' } }, mods = mods, action = act.Nop }
+end
 config.mouse_bindings = {
-  {
-    event = { Up = { streak = 1, button = 'Left' } },
-    mods = 'NONE',
-    action = act.CompleteSelection 'PrimarySelection',
-  },
+  no_copy_on(1, 'NONE'),
+  no_copy_on(1, 'SHIFT'),
+  no_copy_on(1, 'ALT'),
+  no_copy_on(1, 'ALT|SHIFT'),
+  no_copy_on(2, 'NONE'),
+  no_copy_on(3, 'NONE'),
   {
     event = { Up = { streak = 1, button = 'Left' } },
     mods = 'CTRL',
