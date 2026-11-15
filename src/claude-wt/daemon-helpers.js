@@ -85,21 +85,17 @@ const CLAUDE_WT_DEFAULTS = {
   childCwdRoot: '',
   // Иконки окон claude (src/mqtt/window-icons.js): окно head — корона, окно
   // сессии — иконка её проекта (projects[].icon), иначе иконка профиля wt
-  // проекта. Относительные пути — от корня репозитория. `head` пусто —
-  // встроенная icons/crown.ico. `headsDir` пусто — каталог меток head рядом
-  // с sessionsFile (`.ccfzf/heads`). Выключается `enabled: false`.
+  // проекта из `profiles`. Относительные пути — от корня репозитория. `head`
+  // пусто — встроенная icons/crown.ico. `headsDir` пусто — каталог меток head
+  // рядом с sessionsFile (`.ccfzf/heads`). Выключается `enabled: false`.
+  // Встроенная карта профилей пуста: иконки проектов — чужие логотипы и
+  // личные картинки, в публичный репозиторий они не кладутся; пути к ним
+  // задаёт живой конфиг машины.
   windowIcons: {
     enabled: true,
     headsDir: '',
     head: '',
-    profiles: {
-      popstas: 'icons/popstas.ico',
-      home: 'icons/popstas.ico',
-      ExpertizeMe: 'icons/expertizeme.ico',
-      'work-project': 'icons/expertizeme.ico',
-      'home-project': 'icons/home-assistant.ico',
-      'reaper-project': 'icons/home-assistant.ico',
-    },
+    profiles: {},
   },
 };
 

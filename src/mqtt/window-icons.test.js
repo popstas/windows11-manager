@@ -16,6 +16,7 @@ function setup({ windows = [], sessions = {}, heads = [], config = {}, control =
     heads: new Set(heads),
     cfg: mergeClaudeWtConfig({
       statePath: 's', sessionsFile: 'V:/.ccfzf.sessions.json', profile: 'popstas',
+      windowIcons: { profiles: { home: 'C:/ico/me.ico', ExpertizeMe: 'C:/ico/exp.ico' } },
       projects: [
         { name: 'home', cwd: '/p/home', profile: 'home' },
         { name: 'exp', cwd: '/p/exp', profile: 'ExpertizeMe' },
@@ -60,7 +61,7 @@ describe('startWindowIcons', () => {
       sessions: { 1: { sessionId: 'h', cwd: '/p/home' }, 2: { sessionId: 'c', cwd: '/p/exp' } },
       heads: ['h'],
     });
-    expect(calls).toEqual([[1, 'C:/repo/icons/crown.ico'], [2, 'C:/repo/icons/expertizeme.ico']]);
+    expect(calls).toEqual([[1, 'C:/repo/icons/crown.ico'], [2, 'C:/ico/exp.ico']]);
   });
 
   it('ничего не изменилось — ни сети, ни вызовов до срока обновления', () => {

@@ -5,6 +5,7 @@ import { mergeClaudeWtConfig } from './daemon-helpers.js';
 const cfg = mergeClaudeWtConfig({
   profile: 'popstas',
   sessionsFile: 'V:/.ccfzf.sessions.json',
+  windowIcons: { profiles: { popstas: 'C:\\ico\\me.ico', home: 'C:\\ico\\me.ico', ExpertizeMe: 'C:\\ico\\exp.ico' } },
   projects: [
     { name: 'home', cwd: '/p/home', profile: 'home' },
     { name: 'exp', cwd: '/p/exp', profile: 'ExpertizeMe' },
@@ -29,12 +30,12 @@ describe('iconFor', () => {
   });
 
   it('без своей иконки — по профилю проекта, как у профилей wt', () => {
-    expect(iconFor({ sessionId: 's', cwd: '/p/home' }, { heads: new Set(), cfg })).toBe('icons/popstas.ico');
-    expect(iconFor({ sessionId: 's', cwd: '/p/exp' }, { heads: new Set(), cfg })).toBe('icons/expertizeme.ico');
+    expect(iconFor({ sessionId: 's', cwd: '/p/home' }, { heads: new Set(), cfg })).toBe('C:\\ico\\me.ico');
+    expect(iconFor({ sessionId: 's', cwd: '/p/exp' }, { heads: new Set(), cfg })).toBe('C:\\ico\\exp.ico');
   });
 
   it('сессия вне проектов — по общему профилю claudeWt.profile', () => {
-    expect(iconFor({ sessionId: 's', cwd: '/p/elsewhere' }, { heads: new Set(), cfg })).toBe('icons/popstas.ico');
+    expect(iconFor({ sessionId: 's', cwd: '/p/elsewhere' }, { heads: new Set(), cfg })).toBe('C:\\ico\\me.ico');
   });
 
   it('проект с явно пустым профилем — иконку не трогать', () => {
@@ -46,10 +47,15 @@ describe('iconFor', () => {
     expect(iconFor({ sessionId: 's', cwd: '/x' }, { heads: new Set(), cfg: c })).toBe('');
   });
 
-  it('свой профиль в конфиге дополняет встроенную карту, а не стирает её', () => {
+  it('встроенной карты профилей нет — без конфига дети без иконки', () => {
+    const c = mergeClaudeWtConfig({ profile: 'popstas', projects: [{ name: 'home', cwd: '/p/home', profile: 'home' }] });
+    expect(c.windowIcons.profiles).toEqual({});
+    expect(iconFor({ sessionId: 's', cwd: '/p/home' }, { heads: new Set(), cfg: c })).toBe('');
+  });
+
+  it('карта профилей из конфига доходит как есть', () => {
     const c = mergeClaudeWtConfig({ windowIcons: { profiles: { mine: 'icons/mine.ico' } } });
-    expect(c.windowIcons.profiles.mine).toBe('icons/mine.ico');
-    expect(c.windowIcons.profiles.home).toBe('icons/popstas.ico');
+    expect(c.windowIcons.profiles).toEqual({ mine: 'icons/mine.ico' });
   });
 });
 

@@ -2,8 +2,8 @@
  * Какую иконку поставить окну сессии claude. Без I/O.
  *
  * Решения Стаса 15.11: окно head — корона, окно сессии — иконка её проекта,
- * а без своей — иконка профиля wt проекта (как у профилей Windows Terminal:
- * popstas.ico, favicon ExpertizeMe, Home Assistant). Иконку ставит служба по
+ * а без своей — иконка профиля wt проекта (как у профилей Windows Terminal;
+ * карта профилей — только в живом конфиге). Иконку ставит служба по
  * hwnd (WM_SETICON) окнам и wt, и WezTerm: src/mqtt/window-icons.js.
  */
 import { profileForTerminal } from './project-helpers.js';

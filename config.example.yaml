@@ -217,14 +217,15 @@ claudeWt:
   # Иконки окон claude (wt и WezTerm), ставит служба снаружи (WM_SETICON):
   # окно head-сессии (метка ~/.ccfzf/heads/<id>.json) — `head`, пусто — встроенная
   # корона icons/crown.ico; окно сессии — projects[].icon, иначе иконка профиля
-  # wt проекта из `profiles` (встроенная карта дополняется, а не заменяется).
+  # wt проекта из `profiles` (встроенной карты профилей нет: пути к своим
+  # картинкам задаются здесь, абсолютными).
   # Относительные пути — от папки windows11-manager. headsDir пусто — рядом с
   # sessionsFile (.ccfzf/heads). Выключить — enabled: false.
   # windowIcons:
   #   enabled: true
   #   head: ''
   #   headsDir: ''
-  #   profiles: { home: icons/popstas.ico, ExpertizeMe: icons/expertizeme.ico }
+  #   profiles: { home: 'C:\\images\\ico\\home.ico', Site: 'C:\\images\\ico\\site.png' }
   # Терминал по умолчанию для этой машины. Просьба пикера может назвать
   # другой — тогда выигрывает она.
   terminal: wt
