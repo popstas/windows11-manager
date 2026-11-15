@@ -18,6 +18,7 @@ import { connectMqtt, readMqttSettings } from './client.js';
 import { createLinkReporter } from './link.js';
 import { createStatsPublisher } from './stats.js';
 import { startAutoplacer } from './autoplacer.js';
+import { startTaskbarState } from './taskbar.js';
 import { startDaemonWatchdog } from './daemon-watchdog.js';
 import { startTelegramInbox } from './telegram-inbox.js';
 import { startHttpServer } from '../http-server.js';
@@ -85,6 +86,9 @@ function startService({
   // Входящие из Telegram: брокер не нужен и ему. Заводится всегда, а включается
   // ключом `claudeWt.telegramInbox.enabled` — конфиг читается на каждом проходе.
   const telegramInbox = startTelegramInbox({ winMan, log });
+  // Кнопки окон WezTerm на панели задач (прогресс и мигание по состоянию
+  // агента) — wt рисует их сам, WezTerm не умеет. Брокер не нужен.
+  const taskbar = startTaskbarState({ winMan, log });
 
   const stats = settings ? createStatsPublisher({ winMan, publish, log, config: withBase }) : null;
 
@@ -136,6 +140,7 @@ function startService({
       autoplacer.stop();
       daemonWatchdog.stop();
       telegramInbox.stop();
+      taskbar.stop();
       client?.end(true);
       httpServer.close();
     },

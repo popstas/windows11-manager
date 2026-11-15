@@ -5,6 +5,7 @@
 #include <shtypes.h>
 #include <string>
 #include <windows.h>
+#include <shobjidl.h>
 
 typedef int (__stdcall* lp_GetScaleFactorForMonitor) (HMONITOR, DEVICE_SCALE_FACTOR*);
 
@@ -393,7 +394,80 @@ Napi::Object getMonitorInfo (const Napi::CallbackInfo& info) {
     return obj;
 }
 
+// --- Taskbar button of a window: progress and flashing ---
+//
+// Works on windows of other processes too: ITaskbarList3 and FlashWindowEx
+// accept any top-level hwnd (checked on WezTerm windows, 2026-11-15). This is
+// how windows11-manager draws on the button what the terminal cannot draw
+// itself. Window icon calls (WM_SETICON) belong here as well: same kind, by hwnd.
+
+static ITaskbarList3* taskbarList = nullptr;
+
+// One instance per process: CoCreateInstance and HrInit cost more than the
+// calls themselves, and the service calls them every few seconds.
+static ITaskbarList3* getTaskbarList () {
+    if (taskbarList) return taskbarList;
+    // RPC_E_CHANGED_MODE: COM is already initialized on this thread in another
+    // model. The object can still be created, so this is not an error.
+    HRESULT init{ CoInitializeEx (NULL, COINIT_APARTMENTTHREADED) };
+    if (FAILED (init) && init != RPC_E_CHANGED_MODE) return nullptr;
+    ITaskbarList3* list{ nullptr };
+    if (FAILED (CoCreateInstance (CLSID_TaskbarList, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS (&list)))) {
+        return nullptr;
+    }
+    if (FAILED (list->HrInit ())) {
+        list->Release ();
+        return nullptr;
+    }
+    taskbarList = list;
+    return taskbarList;
+}
+
+// setTaskbarProgress(hwnd, state, value): state is a TBPFLAG (0 none,
+// 1 indeterminate, 2 normal, 4 error, 8 paused), value is 0..100. The value is
+// set only for states that draw a bar.
+Napi::Boolean setTaskbarProgress (const Napi::CallbackInfo& info) {
+    Napi::Env env{ info.Env () };
+
+    auto handle{ getValueFromCallbackData<HWND> (info, 0) };
+    int state{ info[1].As<Napi::Number> ().Int32Value () };
+    int value{ info.Length () > 2 ? info[2].As<Napi::Number> ().Int32Value () : 0 };
+    if (value < 0) value = 0;
+    if (value > 100) value = 100;
+
+    ITaskbarList3* list{ getTaskbarList () };
+    if (!list || !IsWindow (handle)) return Napi::Boolean::New (env, false);
+
+    HRESULT hr{ list->SetProgressState (handle, static_cast<TBPFLAG> (state)) };
+    if (SUCCEEDED (hr) && (state == TBPF_NORMAL || state == TBPF_PAUSED || state == TBPF_ERROR)) {
+        hr = list->SetProgressValue (handle, static_cast<ULONGLONG> (value), 100);
+    }
+    return Napi::Boolean::New (env, SUCCEEDED (hr));
+}
+
+// flashWindow(hwnd, on): on flashes the button until the window comes to the
+// foreground (what Windows Terminal does on a bell); off stops flashing.
+Napi::Boolean flashWindow (const Napi::CallbackInfo& info) {
+    Napi::Env env{ info.Env () };
+
+    auto handle{ getValueFromCallbackData<HWND> (info, 0) };
+    bool on{ info[1].As<Napi::Boolean> ().Value () };
+    if (!IsWindow (handle)) return Napi::Boolean::New (env, false);
+
+    FLASHWINFO fi{};
+    fi.cbSize = sizeof (FLASHWINFO);
+    fi.hwnd = handle;
+    fi.dwFlags = on ? (FLASHW_TRAY | FLASHW_TIMERNOFG) : FLASHW_STOP;
+    fi.uCount = 0;
+    fi.dwTimeout = 0;
+    // Returns the previous flash state, not success: the call has no error.
+    FlashWindowEx (&fi);
+    return Napi::Boolean::New (env, true);
+}
+
 Napi::Object Init (Napi::Env env, Napi::Object exports) {
+    exports.Set (Napi::String::New (env, "setTaskbarProgress"), Napi::Function::New (env, setTaskbarProgress));
+    exports.Set (Napi::String::New (env, "flashWindow"), Napi::Function::New (env, flashWindow));
     exports.Set (Napi::String::New (env, "getActiveWindow"), Napi::Function::New (env, getActiveWindow));
     exports.Set (Napi::String::New (env, "getMonitorFromWindow"), Napi::Function::New (env, getMonitorFromWindow));
     exports.Set (Napi::String::New (env, "getMonitorScaleFactor"),

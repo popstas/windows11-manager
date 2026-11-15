@@ -88,6 +88,33 @@ function claudeWtSessions({ mark = noTiming, brief = false, openOnly = false } =
 }
 
 /**
+ * Состояние агента для перечисленных окон: [{id, title}] → [{id, sessionId, agentState}].
+ *
+ * Для службы, которая красит кнопки окон WezTerm на панели задач
+ * (src/mqtt/taskbar.js). Окна она находит сама и дёшево; здесь только то, что
+ * сопоставляет заголовок с сессией и читает её состояние. В отличие от
+ * claudeWtSessions(), без getWindows() (~30 мс) и без меты: служба зовёт это
+ * раз в несколько секунд. Индекс и state.json кэшируются у своих загрузчиков
+ * (15 с и 3 с), с сети читаются файлы только переданных окон.
+ *
+ * Окно без сессии в ответ не попадает.
+ */
+function claudeWtWindowAgents(windows) {
+  const cfg = getClaudeWtConfig();
+  if (!cfg.enabled || !cfg.statePath || !windows?.length) return [];
+  const state = readState(cfg.statePath);
+  const index = loadSessionIndex(cfg.sessionsFile, cfg.progressDir);
+  const resolved = [];
+  for (const w of windows) {
+    const hit = resolveSession(stripTitleDecoration(w.title), index, state.slots);
+    if (hit) resolved.push({ id: w.id, sessionId: hit.id });
+  }
+  if (!resolved.length) return [];
+  const progress = loadProgress(cfg.progressDir, resolved.map(r => r.sessionId));
+  return resolved.map(r => ({ ...r, agentState: progress[r.sessionId]?.state ?? null }));
+}
+
+/**
  * Remembered layouts for the picker / MQTT menu.
  *
  * Reads the snapshots file directly so this works even when the daemon is not
@@ -103,4 +130,4 @@ function claudeWtSnapshots() {
   }
 }
 
-export { openSessionMap, claudeWtSessions, claudeWtSnapshots };
+export { openSessionMap, claudeWtSessions, claudeWtWindowAgents, claudeWtSnapshots };

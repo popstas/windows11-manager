@@ -41,6 +41,30 @@ function getWindowById(id) {
 }
 
 /**
+ * Кнопка окна на панели задач: прогресс и мигание, по hwnd любого процесса.
+ *
+ * Функции живут в вендорном аддоне (vendor/node-window-manager, lib/windows.cc).
+ * Аддон, собранный до них, их не знает — тогда вызовы молча ничего не делают,
+ * а `hasTaskbarControl()` говорит зовущему, что рисовать нечем.
+ *
+ * `state` — TBPFLAG: 0 нет, 1 бегущая полоса, 2 обычная, 4 ошибка, 8 пауза.
+ */
+function hasTaskbarControl() {
+  return Boolean(addon?.setTaskbarProgress && addon?.flashWindow);
+}
+
+function setTaskbarProgress(id, state, value = 0) {
+  if (!hasTaskbarControl()) return false;
+  return addon.setTaskbarProgress(id, state, value);
+}
+
+// on: мигать, пока окно не выйдет на передний план; off: перестать.
+function flashWindow(id, on) {
+  if (!hasTaskbarControl()) return false;
+  return addon.flashWindow(id, Boolean(on));
+}
+
+/**
  * Bring a window to the foreground, un-minimizing it first if needed.
  *
  * Признак свёрнутого — общая isMinimized(), а не свой порог. Прежде здесь
@@ -149,6 +173,9 @@ function focusWindow(rule) {
 export { matchRules, isWindowExcluded } from './windows-helpers.js';
 export {
   getVisibleWindowIds,
+  hasTaskbarControl,
+  setTaskbarProgress,
+  flashWindow,
   getActiveWindowId,
   getWindowById,
   focusWindowById,
