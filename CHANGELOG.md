@@ -1,6 +1,34 @@
 # Changelog
 
 
+## v4.8.0 - 2026-11-15
+
+### Features
+
+- windows-file: Иконка окна в файле окон для пикера
+- http: /claude-wt/terminal — терминал машины для ccfzf-picker
+- settings: Иконки окон и выбор терминала во вкладке Claude
+- icons: Иконки окон claude — корона у head, иконка проекта у детей
+- taskbar: Подсветка кнопок окон WezTerm на панели задач
+- wezterm: Окна непрозрачные во всех темах
+- wezterm: Конфиг WezTerm для окон claude-wt на nb
+- claude-wt: Профиль wt для любого терминала и подстановка {profileB64}
+- settings: Поле Head zones во вкладке Claude
+
+### Bug Fixes
+
+- tray: Clippy manual_div_ceil в base64 превью иконки
+- claude-wt: Состояние агента с V: — мимо устаревшего кэша клиента SMB
+- icons: Буква диска в пути короны — заглавной
+- icons: Личные иконки проектов и логотип HA убраны из репо
+- wezterm: Выделение мышью не копирует в буфер
+- wezterm: Привязки по физическим клавишам
+- monitors: Мониторы одного размера раздаются слева направо
+
+### Documentation
+
+- claude: Выкатка только на nb, popstas-pc исключён
+
 ## v4.7.1 - 2026-11-12
 
 ### Features
