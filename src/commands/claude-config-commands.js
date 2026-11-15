@@ -19,11 +19,19 @@
  * раз: промежуточные состояния на диск не попадают.
  */
 import fs from 'node:fs';
+import { parse } from 'yaml';
 import path from 'node:path';
 import { getConfig, resolveConfigPath } from '../config.js';
 import { CLAUDE_CONFIG_FIELDS, coerceFieldValue } from './claude-config-fields.js';
 import { patchConfigScalar } from './config-scalar-patch.js';
 import { writeFileAtomic } from './write-file-atomic.js';
+import { fileURLToPath } from 'node:url';
+import { mergeClaudeWtConfig } from '../claude-wt/daemon-helpers.js';
+import { normalizeTerminals } from '../claude-wt/terminal-helpers.js';
+import { profileForTerminal } from '../claude-wt/project-helpers.js';
+import { BUILTIN_HEAD_ICON } from '../claude-wt/window-icons-helpers.js';
+
+const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url)).replace(/[\\/]+$/, '');
 
 /**
  * Текущие значения полей вкладки: `{ 'claudeWt.interval': 1000, ... }`.
@@ -35,6 +43,58 @@ function readClaudeConfig() {
   for (const field of CLAUDE_CONFIG_FIELDS) {
     const value = [...field.section.split('.'), field.key].reduce((node, k) => node?.[k], config);
     out[field.name] = value === undefined ? null : value;
+  }
+  return { ...out, ...formExtras(config) };
+}
+
+/**
+ * Что форме нужно сверх полей. Ключи с `_` — не поля: записью они не
+ * принимаются, форма только читает.
+ *
+ * `_projects` — проекты из конфига как есть, по порядку (индекс — адрес
+ * записи в YAML) со своей иконкой и иконкой профиля для плейсхолдера.
+ * `_terminalChoices` — имена реестра терминалов: встроенные и свои.
+ */
+function formExtras(config) {
+  const rawProjects = Array.isArray(config?.claudeWt?.projects) ? config.claudeWt.projects : [];
+  const cfg = mergeClaudeWtConfig(config?.claudeWt);
+  const projects = rawProjects.map((p, index) => {
+    const cwd = typeof p?.cwd === 'string' ? p.cwd : '';
+    const profile = profileForTerminal(cwd, 'wt', cfg);
+    return {
+      index,
+      name: typeof p?.name === 'string' ? p.name : '',
+      cwd,
+      profile,
+      icon: typeof p?.icon === 'string' ? p.icon : '',
+      profileIcon: (profile && cfg.windowIcons.profiles[profile]) || '',
+    };
+  });
+  return {
+    _projects: projects,
+    _terminalChoices: Object.keys(normalizeTerminals(config?.claudeWt?.terminals)),
+    _defaultHeadIcon: BUILTIN_HEAD_ICON,
+    _repoRoot: REPO_ROOT,
+  };
+}
+
+/**
+ * Иконки проектов: `{ "<cwd>": "<путь>" | null }` → правка `icon` у записи
+ * проекта с этим cwd. Запись ищется в уже накопленном тексте, по индексу в
+ * списке: тот же адрес, по которому патчер правит ключ.
+ */
+function patchProjectIcons(text, icons) {
+  if (!icons || typeof icons !== 'object' || Array.isArray(icons)) {
+    throw new Error('projectIcons: ожидается объект {"<cwd>": "<путь>" | null}');
+  }
+  let out = text;
+  for (const [cwd, raw] of Object.entries(icons)) {
+    const value = raw === null || raw === undefined || !String(raw).trim() ? undefined : String(raw).trim();
+    if (value !== undefined && /\r|\n/.test(value)) throw new Error(`projectIcons: перевод строки в пути для ${cwd}`);
+    const projects = parse(out, { merge: true })?.claudeWt?.projects;
+    const index = Array.isArray(projects) ? projects.findIndex((p) => p?.cwd === cwd) : -1;
+    if (index < 0) throw new Error(`projectIcons: проекта с cwd ${cwd} в claudeWt.projects нет; файл не тронут`);
+    out = patchConfigScalar(out, `claudeWt.projects.${index}`, 'icon', value);
   }
   return out;
 }
@@ -58,7 +118,7 @@ function writeClaudeConfig(patch) {
 
   // Разбор и проверка ВСЕХ полей до первой правки текста: половина
   // сохранённых полей и отказ на середине — худший исход, чем отказ целиком.
-  const changes = names.map((name) => {
+  const changes = names.filter((name) => name !== 'projectIcons').map((name) => {
     const field = CLAUDE_CONFIG_FIELDS.find((f) => f.name === name);
     if (!field) throw new Error(`неизвестное поле конфига: ${name}`);
     return { field, value: coerceFieldValue(name, patch[name]) };
@@ -69,8 +129,9 @@ function writeClaudeConfig(patch) {
 
   let text = fs.readFileSync(filePath, 'utf8');
   for (const { field, value } of changes) {
-    text = patchConfigScalar(text, field.section, field.key, value);
+    text = patchConfigScalar(text, field.section, field.key, value, { createSection: Boolean(field.createSection) });
   }
+  if ('projectIcons' in patch) text = patchProjectIcons(text, patch.projectIcons);
 
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileAtomic(filePath, text);
@@ -78,4 +139,4 @@ function writeClaudeConfig(patch) {
   return names;
 }
 
-export { readClaudeConfig, writeClaudeConfig };
+export { readClaudeConfig, writeClaudeConfig, patchProjectIcons };

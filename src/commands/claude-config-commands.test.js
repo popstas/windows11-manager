@@ -7,7 +7,7 @@ let file;
 let config = {};
 vi.mock('../config.js', () => ({ getConfig: () => config, resolveConfigPath: () => file }));
 
-const { readClaudeConfig, writeClaudeConfig } = await import('./claude-config-commands.js');
+const { readClaudeConfig, writeClaudeConfig, patchProjectIcons } = await import('./claude-config-commands.js');
 
 const YAML = `claudeWt:
   enabled: true
@@ -64,5 +64,30 @@ describe('claudeWt.telegramInbox на вкладке Claude', () => {
   it('пишет gapMs внутрь блока', () => {
     expect(writeClaudeConfig({ 'claudeWt.telegramInbox.gapMs': '1000' })).toEqual(['claudeWt.telegramInbox.gapMs']);
     expect(fs.readFileSync(file, 'utf8')).toBe(INBOX_YAML + '    gapMs: 1000\n');
+  });
+});
+
+describe('patchProjectIcons', () => {
+  const raw = [
+    'claudeWt:',
+    '  projects:',
+    "    - name: 'home'",
+    "      cwd: '/p/home'",
+    "      profile: 'home'  # профиль wt",
+    "    - name: 'w11m'",
+    "      cwd: '/p/w11m'",
+    '',
+  ].join('\n');
+
+  it('ставит, меняет и убирает icon у проекта с этим cwd, остальное не трогает', () => {
+    const set = patchProjectIcons(raw, { '/p/w11m': 'D:\\pics\\w.png' });
+    expect(set).toBe(`${raw}      icon: D:\\pics\\w.png\n`);
+    const changed = patchProjectIcons(set, { '/p/w11m': 'icons/x.ico' });
+    expect(changed).toBe(`${raw}      icon: icons/x.ico\n`);
+    expect(patchProjectIcons(changed, { '/p/w11m': null })).toBe(raw);
+  });
+
+  it('незнакомый cwd — отказ', () => {
+    expect(() => patchProjectIcons(raw, { '/p/none': 'x.ico' })).toThrow(/проекта с cwd/);
   });
 });

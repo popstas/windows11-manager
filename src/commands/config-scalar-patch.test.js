@@ -215,3 +215,21 @@ describe('patchConfigScalar: вложенная секция', () => {
     expect(out).toBe('claudeWt:\n  telegramInbox:\n    gapMs: 1000\n  terminal: wt\n');
   });
 });
+
+describe('patchConfigScalar: вложенная секция по разрешению поля', () => {
+  const raw = 'claudeWt:\n  profile: popstas  # wt\n  projects:\n    - name: home\n      cwd: /p/home\n';
+
+  it('без разрешения — отказ, файл не тронут', () => {
+    expect(() => patchConfigScalar(raw, 'claudeWt.windowIcons', 'head', 'x.ico')).toThrow(/вложенный блок/);
+  });
+
+  it('с разрешением — блок дописывается в конец родителя, комментарии на месте', () => {
+    const out = patchConfigScalar(raw, 'claudeWt.windowIcons', 'head', 'C:\\icons\\king.ico', { createSection: true });
+    expect(out).toBe(`${raw}  windowIcons:\n    head: C:\\icons\\king.ico\n`);
+  });
+
+  it('ключ записи списка правится по индексу', () => {
+    const out = patchConfigScalar(raw, 'claudeWt.projects.0', 'icon', 'icons/x.ico');
+    expect(out).toBe(`${raw}      icon: icons/x.ico\n`);
+  });
+});

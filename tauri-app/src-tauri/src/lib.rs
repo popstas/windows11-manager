@@ -277,6 +277,20 @@ fn version_item_label(version: &str, built: Option<NaiveDateTime>, today: NaiveD
 mod tests {
     use super::*;
 
+    #[test]
+    fn base64_matches_known_vectors() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+    }
+
+    #[test]
+    fn icon_preview_refuses_non_images() {
+        assert!(read_icon_preview("C:/Windows/win.ini".into()).is_err());
+    }
+
     /// Дату у сегодняшней сборки не пишем: она повторяла бы сегодняшнее число.
     #[test]
     fn today_build_shows_only_the_time() {
@@ -1155,6 +1169,50 @@ async fn save_claude_config(app: tauri::AppHandle, json: String) -> Result<(), S
     Ok(())
 }
 
+/// Картинка иконки окна для превью в окне настроек — строкой `data:` URL.
+///
+/// Webview локальных путей не открывает (CSP `img-src 'self' data:`), поэтому
+/// файл читает трей. Только картинки и не больше 4 МБ: путь приходит из поля
+/// формы, и читать им что попало незачем.
+#[tauri::command]
+fn read_icon_preview(path: String) -> Result<String, String> {
+    let lower = path.to_lowercase();
+    let mime = if lower.ends_with(".ico") {
+        "image/x-icon"
+    } else if lower.ends_with(".png") {
+        "image/png"
+    } else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if lower.ends_with(".bmp") {
+        "image/bmp"
+    } else if lower.ends_with(".gif") {
+        "image/gif"
+    } else {
+        return Err(format!("not an image: {}", path));
+    };
+    let meta = std::fs::metadata(&path).map_err(|e| format!("{}: {}", path, e))?;
+    if meta.len() > 4 * 1024 * 1024 {
+        return Err(format!("{}: larger than 4 MB", path));
+    }
+    let bytes = std::fs::read(&path).map_err(|e| format!("{}: {}", path, e))?;
+    Ok(format!("data:{};base64,{}", mime, base64_encode(&bytes)))
+}
+
+/// Base64 без зависимости: одна функция ради превью иконки.
+fn base64_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    for chunk in bytes.chunks(3) {
+        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
+        out.push(TABLE[(n >> 18) as usize & 63] as char);
+        out.push(TABLE[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 { TABLE[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 2 { TABLE[n as usize & 63] as char } else { '=' });
+    }
+    out
+}
+
 fn get_project_path(app: &tauri::AppHandle) -> String {
     let store = app.store("settings.json").ok();
     store
@@ -1869,11 +1927,12 @@ fn open_settings_window(app: &tauri::AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(Mutex::new(AppState::new()))
-        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version, read_log, save_store_match_list, get_tile_zones, save_tile_zones, get_head_zones, save_head_zones, get_claude_config, save_claude_config])
+        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_dashboard_data, get_app_version, read_log, save_store_match_list, get_tile_zones, save_tile_zones, get_head_zones, save_head_zones, get_claude_config, save_claude_config, read_icon_preview])
         .setup(|app| {
             let project_path = get_project_path(app.handle());
             logging::init(&project_path);

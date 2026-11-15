@@ -215,14 +215,48 @@
 
       <div class="field">
         <label for="cfg_claude_wt_terminal">claudeWt.terminal</label>
-        <input type="text" id="cfg_claude_wt_terminal" data-cfg="claudeWt.terminal" data-cfg-default="wt" data-cfg-type="string" placeholder="wt">
-        <small>Terminal used when the request does not name one. Must be a key of <code>claudeWt.terminals</code> (built-ins: wt, wezterm).</small>
+        <!-- Варианты — из реестра терминалов (встроенные и claudeWt.terminals): их
+             приносит get_claude_config полем _terminalChoices, settings.js
+             дописывает option до заполнения значения. -->
+        <select id="cfg_claude_wt_terminal" data-cfg="claudeWt.terminal" data-cfg-default="wt" data-cfg-type="string" data-cfg-choices-from="_terminalChoices">
+          <option value="">(default — wt)</option>
+        </select>
+        <small>Terminal for every claude-wt window on this machine: restore, project hotkeys, picker resume, session-spawn, Telegram inbox. AutoHotkey reads it too (<code>termSession</code> in main-popstas.ahk). The picker no longer sends its own terminal.</small>
       </div>
 
       <div class="field">
         <label for="cfg_claude_wt_profile">claudeWt.profile</label>
         <input type="text" id="cfg_claude_wt_profile" data-cfg="claudeWt.profile" data-cfg-default="" data-cfg-type="string" placeholder="(not set — no -p)">
         <small>Windows Terminal profile. Empty = launched without <code>-p</code>.</small>
+      </div>
+
+      <h3 class="group">Window icons</h3>
+      <p class="tab-note">Icons of claude terminal windows (wt and WezTerm), set by the service from outside. A head session gets the head icon; any other session gets its project's icon, or else the icon of the project's wt profile (<code>claudeWt.windowIcons.profiles</code>). Changes apply to open windows within a few seconds, no restart. <code>.ico</code> or an image (<code>.png</code>).</p>
+
+      <div class="field checkbox">
+        <label>
+          <input type="checkbox" id="cfg_window_icons_enabled" data-cfg="claudeWt.windowIcons.enabled" data-cfg-default="true" data-cfg-type="boolean">
+          claudeWt.windowIcons.enabled — set window icons
+        </label>
+        <small>Off: icons set by the service are removed, windows show their own.</small>
+      </div>
+
+      <div class="field icon-field">
+        <label for="cfg_window_icons_head">claudeWt.windowIcons.head — head window icon</label>
+        <div class="icon-row">
+          <img class="icon-preview" data-preview-for="cfg_window_icons_head" alt="">
+          <input type="text" id="cfg_window_icons_head" data-cfg="claudeWt.windowIcons.head" data-cfg-default="" data-cfg-type="string" placeholder="(built-in crown)">
+          <button type="button" class="icon-pick" data-pick-for="cfg_window_icons_head">Choose…</button>
+        </div>
+        <small>Empty = the built-in crown (<code>icons/crown.ico</code>). Relative paths are taken from the windows11-manager folder.</small>
+      </div>
+
+      <div class="field">
+        <label>Project icons (<code>claudeWt.projects[].icon</code>)</label>
+        <!-- Строки рисует settings.js по _projects из get_claude_config. Поля без
+             data-cfg: пишутся ключом projectIcons, только изменённые. -->
+        <div id="project_icons" class="project-icons"></div>
+        <small>Empty = the profile icon shown as placeholder. A project without a profile icon keeps the terminal's own icon.</small>
       </div>
 
       <h3 class="group">Head session children</h3>

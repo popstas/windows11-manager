@@ -63,7 +63,7 @@ function lineStartAt(text, offset) {
  * превращаются здесь же в понятное сообщение, а не остаются техническим
  * текстом библиотеки `yaml`.
  */
-function findTarget(raw, section, key) {
+function findTarget(raw, section, key, { createSection = false } = {}) {
   const doc = parseDocument(raw, { merge: true });
   if (doc.errors.length) {
     const e = doc.errors[0];
@@ -76,6 +76,15 @@ function findTarget(raw, section, key) {
   const node = doc.getIn(path, true);
   if (node === undefined || node === null) {
     if (path.length === 1) return { kind: 'append-section' };
+    // Поле, которому блок из одного ключа осмыслен (`windowIcons.head`),
+    // разрешает дописать вложенную секцию — в конец родителя, если тот
+    // блочная карта с ключами.
+    if (createSection) {
+      const parent = doc.getIn(path.slice(0, -1), true);
+      if (isMap(parent) && !parent.flow && parent.items.length > 0) {
+        return { kind: 'append-nested-section', afterPair: parent.items[parent.items.length - 1], name: path[path.length - 1] };
+      }
+    }
     throw new Error(
       `${section} в конфиге нет — вложенный блок патчер не создаёт; допишите блок ${section} вручную ` +
       'и повторите сохранение. Файл не тронут.',
@@ -157,8 +166,8 @@ function verifyPatch(result, section, key, value) {
  * не отображение ключей, секция — flow-карта с полями, или результат правки не
  * прошёл проверку (см. `verifyPatch`).
  */
-function patchConfigScalar(raw, section, key, value, { render = renderScalar } = {}) {
-  const target = findTarget(raw, section, key);
+function patchConfigScalar(raw, section, key, value, { render = renderScalar, createSection = false } = {}) {
+  const target = findTarget(raw, section, key, { createSection });
   const eol = detectEol(raw);
   const toEol = eolConverter(eol);
 
@@ -172,6 +181,13 @@ function patchConfigScalar(raw, section, key, value, { render = renderScalar } =
     const block = toEol(`${section}:\n  ${key}: ${render(value)}\n`);
     const needsLeadingEol = raw.length > 0 && !raw.endsWith('\n');
     result = raw + (needsLeadingEol ? eol : '') + block;
+  } else if (target.kind === 'append-nested-section') {
+    const { afterPair, name } = target;
+    const pad = ' '.repeat(indentAt(raw, afterPair.key.range[0]));
+    const anchor = afterPair.value ? afterPair.value.range[2] : lineEndAt(raw, afterPair.key.range[2]) + 1;
+    const needsLeadingEol = anchor > 0 && raw[anchor - 1] !== '\n';
+    const block = toEol(`${pad}${name}:\n${pad}  ${key}: ${render(value)}\n`);
+    result = raw.slice(0, anchor) + (needsLeadingEol ? eol : '') + block + raw.slice(anchor);
   } else if (target.kind === 'insert-key') {
     const { afterPair } = target;
     const pad = ' '.repeat(indentAt(raw, afterPair.key.range[0]));

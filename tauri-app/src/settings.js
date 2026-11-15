@@ -59,8 +59,142 @@ function fieldValue(node) {
   return text;
 }
 
+/**
+ * Варианты выпадающего списка, которые знает только конфиг (реестр
+ * терминалов): ключ с ними назван атрибутом data-cfg-choices-from. Пустой
+ * пункт «по умолчанию» из разметки остаётся первым.
+ */
+function fillDynamicChoices(values) {
+  for (const node of document.querySelectorAll('select[data-cfg-choices-from]')) {
+    const choices = values[node.dataset.cfgChoicesFrom];
+    if (!Array.isArray(choices)) continue;
+    for (const option of [...node.options]) if (option.value) option.remove();
+    for (const name of choices) node.add(new Option(name, name));
+  }
+}
+
+// --- Иконки окон ------------------------------------------------------------
+//
+// Иконка head — обычное поле data-cfg. Иконки проектов живут у самих проектов
+// (claudeWt.projects[].icon) и пишутся ключом projectIcons, только изменённые.
+// Превью читает Rust (read_icon_preview → data: URL): webview локальных путей
+// не открывает.
+let iconContext = { repoRoot: '', defaultHeadIcon: '' };
+let projectIconsLoaded = {};
+
+const ABSOLUTE_PATH = /^(?:[a-zA-Z]:[\\/]|[\\/])/;
+
+function absoluteIconPath(path) {
+  if (!path) return '';
+  return ABSOLUTE_PATH.test(path) ? path : `${iconContext.repoRoot}/${path}`;
+}
+
+/** Путь, который покажет превью: заданный или тот, что сработает без него. */
+function effectiveIconPath(input) {
+  return input.value.trim() || input.dataset.fallbackIcon || '';
+}
+
+async function updatePreview(input) {
+  const img = document.querySelector(`[data-preview-for="${input.id}"]`);
+  if (!img) return;
+  const path = absoluteIconPath(effectiveIconPath(input));
+  if (!path) {
+    img.removeAttribute('src');
+    return;
+  }
+  try {
+    img.src = await invoke('read_icon_preview', { path });
+    img.title = path;
+  } catch (e) {
+    img.removeAttribute('src');
+    img.title = String(e);
+  }
+}
+
+async function pickIcon(input) {
+  const dialog = window.__TAURI__.dialog;
+  if (!dialog?.open) {
+    showLoadWarning('File dialog is not available — type the path by hand');
+    return;
+  }
+  const picked = await dialog.open({
+    multiple: false,
+    filters: [{ name: 'Icons', extensions: ['ico', 'png', 'jpg', 'jpeg', 'bmp', 'gif'] }],
+  });
+  if (typeof picked === 'string' && picked) {
+    input.value = picked;
+    updatePreview(input);
+  }
+}
+
+function wireIconField(input) {
+  input.addEventListener('input', () => updatePreview(input));
+  const button = document.querySelector(`[data-pick-for="${input.id}"]`);
+  if (button) button.addEventListener('click', () => pickIcon(input));
+  updatePreview(input);
+}
+
+function renderProjectIcons(projects) {
+  const box = document.getElementById('project_icons');
+  if (!box) return;
+  box.textContent = '';
+  projectIconsLoaded = {};
+  if (!projects.length) {
+    box.textContent = 'No projects in claudeWt.projects.';
+    return;
+  }
+  for (const p of projects) {
+    projectIconsLoaded[p.cwd] = p.icon || '';
+    const row = document.createElement('div');
+    row.className = 'project-icon';
+    const id = `project_icon_${p.index}`;
+    const title = document.createElement('div');
+    title.className = 'project-name';
+    title.textContent = `${p.name || p.cwd} `;
+    const meta = document.createElement('code');
+    meta.textContent = p.profile ? `${p.cwd} · profile ${p.profile}` : p.cwd;
+    title.append(meta);
+    const line = document.createElement('div');
+    line.className = 'icon-row';
+    const img = document.createElement('img');
+    img.className = 'icon-preview';
+    img.dataset.previewFor = id;
+    img.alt = '';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.id = id;
+    input.dataset.projectCwd = p.cwd;
+    input.dataset.fallbackIcon = p.profileIcon || '';
+    input.placeholder = p.profileIcon ? `(profile icon: ${p.profileIcon})` : '(no icon)';
+    input.value = p.icon || '';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'icon-pick';
+    button.dataset.pickFor = id;
+    button.textContent = 'Choose…';
+    line.append(img, input, button);
+    row.append(title, line);
+    box.append(row);
+    wireIconField(input);
+  }
+}
+
+/** Изменённые иконки проектов: {cwd: путь | null}, null — убрать ключ. */
+function collectProjectIconsPatch() {
+  const patch = {};
+  for (const input of document.querySelectorAll('[data-project-cwd]')) {
+    const cwd = input.dataset.projectCwd;
+    const now = input.value.trim();
+    if (now === (projectIconsLoaded[cwd] ?? '')) continue;
+    patch[cwd] = now || null;
+  }
+  return patch;
+}
+
 function fillClaudeConfig(values) {
   claudeConfigLoaded = values;
+  fillDynamicChoices(values);
+  iconContext = { repoRoot: values._repoRoot || '', defaultHeadIcon: values._defaultHeadIcon || '' };
   for (const node of claudeConfigNodes()) {
     const value = values[node.dataset.cfg] ?? null;
     if (node.dataset.cfgType === 'boolean') {
@@ -72,6 +206,17 @@ function fillClaudeConfig(values) {
       node.value = value === null ? '' : String(value);
     }
   }
+  const head = document.getElementById('cfg_window_icons_head');
+  if (head) {
+    head.dataset.fallbackIcon = iconContext.defaultHeadIcon;
+    if (!head.dataset.wired) {
+      head.dataset.wired = '1';
+      wireIconField(head);
+    } else {
+      updatePreview(head);
+    }
+  }
+  renderProjectIcons(Array.isArray(values._projects) ? values._projects : []);
 }
 
 /**
@@ -280,12 +425,16 @@ form.addEventListener('submit', async (e) => {
       claudeConfigError = 'not saved — the fields did not load when the window opened, reopen settings';
     } else {
       const patch = collectClaudeConfigPatch();
+      const projectIcons = collectProjectIconsPatch();
+      if (Object.keys(projectIcons).length) patch.projectIcons = projectIcons;
       if (Object.keys(patch).length) {
         try {
           await invoke('save_claude_config', { json: JSON.stringify(patch) });
           // Записанное становится новым исходным: иначе второй сабмит подряд
           // отправил бы те же правки ещё раз, а возврат поля к прежнему
           // значению не считался бы изменением вовсе.
+          for (const [cwd, value] of Object.entries(projectIcons)) projectIconsLoaded[cwd] = value ?? '';
+          delete patch.projectIcons;
           for (const [name, value] of Object.entries(patch)) claudeConfigLoaded[name] = value;
         } catch (e) {
           claudeConfigError = String(e);

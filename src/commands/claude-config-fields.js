@@ -55,6 +55,13 @@ const CLAUDE_CONFIG_FIELDS = [
     choices: CHILD_PLACEMENTS,
   },
 
+  // Иконки окон claude (src/mqtt/window-icons.js). Блок из одного ключа
+  // осмыслен, поэтому патчер может его создать (`createSection`). Иконки
+  // проектов — у проектов (`projects[].icon`), их правит отдельный ключ
+  // записи `projectIcons` (claude-config-commands.js).
+  { name: 'claudeWt.windowIcons.enabled', section: 'claudeWt.windowIcons', key: 'enabled', type: 'boolean', default: true, createSection: true },
+  { name: 'claudeWt.windowIcons.head', section: 'claudeWt.windowIcons', key: 'head', type: 'string', default: '', createSection: true },
+
   // Входящие из Telegram. Умолчания — из `normalizeInboxConfig`
   // (`src/claude-wt/telegram-inbox-helpers.js`), тест сверяет.
   { name: 'claudeWt.telegramInbox.gapMs', section: 'claudeWt.telegramInbox', key: 'gapMs', type: 'number', default: 1000 },

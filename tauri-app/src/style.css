@@ -352,3 +352,50 @@ section[data-tab].active {
 .placement-help p {
   margin: 2px 0 6px;
 }
+
+/* Иконки окон: превью, путь и кнопка выбора в одну строку. */
+.icon-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-row input[type="text"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.icon-row button.icon-pick {
+  width: auto;
+  margin-top: 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.icon-preview {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  object-fit: contain;
+  border-radius: 4px;
+  background: #313244;
+}
+
+.icon-preview:not([src]) {
+  visibility: hidden;
+}
+
+.project-icons .project-icon {
+  margin-bottom: 10px;
+}
+
+.project-icons .project-name {
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.project-icons .project-name code {
+  color: #6c7086;
+  font-size: 12px;
+}

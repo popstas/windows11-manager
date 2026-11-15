@@ -32,6 +32,12 @@ describe('CLAUDE_CONFIG_FIELDS', () => {
     }
   });
 
+  it('умолчания claudeWt.windowIcons совпадают с CLAUDE_WT_DEFAULTS.windowIcons', () => {
+    const fields = CLAUDE_CONFIG_FIELDS.filter((f) => f.section === 'claudeWt.windowIcons');
+    expect(fields.map((f) => f.key).sort()).toEqual(['enabled', 'head']);
+    for (const f of fields) expect(f.default).toBe(CLAUDE_WT_DEFAULTS.windowIcons[f.key]);
+  });
+
   it('умолчания claudeWt.telegramInbox совпадают с normalizeInboxConfig', () => {
     const { cfg } = normalizeInboxConfig({});
     const fields = CLAUDE_CONFIG_FIELDS.filter((f) => f.section === 'claudeWt.telegramInbox');
