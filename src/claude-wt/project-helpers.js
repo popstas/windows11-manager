@@ -55,6 +55,8 @@ function normalizeProjects(raw) {
     const entry = { name: p.name, cwd: p.cwd };
     if (typeof p.hotkey === 'string' && p.hotkey.trim()) entry.hotkey = p.hotkey.trim();
     if (typeof p.profile === 'string') entry.profile = p.profile.trim();
+    // Иконка окна сессий этого проекта (src/mqtt/window-icons.js); пусто — по профилю.
+    if (typeof p.icon === 'string' && p.icon.trim()) entry.icon = p.icon.trim();
     if (p.profiles && typeof p.profiles === 'object') {
       const profiles = {};
       // Годна строка сама по себе, а не непустая после trim: `{wt: ''}` —

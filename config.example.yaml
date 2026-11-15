@@ -211,6 +211,20 @@ claudeWt:
   #     # Профили — свои у каждого терминала: у wt они есть, у wezterm нет.
   #     # Старое поле `profile` продолжает работать и значит профиль wt.
   #     profiles: { wt: Site }
+  #     # Иконка окон сессий проекта (claudeWt.windowIcons ниже). Пусто — иконка
+  #     # профиля wt проекта из windowIcons.profiles. Правится в окне настроек.
+  #     icon: 'D:\\images\\site.png'
+  # Иконки окон claude (wt и WezTerm), ставит служба снаружи (WM_SETICON):
+  # окно head-сессии (метка ~/.ccfzf/heads/<id>.json) — `head`, пусто — встроенная
+  # корона icons/crown.ico; окно сессии — projects[].icon, иначе иконка профиля
+  # wt проекта из `profiles` (встроенная карта дополняется, а не заменяется).
+  # Относительные пути — от папки windows11-manager. headsDir пусто — рядом с
+  # sessionsFile (.ccfzf/heads). Выключить — enabled: false.
+  # windowIcons:
+  #   enabled: true
+  #   head: ''
+  #   headsDir: ''
+  #   profiles: { home: icons/popstas.ico, ExpertizeMe: icons/expertizeme.ico }
   # Терминал по умолчанию для этой машины. Просьба пикера может назвать
   # другой — тогда выигрывает она.
   terminal: wt

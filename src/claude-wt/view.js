@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { getWindows } from '../windows.js';
 import { getMons } from '../monitors.js';
 import { readState } from './state.js';
@@ -88,30 +89,57 @@ function claudeWtSessions({ mark = noTiming, brief = false, openOnly = false } =
 }
 
 /**
- * Состояние агента для перечисленных окон: [{id, title}] → [{id, sessionId, agentState}].
+ * Сессия за каждым из перечисленных окон: [{id, title}] → [{id, sessionId, cwd}].
  *
- * Для службы, которая красит кнопки окон WezTerm на панели задач
- * (src/mqtt/taskbar.js). Окна она находит сама и дёшево; здесь только то, что
- * сопоставляет заголовок с сессией и читает её состояние. В отличие от
- * claudeWtSessions(), без getWindows() (~30 мс) и без меты: служба зовёт это
- * раз в несколько секунд. Индекс и state.json кэшируются у своих загрузчиков
- * (15 с и 3 с), с сети читаются файлы только переданных окон.
+ * Для служб, которые оформляют окна claude снаружи: кнопку на панели задач
+ * (src/mqtt/taskbar.js) и иконку окна (src/mqtt/window-icons.js). Окна они
+ * находят сами и дёшево; здесь только сопоставление заголовка с сессией. В
+ * отличие от claudeWtSessions(), без getWindows() (~30 мс), прогресса и меты:
+ * зовут это раз в несколько секунд. Индекс кэшируется у своего загрузчика.
  *
  * Окно без сессии в ответ не попадает.
  */
-function claudeWtWindowAgents(windows) {
+function claudeWtWindowSessions(windows) {
   const cfg = getClaudeWtConfig();
   if (!cfg.enabled || !cfg.statePath || !windows?.length) return [];
   const state = readState(cfg.statePath);
   const index = loadSessionIndex(cfg.sessionsFile, cfg.progressDir);
-  const resolved = [];
+  const out = [];
   for (const w of windows) {
     const hit = resolveSession(stripTitleDecoration(w.title), index, state.slots);
-    if (hit) resolved.push({ id: w.id, sessionId: hit.id });
+    if (hit) out.push({ id: w.id, sessionId: hit.id, cwd: hit.cwd || state.slots[hit.id]?.cwd || '' });
   }
+  return out;
+}
+
+/**
+ * То же плюс состояние агента: [{id, title}] → [{id, sessionId, cwd, agentState}].
+ * С сети читаются state.json только переданных окон (кэш 3 с у loadProgress).
+ */
+function claudeWtWindowAgents(windows) {
+  const resolved = claudeWtWindowSessions(windows);
   if (!resolved.length) return [];
+  const cfg = getClaudeWtConfig();
   const progress = loadProgress(cfg.progressDir, resolved.map(r => r.sessionId));
   return resolved.map(r => ({ ...r, agentState: progress[r.sessionId]?.state ?? null }));
+}
+
+/**
+ * Id сессий, у которых есть метка head (<sessionId>.json в каталоге меток).
+ *
+ * Метку никто не удаляет, она «действует, пока сессия жива». Здесь этого
+ * достаточно: спрашивают только про сессии с открытым окном, а открытое окно и
+ * есть живая сессия. Поэтому читается только список файлов, без содержимого.
+ */
+function claudeWtHeadIds(dir) {
+  if (!dir) return new Set();
+  try {
+    return new Set(fs.readdirSync(dir)
+      .filter(name => name.endsWith('.json') && !name.startsWith('.'))
+      .map(name => name.slice(0, -'.json'.length)));
+  } catch {
+    return new Set();
+  }
 }
 
 /**
@@ -130,4 +158,6 @@ function claudeWtSnapshots() {
   }
 }
 
-export { openSessionMap, claudeWtSessions, claudeWtWindowAgents, claudeWtSnapshots };
+export {
+  openSessionMap, claudeWtSessions, claudeWtWindowSessions, claudeWtWindowAgents, claudeWtHeadIds, claudeWtSnapshots,
+};

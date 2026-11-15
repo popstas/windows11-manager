@@ -6,6 +6,9 @@
 #include <string>
 #include <windows.h>
 #include <shobjidl.h>
+#include <gdiplus.h>
+#pragma comment(lib, "gdiplus.lib")
+#include <map>
 
 typedef int (__stdcall* lp_GetScaleFactorForMonitor) (HMONITOR, DEVICE_SCALE_FACTOR*);
 
@@ -465,7 +468,105 @@ Napi::Boolean flashWindow (const Napi::CallbackInfo& info) {
     return Napi::Boolean::New (env, true);
 }
 
+// --- Window icon (WM_SETICON) ---
+//
+// An HICON belongs to the process that loaded it: the window shows it only
+// while this process is alive, so the handles are cached here for the life of
+// the process and never destroyed (a handful of files). The cache key includes
+// the file write time, so picking a new file under the same path takes effect.
+
+struct IconPair {
+    HICON bigIcon;
+    HICON smallIcon;
+};
+
+static std::map<std::wstring, IconPair> iconCache;
+
+static std::wstring fromUtf8 (const std::string& str) {
+    if (str.empty ()) return std::wstring ();
+    int len{ MultiByteToWideChar (CP_UTF8, 0, str.c_str (), (int)str.size (), NULL, 0) };
+    std::wstring out (len, L'\0');
+    MultiByteToWideChar (CP_UTF8, 0, str.c_str (), (int)str.size (), &out[0], len);
+    return out;
+}
+
+static bool endsWithIco (const std::wstring& path) {
+    if (path.size () < 4) return false;
+    std::wstring tail{ path.substr (path.size () - 4) };
+    for (auto& c : tail) c = towlower (c);
+    return tail == L".ico";
+}
+
+// .ico: LoadImage picks the closest size from the file. Anything else (.png,
+// .bmp, .jpg): GDI+ decodes it and makes one icon used for both sizes.
+static IconPair loadIcon (const std::wstring& path) {
+    IconPair pair{ nullptr, nullptr };
+    if (endsWithIco (path)) {
+        pair.bigIcon = (HICON)LoadImageW (NULL, path.c_str (), IMAGE_ICON, 48, 48, LR_LOADFROMFILE);
+        pair.smallIcon = (HICON)LoadImageW (NULL, path.c_str (), IMAGE_ICON, 32, 32, LR_LOADFROMFILE);
+        return pair;
+    }
+    static ULONG_PTR gdiplusToken{ 0 };
+    if (!gdiplusToken) {
+        Gdiplus::GdiplusStartupInput input;
+        if (Gdiplus::GdiplusStartup (&gdiplusToken, &input, NULL) != Gdiplus::Ok) return pair;
+    }
+    Gdiplus::Bitmap* bitmap{ Gdiplus::Bitmap::FromFile (path.c_str ()) };
+    if (bitmap && bitmap->GetLastStatus () == Gdiplus::Ok) {
+        HICON icon{ nullptr };
+        if (bitmap->GetHICON (&icon) == Gdiplus::Ok) {
+            pair.bigIcon = icon;
+            pair.smallIcon = icon;
+        }
+    }
+    delete bitmap;
+    return pair;
+}
+
+static void sendIcon (HWND handle, WPARAM which, HICON icon) {
+    DWORD_PTR result{ 0 };
+    // A hung window must not stall the caller: give up after half a second.
+    SendMessageTimeoutW (handle, WM_SETICON, which, (LPARAM)icon, SMTO_ABORTIFHUNG, 500, &result);
+}
+
+// setWindowIcon(hwnd, path): path "" removes the icons set from outside, and
+// the window falls back to its class icon. Returns false when the window is
+// gone or the file cannot be loaded.
+Napi::Boolean setWindowIcon (const Napi::CallbackInfo& info) {
+    Napi::Env env{ info.Env () };
+
+    auto handle{ getValueFromCallbackData<HWND> (info, 0) };
+    std::wstring path{ fromUtf8 (info[1].As<Napi::String> ().Utf8Value ()) };
+    if (!IsWindow (handle)) return Napi::Boolean::New (env, false);
+
+    if (path.empty ()) {
+        sendIcon (handle, ICON_BIG, NULL);
+        sendIcon (handle, ICON_SMALL, NULL);
+        return Napi::Boolean::New (env, true);
+    }
+
+    WIN32_FILE_ATTRIBUTE_DATA attrs;
+    if (!GetFileAttributesExW (path.c_str (), GetFileExInfoStandard, &attrs)) {
+        return Napi::Boolean::New (env, false);
+    }
+    std::wstring key{ path + L"|" + std::to_wstring (attrs.ftLastWriteTime.dwHighDateTime) + L":" +
+                      std::to_wstring (attrs.ftLastWriteTime.dwLowDateTime) };
+    auto hit{ iconCache.find (key) };
+    IconPair pair;
+    if (hit != iconCache.end ()) {
+        pair = hit->second;
+    } else {
+        pair = loadIcon (path);
+        if (!pair.bigIcon && !pair.smallIcon) return Napi::Boolean::New (env, false);
+        iconCache[key] = pair;
+    }
+    sendIcon (handle, ICON_BIG, pair.bigIcon ? pair.bigIcon : pair.smallIcon);
+    sendIcon (handle, ICON_SMALL, pair.smallIcon ? pair.smallIcon : pair.bigIcon);
+    return Napi::Boolean::New (env, true);
+}
+
 Napi::Object Init (Napi::Env env, Napi::Object exports) {
+    exports.Set (Napi::String::New (env, "setWindowIcon"), Napi::Function::New (env, setWindowIcon));
     exports.Set (Napi::String::New (env, "setTaskbarProgress"), Napi::Function::New (env, setTaskbarProgress));
     exports.Set (Napi::String::New (env, "flashWindow"), Napi::Function::New (env, flashWindow));
     exports.Set (Napi::String::New (env, "getActiveWindow"), Napi::Function::New (env, getActiveWindow));

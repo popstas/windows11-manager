@@ -83,9 +83,27 @@ const CLAUDE_WT_DEFAULTS = {
   // открыться в любом его подкаталоге, если проект head в projects или тоже
   // под корнем. Пусто — ребёнок только из projects, как раньше.
   childCwdRoot: '',
+  // Иконки окон claude (src/mqtt/window-icons.js): окно head — корона, окно
+  // сессии — иконка её проекта (projects[].icon), иначе иконка профиля wt
+  // проекта. Относительные пути — от корня репозитория. `head` пусто —
+  // встроенная icons/crown.ico. `headsDir` пусто — каталог меток head рядом
+  // с sessionsFile (`.ccfzf/heads`). Выключается `enabled: false`.
+  windowIcons: {
+    enabled: true,
+    headsDir: '',
+    head: '',
+    profiles: {
+      popstas: 'icons/popstas.ico',
+      home: 'icons/popstas.ico',
+      ExpertizeMe: 'icons/expertizeme.ico',
+      'work-project': 'icons/expertizeme.ico',
+      'home-project': 'icons/home-assistant.ico',
+      'reaper-project': 'icons/home-assistant.ico',
+    },
+  },
 };
 
-/** Deep-ish merge: launch / launchNew / launchInbox / launchSession / telegramInbox / restore / snapshots merged key by key. */
+/** Deep-ish merge: launch / launchNew / launchInbox / launchSession / telegramInbox / restore / snapshots / windowIcons merged key by key. */
 function mergeClaudeWtConfig(raw) {
   const cfg = raw ?? {};
   return {
@@ -112,6 +130,13 @@ function mergeClaudeWtConfig(raw) {
     telegramInbox: { ...CLAUDE_WT_DEFAULTS.telegramInbox, ...(cfg.telegramInbox ?? {}) },
     restore: { ...CLAUDE_WT_DEFAULTS.restore, ...(cfg.restore ?? {}) },
     snapshots: { ...CLAUDE_WT_DEFAULTS.snapshots, ...(cfg.snapshots ?? {}) },
+    windowIcons: {
+      ...CLAUDE_WT_DEFAULTS.windowIcons,
+      ...(cfg.windowIcons ?? {}),
+      // Карта профилей дополняет умолчания, а не заменяет: свой профиль в
+      // конфиге не должен стирать встроенные.
+      profiles: { ...CLAUDE_WT_DEFAULTS.windowIcons.profiles, ...(cfg.windowIcons?.profiles ?? {}) },
+    },
     terminalExecutables: normalizeTerminalExecutables(cfg.terminalExecutables),
     ...headZonesFrom(cfg),
   };

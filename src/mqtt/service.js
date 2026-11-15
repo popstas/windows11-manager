@@ -19,6 +19,7 @@ import { createLinkReporter } from './link.js';
 import { createStatsPublisher } from './stats.js';
 import { startAutoplacer } from './autoplacer.js';
 import { startTaskbarState } from './taskbar.js';
+import { startWindowIcons } from './window-icons.js';
 import { startDaemonWatchdog } from './daemon-watchdog.js';
 import { startTelegramInbox } from './telegram-inbox.js';
 import { startHttpServer } from '../http-server.js';
@@ -89,6 +90,9 @@ function startService({
   // Кнопки окон WezTerm на панели задач (прогресс и мигание по состоянию
   // агента) — wt рисует их сам, WezTerm не умеет. Брокер не нужен.
   const taskbar = startTaskbarState({ winMan, log });
+  // Иконки окон claude: head — корона, сессия — иконка проекта. Окнам и wt, и
+  // WezTerm; держит их этот процесс.
+  const windowIcons = startWindowIcons({ winMan, log });
 
   const stats = settings ? createStatsPublisher({ winMan, publish, log, config: withBase }) : null;
 
@@ -141,6 +145,7 @@ function startService({
       daemonWatchdog.stop();
       telegramInbox.stop();
       taskbar.stop();
+      windowIcons.stop();
       client?.end(true);
       httpServer.close();
     },

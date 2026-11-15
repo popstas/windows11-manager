@@ -65,6 +65,20 @@ function flashWindow(id, on) {
 }
 
 /**
+ * Иконка окна (WM_SETICON) по hwnd любого процесса: .ico или картинка
+ * (.png и т.п.). Пустой путь снимает поставленную снаружи иконку. Иконку
+ * держит этот процесс: пока он жив, окно её показывает.
+ */
+function hasWindowIconControl() {
+  return Boolean(addon?.setWindowIcon);
+}
+
+function setWindowIcon(id, path) {
+  if (!hasWindowIconControl()) return false;
+  return addon.setWindowIcon(id, String(path ?? ''));
+}
+
+/**
  * Bring a window to the foreground, un-minimizing it first if needed.
  *
  * Признак свёрнутого — общая isMinimized(), а не свой порог. Прежде здесь
@@ -176,6 +190,8 @@ export {
   hasTaskbarControl,
   setTaskbarProgress,
   flashWindow,
+  hasWindowIconControl,
+  setWindowIcon,
   getActiveWindowId,
   getWindowById,
   focusWindowById,
