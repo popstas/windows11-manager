@@ -67,31 +67,33 @@ local schemes = {
   },
 }
 
--- Вид окна: схема и прозрачность. Прозрачность — как у профилей wt (общая 90,
--- у home-project 60, у work-project 70). Светлая тема без прозрачности: она для
--- скриншотов таблиц, и просвечивающий фон там мешает.
-local DEFAULT_LOOK = { scheme = 'Solarized Dark', opacity = 0.9 }
+-- Вид окна — только схема. Окна непрозрачные во всех темах (Стас 15.11):
+-- прозрачность из профилей wt (90, 60, 70) не переносится.
+local OPACITY = 1.0
+local DEFAULT_LOOK = { scheme = 'Solarized Dark' }
 local THEMES = {
   solarized = DEFAULT_LOOK,
-  material = { scheme = 'Material', opacity = 0.7 },
-  light = { scheme = 'Tango Light', opacity = 1.0 },
+  material = { scheme = 'Material' },
+  light = { scheme = 'Tango Light' },
 }
 
 -- Профиль wt проекта → вид окна. Чего нет в таблице (popstas, пусто,
 -- незнакомое) — DEFAULT_LOOK.
 local PROFILE_LOOKS = {
-  ['home'] = { scheme = 'Argonaut', opacity = 0.9 },
-  ['ExpertizeMe'] = { scheme = 'Ottosson', opacity = 0.9 },
-  ['home-project'] = { scheme = 'Solarized Dark', opacity = 0.6 },
+  ['home'] = { scheme = 'Argonaut' },
+  ['ExpertizeMe'] = { scheme = 'Ottosson' },
+  ['home-project'] = { scheme = 'Solarized Dark' },
   ['work-project'] = THEMES.material,
-  ['reaper-project'] = { scheme = 'One Half Dark', opacity = 0.9 },
+  ['reaper-project'] = { scheme = 'One Half Dark' },
 }
 
 -- Только текущее окно и без потери чужих ключей overrides.
 local function apply_look(window, look)
   local overrides = window:get_config_overrides() or {}
   overrides.color_scheme = look.scheme
-  overrides.window_background_opacity = look.opacity
+  -- Ставится явно, а не опускается: у окон, открытых до этой правки, в
+  -- overrides могла остаться прозрачность 0.6–0.9.
+  overrides.window_background_opacity = OPACITY
   window:set_config_overrides(overrides)
 end
 
@@ -135,7 +137,7 @@ local config = wezterm.config_builder()
 
 config.color_schemes = schemes
 config.color_scheme = DEFAULT_LOOK.scheme
-config.window_background_opacity = DEFAULT_LOOK.opacity
+config.window_background_opacity = OPACITY
 
 config.font = wezterm.font 'DejaVuSansM Nerd Font Mono'
 config.font_size = 14
