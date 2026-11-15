@@ -83,6 +83,11 @@ function normalizeProjects(raw) {
  * его как «для любого терминала», первый же запуск WezTerm получил бы
  * аргументы, которых тот не понимает.
  *
+ * Терминал, которому карта проекта ничего не назвала, получает профиль wt.
+ * Флаг `-p` ему от этого не достанется (у WezTerm нет `profileArgs`), зато
+ * имя проекта доезжает до удалённой команды через `{profileB64}`, и окно
+ * красится в цвет проекта.
+ *
  * Решает «назван ли ключ», а не «пусто ли значение»: `profiles: {wt: ''}` и
  * плоское `profile: ''` — это отказ проекта от профиля, сказанный явно, а не
  * «профиль не назначен». Судить по непустоте значения значило бы путать эти
@@ -97,7 +102,10 @@ function profileForTerminal(cwd, terminalName, cfg = {}) {
     const mapped = hit.profiles[name];
     return typeof mapped === 'string' ? mapped : '';
   }
-  if (name !== 'wt') return '';
+  // Терминал без своей записи получает профиль wt: это ещё и имя проекта для
+  // удалённой стороны ({profileB64} красит по нему окно WezTerm). Флагов
+  // профиля чужому терминалу это не добавит — их даёт только его profileArgs.
+  if (name !== 'wt') return profileForTerminal(cwd, 'wt', cfg);
   if (hit && typeof hit.profile === 'string') return hit.profile;
   if (hit && hit.profiles) return '';
   return typeof cfg.profile === 'string' ? cfg.profile : '';
@@ -132,6 +140,9 @@ function planWtLaunch({ launch, vars = {}, profile, terminal }) {
   const sessionVars = Object.fromEntries(['sessionId', 'promptFile', 'permissionMode', 'head', 'headId', 'childCwdRoot']
     .map(key => [key, escapeForSingleQuoted(vars[key] ?? '')]));
   const wanted = typeof profile === 'string' ? profile : '';
+  // Для удалённой стороны: профиль уходит в OSC 1337 SetUserVar, а протокол
+  // требует base64. Заодно имя не нужно экранировать — в base64 нет кавычек.
+  const profileB64 = wanted ? Buffer.from(wanted, 'utf8').toString('base64') : '';
   const substitute = arg => String(arg)
     .replaceAll('{id}', id)
     .replaceAll('{cwd}', safeCwd)
@@ -139,6 +150,7 @@ function planWtLaunch({ launch, vars = {}, profile, terminal }) {
     .replaceAll('{file}', safeFile)
     .replaceAll('{script}', safeScript)
     .replace(/\{(sessionId|promptFile|permissionMode|head|headId|childCwdRoot)\}/g, (_, key) => sessionVars[key])
+    .replaceAll('{profileB64}', profileB64)
     .replaceAll('{profile}', wanted);
   const tail = launch?.args ?? [];
   if (!terminal?.command) {

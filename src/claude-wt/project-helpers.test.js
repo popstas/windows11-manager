@@ -11,6 +11,7 @@ import {
   normalizeProjects,
   profileForTerminal,
 } from './project-helpers.js';
+import { TERMINAL_DEFAULTS } from './terminal-helpers.js';
 
 describe('basenameOfCwd', () => {
   it('returns the last path segment', () => {
@@ -157,6 +158,53 @@ describe('planWtLaunch с реестром терминалов', () => {
     expect(out.args).toEqual(['start', '--', 'ssh', '-t', 'host', 'ccfzf --session s1']);
   });
 
+  it('{profileB64} подставляет base64 профиля', () => {
+    const plan = planWtLaunch({ launch: { args: ['ssh', "printf X '{profileB64}'"] }, profile: 'home',
+      terminal: TERMINAL_DEFAULTS.wezterm });
+    expect(plan.args.at(-1)).toBe("printf X 'aG9tZQ=='");
+  });
+
+  it('{profileB64} кодирует UTF-8, а не latin1', () => {
+    const plan = planWtLaunch({ launch: { args: ["'{profileB64}'"] }, profile: 'дом',
+      terminal: TERMINAL_DEFAULTS.wezterm });
+    expect(plan.args.at(-1)).toBe(`'${Buffer.from('дом', 'utf8').toString('base64')}'`);
+  });
+
+  it('пустой профиль даёт пустой {profileB64}', () => {
+    for (const profile of ['', undefined]) {
+      const plan = planWtLaunch({ launch: { args: ['ssh', "printf X '{profileB64}'"] }, profile,
+        terminal: TERMINAL_DEFAULTS.wezterm });
+      expect(plan.args.at(-1)).toBe("printf X ''");
+    }
+  });
+
+  it('{profileB64} работает и на старой дороге без реестра', () => {
+    const out = planWtLaunch({ launch: { command: 'wt.exe', args: ['ssh', "x '{profileB64}'"] }, profile: 'home' });
+    expect(out.args.at(-1)).toBe("x 'aG9tZQ=='");
+  });
+
+  // Анти-цель 1 дизайна WezTerm: при terminal: wt ничего не меняется.
+  // Шаблоны — из config.example.yaml, ожидание — вывод до появления {profileB64}.
+  it('wt без {profileB64} в шаблоне — прежние args', () => {
+    const host = ['ssh', '-A', 'popstas@pc-virt.popstas.pro', '-t'];
+    const restore = planWtLaunch({
+      launch: { args: [...host, 'ccfzf --session {id} --kiosk'] },
+      vars: { id: 's1' }, profile: 'home', terminal: TERMINAL_DEFAULTS.wt,
+    });
+    expect(restore).toEqual({
+      command: 'wt.exe',
+      args: ['-w', '-1', '-p', 'home', ...host, 'ccfzf --session s1 --kiosk'],
+    });
+    const fresh = planLaunchNew({
+      launchNew: { args: [...host, `exec $SHELL -ic 'cd -- "$1" && exec claude -n "$2"' claude-wt '{cwd}' '{name}'`] },
+      cwd: '/p/home', name: 'home', profile: 'home', terminal: TERMINAL_DEFAULTS.wt,
+    });
+    expect(fresh).toEqual({
+      command: 'wt.exe',
+      args: ['-w', '-1', '-p', 'home', ...host, `exec $SHELL -ic 'cd -- "$1" && exec claude -n "$2"' claude-wt '/p/home' 'home'`],
+    });
+  });
+
   it('без terminal работает по-старому — команда из launch', () => {
     const out = planWtLaunch({
       launch: { command: 'wt.exe', args: ['-w', '-1', 'ssh', '{id}'] },
@@ -241,18 +289,43 @@ describe('profileForTerminal', () => {
     expect(profileForTerminal('D:\\p\\site', 'wt', cfg)).toBe('Site');
   });
 
-  it('у терминала без профиля в карте — пусто, а не чужой профиль', () => {
-    expect(profileForTerminal('D:\\p\\site', 'wezterm', cfg)).toBe('');
+  // Профиль wt — это ещё и имя проекта для удалённой стороны: по нему
+  // {profileB64} красит окно WezTerm. Поэтому терминал без своей записи в карте
+  // получает профиль wt, а не пустоту. Флага `-p` он от этого не получит:
+  // флаг приходит из profileArgs терминала, а у WezTerm их нет.
+  it('у терминала без профиля в карте — профиль wt проекта', () => {
+    expect(profileForTerminal('D:\\p\\site', 'wezterm', cfg)).toBe('Site');
   });
 
   it('старое плоское поле profile читается как профиль wt', () => {
     expect(profileForTerminal('D:\\p\\old', 'wt', cfg)).toBe('Old');
-    expect(profileForTerminal('D:\\p\\old', 'wezterm', cfg)).toBe('');
+    expect(profileForTerminal('D:\\p\\old', 'wezterm', cfg)).toBe('Old');
   });
 
-  it('незнакомый каталог получает глобальный профиль только для wt', () => {
+  it('незнакомый каталог получает глобальный профиль', () => {
     expect(profileForTerminal('D:\\p\\nope', 'wt', cfg)).toBe('Global');
-    expect(profileForTerminal('D:\\p\\nope', 'wezterm', cfg)).toBe('');
+    expect(profileForTerminal('D:\\p\\nope', 'wezterm', cfg)).toBe('Global');
+  });
+
+  it('wezterm без profiles берёт профиль wt проекта', () => {
+    const c = { profile: 'popstas', projects: [{ cwd: '/p/home', profile: 'home' }] };
+    expect(profileForTerminal('/p/home', 'wezterm', c)).toBe('home');
+  });
+
+  it('wezterm вне проектов берёт cfg.profile', () => {
+    expect(profileForTerminal('/p/other', 'wezterm', { profile: 'popstas', projects: [] })).toBe('popstas');
+  });
+
+  it('profiles.wezterm главнее, пустой — явный отказ', () => {
+    const c = { profile: 'popstas', projects: [{ cwd: '/p/x', profile: 'home', profiles: { wezterm: '' } }] };
+    expect(profileForTerminal('/p/x', 'wezterm', c)).toBe('');
+    const named = { projects: [{ cwd: '/p/x', profile: 'home', profiles: { wezterm: 'Other' } }] };
+    expect(profileForTerminal('/p/x', 'wezterm', named)).toBe('Other');
+  });
+
+  it('отказ проекта от профиля wt распространяется на терминал без своей записи', () => {
+    const c = { profile: 'popstas', projects: normalizeProjects([{ name: 'x', cwd: '/p/x', profiles: { wt: '' } }]) };
+    expect(profileForTerminal('/p/x', 'wezterm', c)).toBe('');
   });
 
   it('явно пустой плоский profile — отказ проекта, а не сигнал взять глобальный', () => {

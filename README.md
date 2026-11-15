@@ -156,7 +156,11 @@ the machine's default, but a request from ccfzf-picker can name a different term
 its `terminal` field wins, and an unrecognised name falls back to the default with a
 line in stderr. Per-project profiles follow the same idea: `projects[].profiles` maps
 terminal name to profile (`{wt: 'Site'}`), and the old flat `profile` field still works,
-read as the `wt` profile. A config that still sets `launch.command`/`launchNew.command`
+read as the `wt` profile. A terminal the map does not name gets the `wt` profile too:
+it adds no `-p` flag to WezTerm (it has no `profileArgs`), but it reaches the remote
+command as `{profileB64}` — the profile name in base64, empty when there is none. The
+remote side prints it as OSC 1337 `SetUserVar=wt_profile=…`, and `wezterm/wezterm.lua`
+colours the window by it; Windows Terminal ignores the sequence. A config that still sets `launch.command`/`launchNew.command`
 directly is legacy for that block specifically — the registry stays off there, and the
 other block can be migrated independently.
 
