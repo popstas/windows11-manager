@@ -14,17 +14,35 @@
  * настройки иконок, и раз в ICONS_REFRESH_MS — чтобы заметить новую метку head.
  * Настройки из окна настроек применяются без перезапуска: конфиг
  * перечитывается по mtime, и его смена меняет отпечаток.
+ *
+ * Решённое (sessionId → абсолютный путь, '' — без иконки) служба кладёт в
+ * window-icons.json рядом с файлом состояния: файл окон для пикера пишет
+ * демон, а роль окна (метки head) знает только служба. Пишется, только когда
+ * карта изменилась; выключенные иконки — пустая карта.
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { iconFor, resolveIconPath, headsDirFor, planIcons } from '../claude-wt/window-icons-helpers.js';
+import {
+  iconFor, resolveIconPath, iconsSidecarPath, publishedIcons, headsDirFor, planIcons,
+} from '../claude-wt/window-icons-helpers.js';
+import { writeFileAtomic } from '../commands/write-file-atomic.js';
 
 const ICONS_INTERVAL_MS = 3000;
 const ICONS_REFRESH_MS = 15000;
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url)).replace(/[\\/]+$/, '');
 
+function writeIconsSidecar(cfg, icons) {
+  const file = iconsSidecarPath(cfg.statePath);
+  if (!file) return;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  writeFileAtomic(file, JSON.stringify({ icons }));
+}
+
 function startWindowIcons({
   winMan, log, intervalMs = ICONS_INTERVAL_MS, refreshMs = ICONS_REFRESH_MS, repoRoot = REPO_ROOT,
   now = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval,
+  publishIcons = writeIconsSidecar,
 }) {
   const off = { tick() {}, stop() {} };
   if (typeof winMan?.hasWindowIconControl !== 'function') return off;
@@ -40,6 +58,14 @@ function startWindowIcons({
   let lastFull = 0;
   const failed = new Set();
   let lastError = '';
+  let lastPublished = null;
+
+  function publish(cfg, icons) {
+    const text = JSON.stringify(icons);
+    if (text === lastPublished) return;
+    publishIcons(cfg, icons);
+    lastPublished = text;
+  }
 
   function terminalWindows() {
     const ids = winMan.getVisibleWindowIds();
@@ -86,6 +112,7 @@ function startWindowIcons({
       if (!cfg.enabled || !cfg.windowIcons?.enabled) {
         if (applied.size) resetAll();
         lastPrint = '';
+        publish(cfg, {});
         return;
       }
       const { windows, present } = terminalWindows();
@@ -99,6 +126,7 @@ function startWindowIcons({
       const { ops, next } = planIcons(applied, wanted, present);
       apply(ops);
       applied = next;
+      publish(cfg, publishedIcons(sessions, wanted, repoRoot));
       lastError = '';
     } catch (e) {
       report(e);

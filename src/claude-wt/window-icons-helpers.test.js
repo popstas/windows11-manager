@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { BUILTIN_HEAD_ICON, resolveIconPath, iconFor, headsDirFor, planIcons } from './window-icons-helpers.js';
+import {
+  BUILTIN_HEAD_ICON, resolveIconPath, iconFor, headsDirFor, planIcons, iconsSidecarPath, publishedIcons,
+} from './window-icons-helpers.js';
 import { mergeClaudeWtConfig } from './daemon-helpers.js';
 
 const cfg = mergeClaudeWtConfig({
@@ -60,8 +62,9 @@ describe('iconFor', () => {
 });
 
 describe('resolveIconPath', () => {
-  it('относительный путь — от корня репозитория', () => {
-    expect(resolveIconPath('icons/crown.ico', 'C:\\repo')).toBe('C:\\repo/icons/crown.ico');
+  it('относительный путь — от корня репозитория, с разделителем корня', () => {
+    expect(resolveIconPath('icons/crown.ico', 'C:\\repo')).toBe('C:\\repo\\icons\\crown.ico');
+    expect(resolveIconPath('icons/crown.ico', '/srv/repo/')).toBe('/srv/repo/icons/crown.ico');
   });
 
   it('абсолютный путь не трогается', () => {
@@ -120,5 +123,27 @@ describe('planIcons', () => {
     const { ops, next } = planIcons(new Map([[1, 'a.ico']]), new Map(), new Set());
     expect(ops).toEqual([]);
     expect(next.size).toBe(0);
+  });
+});
+
+describe('iconsSidecarPath', () => {
+  it('рядом с файлом состояния', () => {
+    expect(iconsSidecarPath('C:/Users/p/AppData/Local/windows11-manager/claude-wt.json'))
+      .toBe('C:/Users/p/AppData/Local/windows11-manager/window-icons.json');
+  });
+
+  it('без каталога — некуда', () => {
+    expect(iconsSidecarPath('s')).toBe('');
+    expect(iconsSidecarPath(undefined)).toBe('');
+  });
+});
+
+describe('publishedIcons', () => {
+  it('по sessionId, абсолютным путём; без иконки — пустая строка', () => {
+    const sessions = [{ id: 1, sessionId: 'h' }, { id: 2, sessionId: 'c' }, { id: 3, sessionId: 'n' }];
+    const wanted = new Map([[1, 'icons/crown.ico'], [2, 'C:\\ico\\w11m.ico'], [3, '']]);
+    expect(publishedIcons(sessions, wanted, 'C:\\repo')).toEqual({
+      h: 'C:\\repo\\icons\\crown.ico', c: 'C:\\ico\\w11m.ico', n: '',
+    });
   });
 });

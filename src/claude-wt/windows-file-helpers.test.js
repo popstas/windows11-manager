@@ -38,7 +38,7 @@ describe('buildWindowsFile', () => {
     });
     expect(out.windows.aaa).toEqual({
       title: 'ccfzf-picker', desktop: 2, lastSeen: 1700, focusedAt: 1650,
-      app: 'WindowsTerminal.exe', minimized: false,
+      app: 'WindowsTerminal.exe', icon: '', minimized: false,
       monitor: null, zone: null, slot: null,
     });
   });
@@ -46,6 +46,19 @@ describe('buildWindowsFile', () => {
   // Отметка «человек посмотрел на это окно» едет читателю на другой машине: у
   // него своей нет вовсе, а без неё его список продолжает звать к сессии, на
   // которую уже сходили.
+  // Иконку решает служба (window-icons.json), здесь она только переписывается:
+  // пикер рисует её перед заголовком строки.
+  it('carries the window icon from the service map, empty when there is none', () => {
+    const out = buildWindowsFile({
+      windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000,
+      icons: { aaa: 'C:\\repo\\icons\\crown.ico', bbb: '' },
+    });
+    expect(out.windows.aaa.icon).toBe('C:\\repo\\icons\\crown.ico');
+    expect(out.windows.bbb.icon).toBe('');
+    const bare = buildWindowsFile({ windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000 });
+    expect(bare.windows.aaa.icon).toBe('');
+  });
+
   it('carries focusedAt from the slot, zero when the slot never had focus', () => {
     const out = buildWindowsFile({
       windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000,
@@ -107,7 +120,7 @@ describe('buildWindowsFile', () => {
       windows: [{ title: 'fresh', sessionId: 'zzz' }], slots: {}, host: 'pc', pid: 1, nowMs: 0,
     });
     expect(out.windows.zzz).toEqual({
-      title: 'fresh', desktop: null, lastSeen: 0, focusedAt: 0, app: '', minimized: false,
+      title: 'fresh', desktop: null, lastSeen: 0, focusedAt: 0, app: '', icon: '', minimized: false,
       monitor: null, zone: null, slot: null,
     });
   });
@@ -193,6 +206,13 @@ describe('windowsFingerprint', () => {
   // тридцать секунд: кружок в чужом списке гас бы через полминуты после того,
   // как на сессию сходили, а возврат в непрочитанное — столько же держался бы
   // погашенным.
+  // Новая метка head или правка иконки в настройках не ждут сердцебиения.
+  it('notices a changed icon', () => {
+    const base = { one: { desktop: 1, title: 'x', icon: '' } };
+    expect(windowsFingerprint({ one: { desktop: 1, title: 'x', icon: 'C:\\ico\\crown.ico' } }))
+      .not.toBe(windowsFingerprint(base));
+  });
+
   it('notices a fresh focus stamp', () => {
     const base = { one: { desktop: 1, title: 'x', focusedAt: 100 } };
     expect(windowsFingerprint({ one: { desktop: 1, title: 'x', focusedAt: 200 } }))

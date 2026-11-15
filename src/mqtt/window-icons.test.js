@@ -9,6 +9,7 @@ const CHROME = 'C:\\chrome.exe';
 function setup({ windows = [], sessions = {}, heads = [], config = {}, control = true } = {}) {
   const calls = [];
   const logs = [];
+  const published = [];
   let clock = 0;
   const world = {
     windows,
@@ -46,8 +47,9 @@ function setup({ windows = [], sessions = {}, heads = [], config = {}, control =
     now: () => clock,
     setIntervalFn: () => 1,
     clearIntervalFn: () => {},
+    publishIcons: (cfg, icons) => published.push(icons),
   });
-  return { svc, calls, logs, winMan, world, advance: ms => { clock += ms; } };
+  return { svc, calls, logs, published, winMan, world, advance: ms => { clock += ms; } };
 }
 
 describe('startWindowIcons', () => {
@@ -136,5 +138,33 @@ describe('startWindowIcons', () => {
     world.sessions[3] = { sessionId: 'd', cwd: '/p/home' };
     svc.tick();
     expect(logs.filter(l => l.startsWith('warn:') && l.includes('gone.png'))).toHaveLength(1);
+  });
+
+  it('решённые иконки уходят демону по sessionId, только когда изменились', () => {
+    const { svc, published, world, advance } = setup({
+      windows: [{ id: 1, path: WT, title: 'h' }, { id: 2, path: WEZ, title: 'c' }, { id: 4, path: WEZ, title: 'n' }],
+      sessions: {
+        1: { sessionId: 'h', cwd: '/p/home' }, 2: { sessionId: 'c', cwd: '/p/exp' }, 4: { sessionId: 'n', cwd: '/x' },
+      },
+      heads: ['h'],
+      config: { profile: '' },
+    });
+    expect(published).toEqual([{ h: 'C:/repo/icons/crown.ico', c: 'C:/ico/exp.ico', n: '' }]);
+    advance(16000);
+    svc.tick();
+    expect(published).toHaveLength(1);
+    world.heads.add('c');
+    advance(16000);
+    svc.tick();
+    expect(published.at(-1)).toEqual({ h: 'C:/repo/icons/crown.ico', c: 'C:/repo/icons/crown.ico', n: '' });
+  });
+
+  it('выключенные иконки — пустая карта демону', () => {
+    const { svc, published, world } = setup({
+      windows: [{ id: 2, path: WEZ, title: 'a' }], sessions: { 2: { sessionId: 'c', cwd: '/p/home' } },
+    });
+    world.cfg = mergeClaudeWtConfig({ ...world.cfg, windowIcons: { enabled: false } });
+    svc.tick();
+    expect(published.at(-1)).toEqual({});
   });
 });

@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import os from 'node:os';
 import { getConfig } from '../config.js';
 import { getVisibleWindowIds, getWindowById, getActiveWindowId, focusWindowById } from '../windows.js';
@@ -45,6 +46,7 @@ import { activeAgent } from './view-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { snapshotTick, resetSnapshotter, currentSnapshots } from './snapshotter.js';
 import { resolveHeadLayout } from './head-zones.js';
+import { iconsSidecarPath } from './window-icons-helpers.js';
 
 function getClaudeWtConfig() {
   return mergeClaudeWtConfig(getConfig().claudeWt);
@@ -116,6 +118,11 @@ let lastWindowsWrite = 0;
 // Отпечаток последнего сигнала пикеру (см. signalPrint) — своя, узкая копия
 // расклада без сердцебиения: строка пишется на смену отпечатка и только на неё.
 let lastSignalPrint = null;
+// Иконки окон от службы (window-icons.json рядом с файлом состояния): mtime
+// последнего прочитанного и сама карта. Битый или пропавший файл оставляет
+// прежнюю карту — иконка в списке пикера не стоит того, чтобы ронять тик.
+let iconsMtime = 0;
+let iconsMap = {};
 let liveState = null;
 let prevActiveWindowId = 0;
 let reportedTitles = new Set();
@@ -349,6 +356,24 @@ async function claudeWtTick(tickGen = null) {
 }
 
 /**
+ * Карта sessionId → иконка, которую решила служба (src/mqtt/window-icons.js).
+ * Файл локальный, mtime здесь не врёт (в отличие от сетевого диска), и на
+ * каждом тике это один statSync.
+ */
+function readWindowIcons(statePath) {
+  const file = iconsSidecarPath(statePath);
+  if (!file) return iconsMap;
+  try {
+    const mtime = fs.statSync(file).mtimeMs;
+    if (mtime === iconsMtime) return iconsMap;
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    iconsMap = parsed && typeof parsed.icons === 'object' && parsed.icons ? parsed.icons : {};
+    iconsMtime = mtime;
+  } catch { /* нет файла или он пишется — прежняя карта */ }
+  return iconsMap;
+}
+
+/**
  * Опубликовать файл окон — необязательную добавку для читателей на той стороне.
  *
  * Ошибка записи гасится строкой в лог. Файл нужен ccfzf ради одной пометки в
@@ -373,6 +398,7 @@ function publishWindows(cfg, windows, slots) {
   const payload = buildWindowsFile({
     windows, slots, host: os.hostname(), pid: process.pid, nowMs, snapshots,
     layout, headZones: cfg.headZones,
+    icons: readWindowIcons(cfg.statePath),
     projects: claudeWtProjects(),
     // Ключ верхнего уровня, не внутри claudeWt: вложенный молча ничего не
     // сделает — та же семья, что placeWindowOnOpen и publishStats. `cfg` тут —

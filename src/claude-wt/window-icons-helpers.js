@@ -27,10 +27,44 @@ function iconFor({ sessionId, cwd }, { heads, cfg }) {
 
 const ABSOLUTE = /^(?:[a-zA-Z]:[\\/]|[\\/])/;
 
-/** Относительный путь — от корня репозитория, где лежит каталог icons/. */
+/**
+ * Относительный путь — от корня репозитория, где лежит каталог icons/.
+ * Разделитель — тот, что у корня: путь уходит наружу (файл окон, пикер), и
+ * смесь вида `C:\repo/icons/crown.ico` Windows хоть и примет, но сравнивать
+ * её с путями из конфига и читать глазами неудобно.
+ */
 function resolveIconPath(iconPath, repoRoot) {
   if (!iconPath) return '';
-  return ABSOLUTE.test(iconPath) ? iconPath : `${repoRoot}/${iconPath}`;
+  if (ABSOLUTE.test(iconPath)) return iconPath;
+  const sep = repoRoot.includes('\\') ? '\\' : '/';
+  const root = repoRoot.replace(/[\\/]+$/, '');
+  return `${root}${sep}${iconPath.replace(/[\\/]+/g, sep)}`;
+}
+
+/**
+ * Файл, которым служба (она знает роль окна и его иконку) делится с демоном
+ * (он пишет файл окон для пикера): sessionId → абсолютный путь иконки. Лежит
+ * рядом с файлом состояния, на локальном диске — демон читает его по mtime
+ * на каждом тике, и сетевого опроса в цикле нет.
+ */
+function iconsSidecarPath(statePath) {
+  const file = statePath ?? '';
+  const slash = Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\'));
+  if (slash < 0) return '';
+  return `${file.slice(0, slash)}/window-icons.json`;
+}
+
+/**
+ * Что публиковать: иконка, которую служба окну ставит или поставила бы, по
+ * sessionId, абсолютным путём. Окно без иконки — пустая строка.
+ */
+function publishedIcons(sessions, wanted, repoRoot) {
+  const out = {};
+  for (const s of sessions ?? []) {
+    if (!s?.sessionId) continue;
+    out[s.sessionId] = resolveIconPath(wanted.get(s.id) ?? '', repoRoot);
+  }
+  return out;
 }
 
 /**
@@ -68,4 +102,4 @@ function planIcons(applied, wanted, alive) {
   return { ops, next };
 }
 
-export { BUILTIN_HEAD_ICON, iconFor, resolveIconPath, headsDirFor, planIcons };
+export { BUILTIN_HEAD_ICON, iconFor, resolveIconPath, iconsSidecarPath, publishedIcons, headsDirFor, planIcons };
