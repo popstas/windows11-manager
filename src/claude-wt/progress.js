@@ -23,6 +23,32 @@ let cachedDir = '';
 // не стоит.
 const MAX_AGE_MS = 3000;
 
+// Второй обман того же диска — устаревшее содержимое при свежем mtime.
+//
+// Замерено 2026-11-15 на nb: хук перевёл сессию в idle в 17:24:24, а чтение
+// V:/.claude/claude-wt/<id>.state.json и через пять минут отдавало прежний
+// active — причём и свежему процессу, не только долгоживущему; statSync при
+// этом уже показывал новый mtime. Кнопка WezTerm на панели задач горела
+// зелёным у сессии, которая давно ждала. Хук пишет файл через временный и
+// rename на самом pc-virt, мимо Samba; держатель oplock на старом файле (клиент
+// SMB на nb) об этом не узнаёт и продолжает отдавать по тому же пути старое
+// содержимое. Открытие на запись (`r+`) тот кэш обойти не может — сервер
+// открывает путь заново, и приходит настоящий файл.
+//
+// Узнать устаревшее можно по самому файлу: хук ставит `updated` в момент
+// записи, так что у честного файла mtime и `updated` расходятся на доли
+// секунды. Расхождение больше STALE_CONTENT_S — перечитать через `r+`.
+const STALE_CONTENT_S = 5;
+
+function readBypassingCache(file) {
+  const fd = fs.openSync(file, 'r+');
+  try {
+    return fs.readFileSync(fd, 'utf8');
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 /**
  * Состояния агента для перечисленных сессий.
  *
@@ -63,6 +89,18 @@ function loadProgress(dir, sessionIds, nowMs = Date.now()) {
     let value = null;
     try {
       value = normalizeProgress(JSON.parse(fs.readFileSync(file, 'utf8')));
+      if (value && stat.mtimeMs / 1000 - value.updated > STALE_CONTENT_S) {
+        try {
+          const fresh = normalizeProgress(JSON.parse(readBypassingCache(file)));
+          if (fresh && fresh.updated > value.updated) {
+            // Редкое событие и единственное живое доказательство, что кэш
+            // клиента SMB снова соврал, — в журнал.
+            console.warn(`[claude-wt] ${id}.state.json: прочитано устаревшее `
+              + `(${value.state}, updated ${value.updated}), через r+ — ${fresh.state}, updated ${fresh.updated}`);
+            value = fresh;
+          }
+        } catch { /* нет права на запись или файл пишется — что прочли, то и есть */ }
+      }
     } catch {
       // Хук пишет через временный файл и rename, так что рваного JSON быть не
       // должно; если он всё же случился — запомнить пустоту для этого mtime

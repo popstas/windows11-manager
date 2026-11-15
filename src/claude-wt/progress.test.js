@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,6 +21,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -50,5 +51,30 @@ describe('loadProgress', () => {
 
   it('says nothing about a session with no hook installed', () => {
     expect(loadProgress(dir, ['no-such-session'], 1000)).toEqual({});
+  });
+
+  // Случай 2026-11-15 (└picker-term): хук записал idle, mtime на V: свежий, а
+  // чтение по пути отдаёт прежний active из кэша клиента SMB. Без перечитывания
+  // через r+ служба держала зелёную кнопку WezTerm минутами.
+  it('content older than the file mtime is re-read past the client cache', () => {
+    const file = path.join(dir, `${ID}.state.json`);
+    fs.writeFileSync(file, JSON.stringify({ state: 'idle', updated: 2000, event: 'attention' }));
+    fs.utimesSync(file, 2000, 2000);
+    const stale = JSON.stringify({ state: 'active', updated: 1500, event: 'tool-start' });
+    const real = fs.readFileSync;
+    vi.spyOn(fs, 'readFileSync').mockImplementation((target, ...rest) => (
+      typeof target === 'string' ? stale : real(target, ...rest)));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(loadProgress(dir, [ID], 1000)[ID]?.state).toBe('idle');
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it('an honest file is read once, without the r+ detour', () => {
+    const file = path.join(dir, `${ID}.state.json`);
+    fs.writeFileSync(file, JSON.stringify({ state: 'active', updated: 2000 }));
+    fs.utimesSync(file, 2000, 2000);
+    const open = vi.spyOn(fs, 'openSync');
+    expect(loadProgress(dir, [ID], 1000)[ID]?.state).toBe('active');
+    expect(open).not.toHaveBeenCalled();
   });
 });
