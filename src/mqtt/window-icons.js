@@ -30,7 +30,11 @@ import { writeFileAtomic } from '../commands/write-file-atomic.js';
 
 const ICONS_INTERVAL_MS = 3000;
 const ICONS_REFRESH_MS = 15000;
-const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url)).replace(/[\\/]+$/, '');
+// Буква диска — заглавной: fileURLToPath отдаёт её такой, какой её назвал
+// запустивший процесс (`c:\projects\...` у трея), а путь уезжает в файл окон.
+const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url))
+  .replace(/[\\/]+$/, '')
+  .replace(/^([a-z]):/, (_, d) => `${d.toUpperCase()}:`);
 
 function writeIconsSidecar(cfg, icons) {
   const file = iconsSidecarPath(cfg.statePath);
