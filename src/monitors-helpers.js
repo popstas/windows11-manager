@@ -28,22 +28,36 @@ function findMonitorByPoint(mons, { x, y }) {
  */
 function matchMonitorBySize(mons, size) {
   if (!size) return undefined;
-  const { width, height } = size;
+  for (const probe of sizeProbes(size)) {
+    const found = mons.find(m => m?.bounds && probe(m));
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/** Пробы размера для `matchMonitorBySize` — от самой точной к самой вольной. */
+function sizeProbes({ width, height }) {
   const scaled = m => {
     const sf = typeof m.getScaleFactor === 'function' ? (m.getScaleFactor() || 1) : 1;
     return { width: Math.round(m.bounds.width * sf), height: Math.round(m.bounds.height * sf) };
   };
-  const probes = [
+  return [
     m => m.bounds.width === width && m.bounds.height === height,
     m => m.bounds.width === height && m.bounds.height === width,
     m => { const s = scaled(m); return s.width === width && s.height === height; },
     m => { const s = scaled(m); return s.width === height && s.height === width; },
   ];
-  for (const probe of probes) {
-    const found = mons.find(m => m?.bounds && probe(m));
-    if (found) return found;
-  }
-  return undefined;
+}
+
+/**
+ * Порядок мониторов на столе: сверху вниз рядами, внутри ряда — слева
+ * направо, по левому верхнему углу. Ряд — разница по вертикали больше 1000px:
+ * портрет, выступающий над соседом на полэкрана, остаётся в том же ряду.
+ */
+function compareByPosition(a, b) {
+  const yOffset = b.y - a.y;
+  if (Math.abs(yOffset) > 1000) return yOffset > 0 ? -1 : 1;
+  return a.x - b.x;
 }
 
 /**
@@ -53,11 +67,35 @@ function matchMonitorBySize(mons, size) {
  * попадали только найденные, и один отключённый монитор сдвигал все следующие:
  * `getMons()[2]` начинал указывать на монитор из позиции 4, а правила
  * размещения молча уезжали не на тот экран.
+ *
+ * Мониторы одного размера (на nb ноутбук и правый — оба 1920x1200) по размеру
+ * не различить. Поэтому кандидаты перебираются в порядке `sortMonitors` — слева
+ * направо по левому верхнему углу, — и монитор, доставшийся одной записи,
+ * другой уже не достаётся: записи одного размера получают мониторы по порядку
+ * номеров. Раньше обе находили один и тот же экран, а второго для правил
+ * (`monN.*`, номер монитора у сессий claude-wt) не было вовсе.
  */
 function monitorsByConfigNumber(mons, monitorsSize) {
+  const keys = Object.keys(monitorsSize ?? {});
   const out = [];
-  for (const key of Object.keys(monitorsSize ?? {})) {
-    out[parseInt(key, 10) - 1] = matchMonitorBySize(mons, monitorsSize[key]);
+  for (const key of keys) out[parseInt(key, 10) - 1] = undefined;
+  const candidates = (mons ?? [])
+    .filter(m => m?.bounds)
+    .sort((a, b) => compareByPosition(a.bounds, b.bounds));
+  const used = new Set();
+  // Сначала точные совпадения у всех записей, потом повороты, потом масштаб:
+  // иначе ранняя запись забрала бы поворотом монитор, который поздней
+  // подходит точно.
+  for (let level = 0; level < 4; level++) {
+    for (const key of keys) {
+      const idx = parseInt(key, 10) - 1;
+      if (out[idx] || !monitorsSize[key]) continue;
+      const probe = sizeProbes(monitorsSize[key])[level];
+      const found = candidates.find(m => !used.has(m) && probe(m));
+      if (!found) continue;
+      out[idx] = found;
+      used.add(found);
+    }
   }
   return out;
 }
@@ -69,21 +107,17 @@ function findMonitorNumByName(monitorsSize, name) {
 }
 
 function sortMonitors(monitors, monitorsSize) {
+  const pos = m => ({ x: m['left-coordinate'], y: m['top-coordinate'] });
   return [...monitors].sort((a, b) => {
     const aByName = findMonitorNumByName(monitorsSize, a.monitor);
     const bByName = findMonitorNumByName(monitorsSize, b.monitor);
     if (aByName !== undefined && bByName !== undefined) return aByName - bByName;
-    const yOffset = b['top-coordinate'] - a['top-coordinate'];
-    if (Math.abs(yOffset) > 1000) {
-      if (yOffset > 0) return -1;
-      if (yOffset < 0) return 1;
-      return 0;
-    }
-    return a['left-coordinate'] - b['left-coordinate'];
+    return compareByPosition(pos(a), pos(b));
   });
 }
 
 export {
+  compareByPosition,
   findMonitorByPoint,
   findMonitorNumByName,
   matchMonitorBySize,

@@ -77,4 +77,50 @@ describe('monitorsByConfigNumber', () => {
     expect(monitorsByConfigNumber([mon(100, 100)], {})).toEqual([]);
     expect(monitorsByConfigNumber([mon(100, 100)], undefined)).toEqual([]);
   });
+
+  describe('two monitors of the same size', () => {
+    // nb: портрет слева, ноутбук и правый — оба 1920x1200. По размеру их не
+    // различить, и раньше обе записи находили первый попавшийся — ноутбук, а
+    // правого монитора для правил не было вовсе.
+    const at = (x, y, width, height) => ({ bounds: { x, y, width, height } });
+    const laptop = at(0, 0, 1920, 1200);
+    const portrait = at(-1080, -534, 1080, 1920);
+    const right = at(1920, 0, 1920, 1200);
+    const nb = {
+      1: { width: 1080, height: 1920 },
+      2: { width: 1920, height: 1200 },
+      3: { width: 1920, height: 1200 },
+    };
+
+    it('hands them out left to right, like sortMonitors', () => {
+      expect(monitorsByConfigNumber([laptop, portrait, right], nb)).toEqual([portrait, laptop, right]);
+    });
+
+    it('does not depend on the order Windows lists the monitors in', () => {
+      expect(monitorsByConfigNumber([right, portrait, laptop], nb)).toEqual([portrait, laptop, right]);
+    });
+
+    it('never gives one monitor to two entries', () => {
+      const out = monitorsByConfigNumber([laptop], nb);
+      expect(out[1]).toBe(laptop);
+      expect(out[2]).toBeUndefined();
+    });
+
+    it('puts a monitor in a lower row after the upper one, like sortMonitors', () => {
+      const top = at(1920, 0, 1920, 1200);
+      const below = at(0, 1200 + 1001, 1920, 1200);
+      const sizes = { 1: { width: 1920, height: 1200 }, 2: { width: 1920, height: 1200 } };
+      expect(monitorsByConfigNumber([below, top], sizes)).toEqual([top, below]);
+    });
+  });
+
+  it('an exact match of a later entry beats a rotated match of an earlier one', () => {
+    // Записи 1 нет среди подключённых, а её поворот совпал бы с записью 2:
+    // монитор достаётся той, кому подходит точно.
+    const portrait = mon(1080, 2560);
+    const sizes = { 1: { width: 2560, height: 1080 }, 2: { width: 1080, height: 2560 } };
+    const out = monitorsByConfigNumber([portrait], sizes);
+    expect(out[0]).toBeUndefined();
+    expect(out[1]).toBe(portrait);
+  });
 });
