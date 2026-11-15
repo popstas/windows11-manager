@@ -167,6 +167,12 @@ config.mouse_bindings = {
   },
 }
 
+-- Привязки по физическим клавишам, как в wt. По умолчанию (Mapped) WezTerm
+-- сверяет символ текущей раскладки: в русской Alt+Shift+L приходит как
+-- Alt+Shift+Д и с key = 'L' не совпадает, и так же молчали Ctrl+V и темы.
+-- Проверено на nb 15.11: в ru тема не менялась, в en менялась.
+config.key_map_preference = 'Physical'
+
 -- Ctrl+Enter, Ctrl+Space, Ctrl+Q, Alt+Q и Ctrl+Alt+* перехватывает AHK
 -- (main-popstas.ahk): на них здесь ничего не вешать.
 config.keys = {
