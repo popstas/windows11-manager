@@ -599,3 +599,14 @@ describe('claude-session-new', () => {
     expect(res).toEqual({ httpStatus: 500, error: 'boom' });
   });
 });
+
+describe('claude-terminal', () => {
+  it('отвечает терминалом живого конфига, читая его на каждый запрос', async () => {
+    let cfg = { terminal: 'wezterm' };
+    const d = deps({ winMan: { getClaudeWtConfig: vi.fn(() => cfg) } });
+    const cmd = claudeCommands(d)['claude-terminal'];
+    expect(await cmd({})).toEqual({ name: 'wezterm', command: 'wezterm-gui.exe', args: ['start', '--'] });
+    cfg = { terminal: 'wt' };
+    expect(await cmd({})).toEqual({ name: 'wt', command: 'wt.exe', args: ['-w', '-1'] });
+  });
+});

@@ -28,6 +28,7 @@ describe('routeToCommand', () => {
   // человек видел бы «менеджер не отвечает» — неотличимо от лежащей службы.
   it('раскладка claude-wt ведёт в claude-place, а не в place окон', () => {
     expect(routeToCommand('/claude-wt/place')).toBe('claude-place');
+    expect(routeToCommand('/claude-wt/terminal')).toBe('claude-terminal');
   });
 
   it('чужой путь — null', () => {
@@ -84,6 +85,25 @@ describe('startHttpServer', () => {
     await new Promise((resolve) => server.once('listening', resolve));
     return { server, port: server.address().port };
   }
+
+  it('/claude-wt/terminal: 200 с терминалом, а у старого конфига — голый ok', async () => {
+    // Контракт ccfzf-picker: name/command/args между исполняемым и хвостом;
+    // без command пикер берёт свой пресет.
+    let answer = { name: 'wezterm', command: 'wezterm-gui.exe', args: ['start', '--'] };
+    const router = { dispatch: async (cmd) => (cmd === 'claude-terminal' ? { ok: true, result: answer } : { ok: false, error: cmd }) };
+    const { server, port } = await listen({ router });
+    const url = `http://127.0.0.1:${port}/claude-wt/terminal`;
+
+    let res = await fetch(url, { method: 'POST', body: '{}' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, name: 'wezterm', command: 'wezterm-gui.exe', args: ['start', '--'] });
+
+    answer = {};
+    res = await fetch(url, { method: 'POST', body: '{}' });
+    expect(await res.json()).toEqual({ ok: true });
+
+    server.close();
+  });
 
   it('картинка слота отдаётся по GET как SVG и не кэшируется', async () => {
     // Плагин перечитывает картинку своим таймером; закэшированная кнопка

@@ -31,6 +31,7 @@ const ROUTES = {
   '/claude-wt/session-unread': 'claude-session-unread',
   '/claude-wt/snapshot-restore': 'claude-snapshot-restore',
   '/claude-wt/place': 'claude-place',
+  '/claude-wt/terminal': 'claude-terminal',
 };
 
 function routeToCommand(url) {

@@ -5,6 +5,7 @@ import {
   resolveTerminal,
   isLegacyLaunch,
   chooseTerminal,
+  publishedTerminal,
 } from './terminal-helpers.js';
 import { planLaunchNew } from './project-helpers.js';
 
@@ -151,5 +152,40 @@ describe('chooseTerminal', () => {
     expect(message).toBeNull();
     const out = planLaunchNew({ launchNew: cfgB.launchNew, cwd: '/p', name: 'x', terminal: chosen.entry });
     expect(out.command).toBe(chosen.entry.command);
+  });
+});
+
+describe('publishedTerminal', () => {
+  it('claudeWt.terminal = wezterm — имя, команда и args из реестра', () => {
+    expect(publishedTerminal({ terminal: 'wezterm' }))
+      .toEqual({ name: 'wezterm', command: 'wezterm-gui.exe', args: ['start', '--'] });
+  });
+
+  it('profileArgs не отдаются — {profile} уехал бы литералом', () => {
+    const out = publishedTerminal({ terminal: 'wt' });
+    expect(out).toEqual({ name: 'wt', command: 'wt.exe', args: ['-w', '-1'] });
+    expect(JSON.stringify(out)).not.toContain('{profile}');
+  });
+
+  it('свой терминал из claudeWt.terminals — как в реестре', () => {
+    const cfg = {
+      terminal: 'alacritty',
+      terminals: { alacritty: { command: 'C:\\Tools\\alacritty.exe', args: ['-e'], profileArgs: ['--class', '{profile}'] } },
+    };
+    expect(publishedTerminal(cfg)).toEqual({ name: 'alacritty', command: 'C:\\Tools\\alacritty.exe', args: ['-e'] });
+  });
+
+  it('старый конфиг с launch.command — без command, у пикера свой пресет', () => {
+    expect(publishedTerminal({ terminal: 'wezterm', launch: { command: 'wt.exe', args: [] } })).toEqual({});
+  });
+
+  it('terminal не задан — первый из реестра, как у session-open без поля', () => {
+    expect(publishedTerminal({}).name).toBe('wt');
+  });
+
+  it('args — копия, а не ссылка на реестр', () => {
+    const out = publishedTerminal({ terminal: 'wezterm' });
+    out.args.push('x');
+    expect(publishedTerminal({ terminal: 'wezterm' }).args).toEqual(['start', '--']);
   });
 });

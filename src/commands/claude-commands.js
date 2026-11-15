@@ -13,6 +13,7 @@ import { basenameOfCwd, parseCursorPoint } from '../claude-wt/project-helpers.js
 import { parseRestorePayload } from './restore-payload.js';
 import { parseArrangePayload } from '../claude-layout-helpers.js';
 import { startTiming, noTiming } from '../claude-wt/timing.js';
+import { publishedTerminal } from '../claude-wt/terminal-helpers.js';
 
 /** Тело просьбы: `{"id": …}` либо голый id строкой — ради вызова руками. */
 function parseIdPayload(payload) {
@@ -250,6 +251,16 @@ function claudeCommands({ winMan, log, notify, slots }) {
         return;
       }
       await focus({ id });
+    },
+
+    /**
+     * Какой терминал выбран на этой машине (`claudeWt.terminal`). Спрашивает
+     * ccfzf-picker перед своими запусками мимо менеджера, по http, на каждое
+     * действие: конфиг читается на каждый запрос, правка переключателя сразу
+     * меняет ответ. Тело не читается.
+     */
+    'claude-terminal'() {
+      return publishedTerminal(winMan.getClaudeWtConfig());
     },
 
     async 'claude-session-unread'(payload) {

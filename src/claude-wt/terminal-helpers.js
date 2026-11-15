@@ -95,4 +95,20 @@ function chooseTerminal(asked, cfg = {}, launchBlock) {
   return { chosen, message };
 }
 
-export { TERMINAL_DEFAULTS, normalizeTerminals, resolveTerminal, isLegacyLaunch, chooseTerminal };
+/**
+ * Терминал машины для чужих запусков (ccfzf-picker, ручка
+ * `/claude-wt/terminal`): ровно то, что взял бы `claude-session-open` без поля
+ * `terminal`. Переключатель так остаётся один — `claudeWt.terminal`.
+ *
+ * `profileArgs` не отдаются: профиль зависит от cwd, которого спрашивающий не
+ * знает, и `{profile}` уехал бы литералом. Старый конфиг (`launch.command`) и
+ * пустой реестр — `{}`: у спрашивающего свой пресет.
+ */
+function publishedTerminal(cfg = {}) {
+  if (isLegacyLaunch(cfg, 'launch')) return {};
+  const { name, entry } = resolveTerminal(undefined, cfg);
+  if (!entry) return {};
+  return { name, command: entry.command, args: [...entry.args] };
+}
+
+export { TERMINAL_DEFAULTS, normalizeTerminals, resolveTerminal, isLegacyLaunch, chooseTerminal, publishedTerminal };
