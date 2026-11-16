@@ -47,6 +47,7 @@ import { stripTitleDecoration } from './title-helpers.js';
 import { snapshotTick, resetSnapshotter, currentSnapshots } from './snapshotter.js';
 import { resolveHeadLayout } from './head-zones.js';
 import { REPO_ROOT, iconsSidecarPath, projectIcons, headIcon } from './window-icons-helpers.js';
+import { unreadSidecarPath, appendUnreadRequest, freshUnreadRequests } from './unread-requests-helpers.js';
 
 function getClaudeWtConfig() {
   return mergeClaudeWtConfig(getConfig().claudeWt);
@@ -148,6 +149,12 @@ let focusMarks = {};
 // тому состоянию, которое тик уносит с собой.
 let pendingUnread = {};
 
+// Просьбы «непрочитано» от службы (unread-requests.json рядом с файлом
+// состояния, см. unread-requests-helpers.js): mtime прочитанного и время
+// последней применённой просьбы. Свежий демон старые просьбы не применяет.
+let unreadMtime = 0;
+let unreadAppliedAt = 0;
+
 // Счётчики живости. Только в памяти: сторож в windows-mqtt спрашивает их через
 // claudeWtStatus(), на диск они не едут и лишнего обращения к V: не стоят.
 let tickStats = emptyTickStats();
@@ -184,6 +191,7 @@ async function claudeWtTick(tickGen = null) {
   // Состояние живёт в памяти: с диска оно читается один раз при старте, дальше
   // файл — только снимок для восстановления, а не рабочая структура.
   if (!liveState) liveState = readState(cfg.statePath);
+  takeUnreadRequests(cfg.statePath);
   const windows = snapshot();
   const sessionIndex = loadSessionIndex(cfg.sessionsFile, cfg.progressDir, Date.now(), wantedIndex);
   wantedIndex = false;
@@ -356,6 +364,36 @@ async function claudeWtTick(tickGen = null) {
 }
 
 /**
+ * Принять просьбы «непрочитано», которые служба оставила в файле рядом с
+ * состоянием (markSessionUnread вне процесса демона). Ложатся они тем же путём,
+ * что и пометка, сделанная в этом процессе: в `pendingUnread` (тик наложит их
+ * на унесённое состояние, и они уедут и в state-файл, и в файл окон) и в
+ * подавление возвратного фокуса. Файл локальный: один statSync на тик.
+ */
+function takeUnreadRequests(statePath) {
+  const file = unreadSidecarPath(statePath);
+  if (!file) return;
+  let raw;
+  try {
+    const mtime = fs.statSync(file).mtimeMs;
+    if (mtime === unreadMtime) return;
+    raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    unreadMtime = mtime;
+  } catch {
+    return; // нет файла или он пишется — заберём на следующем тике
+  }
+  const { marks, ids, lastAt } = freshUnreadRequests(raw, unreadAppliedAt);
+  unreadAppliedAt = lastAt;
+  if (!ids.length) return;
+  for (const id of ids) {
+    if (liveState.slots[id]) liveState.slots[id] = upsertSlot(liveState.slots[id], { focusedAt: marks[id] });
+    pendingUnread[id] = marks[id];
+  }
+  focusMarks = suppressFocus(focusMarks, ids, Date.now());
+  console.log(`[claude-wt] marked unread by request: ${ids.join(', ')}`);
+}
+
+/**
  * Карта sessionId → иконка, которую решила служба (src/mqtt/window-icons.js).
  * Файл локальный, mtime здесь не врёт (в отличие от сетевого диска), и на
  * каждом тике это один statSync.
@@ -482,6 +520,8 @@ function startClaudeWt({ skipCrashCheck = false } = {}) {
   prevActiveWindowId = 0;
   focusMarks = {};
   pendingUnread = {};
+  unreadMtime = 0;
+  unreadAppliedAt = Date.now();
   tickStats = emptyTickStats();
   startedAt = Date.now();
   generation += 1;
@@ -580,6 +620,10 @@ function markSessionUnread(id) {
   const cfg = getClaudeWtConfig();
   if (!cfg.enabled) return { ok: false, reason: 'claudeWt.enabled is false in config' };
   if (!cfg.statePath) return { ok: false, reason: 'claudeWt.statePath is not set in config' };
+  // Демон в другом процессе (так всегда в установке с треем: просьба приходит в
+  // службу): его слоты в памяти, и правка файла отсюда не доживала до
+  // следующей его записи. Тогда — просьба ему в файле, см. takeUnreadRequests.
+  if (intervalId === null) return requestUnread(cfg, id);
   if (!liveState) liveState = readState(cfg.statePath);
   if (!liveState.slots[id]) return { ok: false, reason: `unknown session ${id}` };
 
@@ -604,6 +648,37 @@ function markSessionUnread(id) {
   writeState(cfg.statePath, liveState);
   lastWritten = layoutFingerprint(liveState);
   return { ok: true, ids };
+}
+
+/** Запись хука, относительно которой отматывается «просмотрено». */
+function agentUpdatedFor(cfg, id) {
+  const agents = loadBackgroundAgents(cfg.sessionsFile, cfg.progressDir);
+  const childIds = (agents[id] ?? []).map(child => child.id);
+  const progress = loadProgress(cfg.progressDir, [id, ...childIds]);
+  return activeAgent(id, progress, agents).agent?.updated ?? 0;
+}
+
+/**
+ * markSessionUnread вне процесса демона: состояние читается с диска заново на
+ * каждую просьбу (кэшировать его здесь нельзя — новые сессии появляются у
+ * демона, а не тут), и просьба дописывается в unread-requests.json. Запись —
+ * через временный файл и rename: демон читает этот файл каждую секунду.
+ */
+function requestUnread(cfg, id) {
+  const state = readState(cfg.statePath);
+  if (!state.slots[id]) return { ok: false, reason: `unknown session ${id}` };
+  const updated = agentUpdatedFor(cfg, id);
+  if (!updated) return { ok: false, reason: 'no agent record yet' };
+  const file = unreadSidecarPath(cfg.statePath);
+  if (!file) return { ok: false, reason: 'claudeWt.statePath has no directory' };
+  const ids = sameTitleSessionIds(state.slots, id);
+  let prev = null;
+  try { prev = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* первый раз или битый — с нуля */ }
+  const next = appendUnreadRequest(prev, { at: Date.now(), ids, unreadAt: unreadFocusedAt(updated) });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(next));
+  fs.renameSync(tmp, file);
+  return { ok: true, ids, requested: true };
 }
 
 // Наружу, а не только внутрь: сторож в windows-mqtt принимает решение по этому
