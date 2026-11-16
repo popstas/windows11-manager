@@ -8,6 +8,7 @@ import { stripTitleDecoration } from './title-helpers.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { buildSessionList, agentIds } from './view-helpers.js';
 import { loadProgress } from './progress.js';
+import { seenSinceUpdate } from './progress-helpers.js';
 import { loadMeta } from './meta.js';
 import { listSnapshots } from './snapshotter.js';
 import { noTiming } from './timing.js';
@@ -107,21 +108,29 @@ function claudeWtWindowSessions(windows) {
   const out = [];
   for (const w of windows) {
     const hit = resolveSession(stripTitleDecoration(w.title), index, state.slots);
-    if (hit) out.push({ id: w.id, sessionId: hit.id, cwd: hit.cwd || state.slots[hit.id]?.cwd || '' });
+    if (!hit) continue;
+    const slot = state.slots[hit.id];
+    out.push({ id: w.id, sessionId: hit.id, cwd: hit.cwd || slot?.cwd || '', focusedAt: slot?.focusedAt ?? 0 });
   }
   return out;
 }
 
 /**
- * То же плюс состояние агента: [{id, title}] → [{id, sessionId, cwd, agentState}].
+ * То же плюс состояние агента: [{id, title}] → [{id, sessionId, cwd, agentState, agentSeen}].
  * С сети читаются state.json только переданных окон (кэш 3 с у loadProgress).
+ * `agentSeen` — окно выходило вперёд после последней записи агента
+ * (`seenSinceUpdate`, тот же признак, что у пикера и панели).
  */
 function claudeWtWindowAgents(windows) {
   const resolved = claudeWtWindowSessions(windows);
   if (!resolved.length) return [];
   const cfg = getClaudeWtConfig();
   const progress = loadProgress(cfg.progressDir, resolved.map(r => r.sessionId));
-  return resolved.map(r => ({ ...r, agentState: progress[r.sessionId]?.state ?? null }));
+  return resolved.map(r => ({
+    ...r,
+    agentState: progress[r.sessionId]?.state ?? null,
+    agentSeen: seenSinceUpdate({ focusedAt: r.focusedAt }, progress[r.sessionId]),
+  }));
 }
 
 /**

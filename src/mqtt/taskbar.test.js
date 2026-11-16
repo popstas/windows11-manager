@@ -7,7 +7,7 @@ const WT = 'C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal\\WindowsTe
 function setup({ windows = [], agents = {}, control = true } = {}) {
   const calls = [];
   const logs = [];
-  const world = { windows, agents };
+  const world = { windows, agents, seen: {} };
   const winMan = {
     hasTaskbarControl: () => control,
     getVisibleWindowIds: vi.fn(() => world.windows.map(w => w.id)),
@@ -17,7 +17,7 @@ function setup({ windows = [], agents = {}, control = true } = {}) {
     }),
     claudeWtWindowAgents: vi.fn(list => list
       .filter(w => world.agents[w.id] !== undefined)
-      .map(w => ({ id: w.id, sessionId: `s${w.id}`, agentState: world.agents[w.id] }))),
+      .map(w => ({ id: w.id, sessionId: `s${w.id}`, agentState: world.agents[w.id], agentSeen: Boolean(world.seen?.[w.id]) }))),
     setTaskbarProgress: vi.fn((id, state, value) => calls.push(['progress', id, state, value])),
     flashWindow: vi.fn((id, on) => calls.push(['flash', id, on])),
   };
@@ -46,7 +46,7 @@ describe('startTaskbarState', () => {
     expect(winMan.claudeWtWindowAgents).not.toHaveBeenCalled();
   });
 
-  it('работа — зелёная полоса, вопрос — жёлтая и мигание, ответ — сброс', () => {
+  it('работа — зелёная полоса, вопрос — жёлтая и мигание, ответ — мигание остаётся без полосы', () => {
     const { svc, calls, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: 'active' } });
     calls.length = 0;
     svc.tick();
@@ -60,7 +60,45 @@ describe('startTaskbarState', () => {
     expect(calls).toEqual([]);
     world.agents[1] = 'review';
     svc.tick();
+    // Мигание с вопроса не перезапускается: Windows держит его до фокуса.
+    expect(calls).toEqual([['progress', 1, 0, 0]]);
+  });
+
+  it('конец хода мигает один раз на переход, а не на каждом тике', () => {
+    // Повторный FlashWindowEx перезапустил бы мигание и вернул оранжевый окну,
+    // которое человек только что смотрел, — до того как focusedAt доедет.
+    const { svc, winMan, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: 'active' } });
+    svc.tick();
+    winMan.flashWindow.mockClear();
+    world.agents[1] = 'review';
+    svc.tick();
+    svc.tick();
+    svc.tick();
+    expect(winMan.flashWindow.mock.calls).toEqual([[1, true]]);
+  });
+
+  it('просмотренный конец хода гасит мигание и не зажигает его снова', () => {
+    const { svc, calls, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: 'review' } });
+    calls.length = 0;
+    svc.tick();
+    expect(calls).toEqual([['progress', 1, 0, 0], ['flash', 1, true]]);
+    world.seen[1] = true;
+    calls.length = 0;
+    svc.tick();
+    svc.tick();
     expect(calls).toEqual([['progress', 1, 0, 0], ['flash', 1, false]]);
+  });
+
+  it('после перезапуска службы мигает только непросмотренный конец хода', () => {
+    const { svc, calls } = (() => {
+      const s = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }, { id: 2, path: WEZ, title: 'b' }],
+        agents: { 1: 'review', 2: 'review' } });
+      s.world.seen[2] = true;
+      return s;
+    })();
+    calls.length = 0;
+    svc.tick();
+    expect(calls).toEqual([['progress', 1, 0, 0], ['flash', 1, true]]);
   });
 
   it('путь к exe читается один раз на hwnd', () => {

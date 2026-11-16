@@ -19,14 +19,21 @@ const NONE = { state: 'none', value: 0, flash: false };
  * работе, 9;4;4;22 и звонок на вопросе, 9;4;0;0 на остальном, 9;4;3;0 на
  * незнакомом событии.
  *
+ * `review` (ход закончен) без полосы, но с миганием, пока окно не выходило
+ * вперёд (`seen`): в wt оранжевую кнопку давал звонок Claude Code на конец хода
+ * (`preferredNotifChannel: terminal_bell`) при `bellStyle: taskbar`, а WezTerm
+ * на звонок кнопкой не мигает. Просмотренное не мигает: иначе каждый
+ * перезапуск службы зажигал бы давно прочитанные окна.
+ *
  * `unknown` сюда сейчас не доезжает: normalizeProgress его отбрасывает, и
  * такое окно получает сброс. Ветка оставлена, чтобы соответствие хуку было
  * записано целиком.
  */
-function taskbarLook(agentState) {
+function taskbarLook(agentState, seen = false) {
   switch (agentState) {
     case 'active': return { state: 'normal', value: 100, flash: false };
     case 'question': return { state: 'paused', value: 22, flash: true };
+    case 'review': return { state: 'none', value: 0, flash: !seen };
     case 'unknown': return { state: 'indeterminate', value: 0, flash: false };
     default: return { ...NONE };
   }

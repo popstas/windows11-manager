@@ -1,6 +1,8 @@
 /**
  * Кнопки окон WezTerm на панели задач: зелёная полоса, пока агент работает,
- * жёлтая с миганием, пока ждёт ответа, — как wt рисует сам по OSC 9;4.
+ * жёлтая с миганием, пока ждёт ответа, — как wt рисует сам по OSC 9;4; и
+ * мигание без полосы на законченном ходе, пока окно не смотрели, — как wt
+ * мигает на звонке.
  * Почему это делает служба, а не терминал, — в src/claude-wt/taskbar-helpers.js.
  *
  * Про бюджет опроса (AGENTS.md, «claude-wt polling budget»). Таймер раз в
@@ -74,7 +76,7 @@ function startTaskbarState({
       const { windows, present } = weztermWindows();
       if (!windows.length && !applied.size) return;
       const agents = windows.length ? winMan.claudeWtWindowAgents(windows) : [];
-      const wanted = new Map(agents.map(a => [a.id, taskbarLook(a.agentState)]));
+      const wanted = new Map(agents.map(a => [a.id, taskbarLook(a.agentState, a.agentSeen)]));
       const { ops, next } = planTaskbar(applied, wanted, present);
       apply(ops);
       applied = next;

@@ -11,10 +11,17 @@ describe('taskbarLook', () => {
     expect(taskbarLook('question')).toEqual({ state: 'paused', value: 22, flash: true });
   });
 
-  it('ждёт проверки, простой и нет состояния — сброс', () => {
-    for (const s of ['review', 'idle', null, undefined, 'что-то']) {
+  it('простой и нет состояния — сброс', () => {
+    for (const s of ['idle', null, undefined, 'что-то']) {
       expect(taskbarLook(s)).toEqual({ state: 'none', value: 0, flash: false });
     }
+  });
+
+  it('ход закончен и не просмотрен — мигание без полосы, просмотрен — сброс', () => {
+    // В wt оранжевую кнопку давал звонок Claude Code на конец хода.
+    expect(taskbarLook('review')).toEqual({ state: 'none', value: 0, flash: true });
+    expect(taskbarLook('review', false)).toEqual({ state: 'none', value: 0, flash: true });
+    expect(taskbarLook('review', true)).toEqual({ state: 'none', value: 0, flash: false });
   });
 
   it('unknown — бегущая полоса', () => {
