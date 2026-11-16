@@ -23,6 +23,7 @@
  */
 
 import { CHILD_PLACEMENTS } from '../claude-wt/head-zones-helpers.js';
+import { HEAD_MODES } from '../claude-wt/window-icons-helpers.js';
 
 /** Порядок сортировки слотов панели — тот же список, что у `normalizeSort`. */
 const SESSIONS_SORT_MODES = ['cost', 'oldest', 'newest', 'recent', 'name'];
@@ -61,6 +62,17 @@ const CLAUDE_CONFIG_FIELDS = [
   // записи `projectIcons` (claude-config-commands.js).
   { name: 'claudeWt.windowIcons.enabled', section: 'claudeWt.windowIcons', key: 'enabled', type: 'boolean', default: true, createSection: true },
   { name: 'claudeWt.windowIcons.head', section: 'claudeWt.windowIcons', key: 'head', type: 'string', default: '', createSection: true },
+  // Как окну head показывать корону: значком в углу кнопки на панели задач
+  // поверх иконки проекта (решение Стаса 16.11) или вместо иконки, как раньше.
+  {
+    name: 'claudeWt.windowIcons.headMode',
+    section: 'claudeWt.windowIcons',
+    key: 'headMode',
+    type: 'string',
+    default: 'overlay',
+    choices: HEAD_MODES,
+    createSection: true,
+  },
 
   // Входящие из Telegram. Умолчания — из `normalizeInboxConfig`
   // (`src/claude-wt/telegram-inbox-helpers.js`), тест сверяет.

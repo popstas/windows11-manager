@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   BUILTIN_HEAD_ICON, resolveIconPath, iconFor, headsDirFor, planIcons, iconsSidecarPath, publishedIcons,
-  projectIcons, headIcon,
+  projectIcons, headIcon, headModeOf,
 } from './window-icons-helpers.js';
 import { mergeClaudeWtConfig } from './daemon-helpers.js';
 
@@ -18,42 +18,66 @@ const cfg = mergeClaudeWtConfig({
 });
 
 describe('iconFor', () => {
-  it('head — корона, даже если у проекта своя иконка', () => {
+  const replace = mergeClaudeWtConfig({ ...cfg, windowIcons: { ...cfg.windowIcons, headMode: 'replace' } });
+
+  it('head по умолчанию — иконка проекта и корона значком', () => {
     const heads = new Set(['h1']);
-    expect(iconFor({ sessionId: 'h1', cwd: '/p/own' }, { heads, cfg })).toBe(BUILTIN_HEAD_ICON);
+    expect(iconFor({ sessionId: 'h1', cwd: '/p/own' }, { heads, cfg }))
+      .toEqual({ icon: 'D:\\pics\\own.png', overlay: BUILTIN_HEAD_ICON });
   });
 
-  it('head со своей иконкой в конфиге', () => {
+  it('head без иконки проекта — только значок, иконку окна не трогать', () => {
+    expect(iconFor({ sessionId: 'h1', cwd: '/p/bare' }, { heads: new Set(['h1']), cfg }))
+      .toEqual({ icon: '', overlay: BUILTIN_HEAD_ICON });
+  });
+
+  it('head в режиме replace — корона вместо иконки, без значка', () => {
+    expect(iconFor({ sessionId: 'h1', cwd: '/p/own' }, { heads: new Set(['h1']), cfg: replace }))
+      .toEqual({ icon: BUILTIN_HEAD_ICON, overlay: '' });
+  });
+
+  it('head со своей иконкой в конфиге — она и значком, и заменой', () => {
     const own = mergeClaudeWtConfig({ windowIcons: { head: 'C:\\icons\\king.ico' } });
-    expect(iconFor({ sessionId: 'h1', cwd: '' }, { heads: new Set(['h1']), cfg: own })).toBe('C:\\icons\\king.ico');
+    expect(iconFor({ sessionId: 'h1', cwd: '' }, { heads: new Set(['h1']), cfg: own }))
+      .toEqual({ icon: '', overlay: 'C:\\icons\\king.ico' });
+    const ownReplace = mergeClaudeWtConfig({ windowIcons: { head: 'C:\\icons\\king.ico', headMode: 'replace' } });
+    expect(iconFor({ sessionId: 'h1', cwd: '' }, { heads: new Set(['h1']), cfg: ownReplace }))
+      .toEqual({ icon: 'C:\\icons\\king.ico', overlay: '' });
+  });
+
+  it('не-head — без значка в обоих режимах', () => {
+    for (const c of [cfg, replace]) {
+      expect(iconFor({ sessionId: 's', cwd: '/p/own' }, { heads: new Set(['h1']), cfg: c }))
+        .toEqual({ icon: 'D:\\pics\\own.png', overlay: '' });
+    }
   });
 
   it('иконка проекта главнее иконки профиля', () => {
-    expect(iconFor({ sessionId: 's', cwd: '/p/own' }, { heads: new Set(), cfg })).toBe('D:\\pics\\own.png');
+    expect(iconFor({ sessionId: 's', cwd: '/p/own' }, { heads: new Set(), cfg })).toEqual({ icon: 'D:\\pics\\own.png', overlay: '' });
   });
 
   it('без своей иконки — по профилю проекта, как у профилей wt', () => {
-    expect(iconFor({ sessionId: 's', cwd: '/p/home' }, { heads: new Set(), cfg })).toBe('C:\\ico\\me.ico');
-    expect(iconFor({ sessionId: 's', cwd: '/p/exp' }, { heads: new Set(), cfg })).toBe('C:\\ico\\exp.ico');
+    expect(iconFor({ sessionId: 's', cwd: '/p/home' }, { heads: new Set(), cfg })).toEqual({ icon: 'C:\\ico\\me.ico', overlay: '' });
+    expect(iconFor({ sessionId: 's', cwd: '/p/exp' }, { heads: new Set(), cfg })).toEqual({ icon: 'C:\\ico\\exp.ico', overlay: '' });
   });
 
   it('сессия вне проектов — по общему профилю claudeWt.profile', () => {
-    expect(iconFor({ sessionId: 's', cwd: '/p/elsewhere' }, { heads: new Set(), cfg })).toBe('C:\\ico\\me.ico');
+    expect(iconFor({ sessionId: 's', cwd: '/p/elsewhere' }, { heads: new Set(), cfg })).toEqual({ icon: 'C:\\ico\\me.ico', overlay: '' });
   });
 
   it('проект с явно пустым профилем — иконку не трогать', () => {
-    expect(iconFor({ sessionId: 's', cwd: '/p/bare' }, { heads: new Set(), cfg })).toBe('');
+    expect(iconFor({ sessionId: 's', cwd: '/p/bare' }, { heads: new Set(), cfg })).toEqual({ icon: '', overlay: '' });
   });
 
   it('профиль без иконки в карте — иконку не трогать', () => {
     const c = mergeClaudeWtConfig({ profile: 'Unknown', projects: [] });
-    expect(iconFor({ sessionId: 's', cwd: '/x' }, { heads: new Set(), cfg: c })).toBe('');
+    expect(iconFor({ sessionId: 's', cwd: '/x' }, { heads: new Set(), cfg: c })).toEqual({ icon: '', overlay: '' });
   });
 
   it('встроенной карты профилей нет — без конфига дети без иконки', () => {
     const c = mergeClaudeWtConfig({ profile: 'popstas', projects: [{ name: 'home', cwd: '/p/home', profile: 'home' }] });
     expect(c.windowIcons.profiles).toEqual({});
-    expect(iconFor({ sessionId: 's', cwd: '/p/home' }, { heads: new Set(), cfg: c })).toBe('');
+    expect(iconFor({ sessionId: 's', cwd: '/p/home' }, { heads: new Set(), cfg: c })).toEqual({ icon: '', overlay: '' });
   });
 
   it('карта профилей из конфига доходит как есть', () => {
@@ -94,36 +118,68 @@ describe('headsDirFor', () => {
 });
 
 describe('planIcons', () => {
+  const A = { icon: 'a.ico' };
+  const HEAD = { icon: 'a.ico', overlay: 'crown.ico' };
+
   it('новое окно получает иконку', () => {
-    const { ops, next } = planIcons(new Map(), new Map([[1, 'a.ico']]), new Set([1]));
-    expect(ops).toEqual([{ id: 1, path: 'a.ico' }]);
-    expect(next.get(1)).toBe('a.ico');
+    const { ops, next } = planIcons(new Map(), new Map([[1, A]]), new Set([1]));
+    expect(ops).toEqual([{ id: 1, kind: 'icon', path: 'a.ico' }]);
+    expect(next.get(1)).toEqual({ icon: 'a.ico' });
   });
 
-  it('та же иконка — без вызовов', () => {
-    expect(planIcons(new Map([[1, 'a.ico']]), new Map([[1, 'a.ico']]), new Set([1])).ops).toEqual([]);
+  it('новое окно head — иконка проекта и значок', () => {
+    const { ops, next } = planIcons(new Map(), new Map([[1, HEAD]]), new Set([1]));
+    expect(ops).toEqual([
+      { id: 1, kind: 'icon', path: 'a.ico' },
+      { id: 1, kind: 'overlay', path: 'crown.ico' },
+    ]);
+    expect(next.get(1)).toEqual(HEAD);
   });
 
-  it('смена роли — новая иконка', () => {
-    expect(planIcons(new Map([[1, 'a.ico']]), new Map([[1, 'crown.ico']]), new Set([1])).ops)
-      .toEqual([{ id: 1, path: 'crown.ico' }]);
+  it('то же самое — без вызовов', () => {
+    expect(planIcons(new Map([[1, A]]), new Map([[1, A]]), new Set([1])).ops).toEqual([]);
+    expect(planIcons(new Map([[1, HEAD]]), new Map([[1, HEAD]]), new Set([1])).ops).toEqual([]);
+  });
+
+  it('окно стало head — только значок, иконку не трогать', () => {
+    expect(planIcons(new Map([[1, A]]), new Map([[1, HEAD]]), new Set([1])).ops)
+      .toEqual([{ id: 1, kind: 'overlay', path: 'crown.ico' }]);
+  });
+
+  it('смена режима overlay → replace — иконка короной, значок снять', () => {
+    expect(planIcons(new Map([[1, HEAD]]), new Map([[1, { icon: 'crown.ico', overlay: '' }]]), new Set([1])).ops)
+      .toEqual([
+        { id: 1, kind: 'icon', path: 'crown.ico' },
+        { id: 1, kind: 'overlay', path: '' },
+      ]);
   });
 
   it('иконку больше не надо — снять, но только если ставили мы', () => {
-    const { ops, next } = planIcons(new Map([[1, 'a.ico']]), new Map([[1, '']]), new Set([1]));
-    expect(ops).toEqual([{ id: 1, path: '' }]);
+    const { ops, next } = planIcons(new Map([[1, A]]), new Map([[1, { icon: '', overlay: '' }]]), new Set([1]));
+    expect(ops).toEqual([{ id: 1, kind: 'icon', path: '' }]);
     expect(next.has(1)).toBe(false);
-    expect(planIcons(new Map(), new Map([[2, '']]), new Set([2])).ops).toEqual([]);
+    expect(planIcons(new Map(), new Map([[2, { icon: '', overlay: '' }]]), new Set([2])).ops).toEqual([]);
   });
 
-  it('живое окно без сессии — снять', () => {
-    expect(planIcons(new Map([[1, 'a.ico']]), new Map(), new Set([1])).ops).toEqual([{ id: 1, path: '' }]);
+  it('живое окно без сессии — снять и иконку, и значок', () => {
+    expect(planIcons(new Map([[1, HEAD]]), new Map(), new Set([1])).ops).toEqual([
+      { id: 1, kind: 'icon', path: '' },
+      { id: 1, kind: 'overlay', path: '' },
+    ]);
   });
 
   it('закрытое окно забывается без вызовов', () => {
-    const { ops, next } = planIcons(new Map([[1, 'a.ico']]), new Map(), new Set());
+    const { ops, next } = planIcons(new Map([[1, HEAD]]), new Map(), new Set());
     expect(ops).toEqual([]);
     expect(next.size).toBe(0);
+  });
+});
+
+describe('headModeOf', () => {
+  it('умолчание и мусор — overlay, replace — replace', () => {
+    expect(headModeOf(mergeClaudeWtConfig({}))).toBe('overlay');
+    expect(headModeOf(mergeClaudeWtConfig({ windowIcons: { headMode: 'nonsense' } }))).toBe('overlay');
+    expect(headModeOf(mergeClaudeWtConfig({ windowIcons: { headMode: 'replace' } }))).toBe('replace');
   });
 });
 
@@ -142,10 +198,18 @@ describe('iconsSidecarPath', () => {
 describe('publishedIcons', () => {
   it('по sessionId, абсолютным путём; без иконки — пустая строка', () => {
     const sessions = [{ id: 1, sessionId: 'h' }, { id: 2, sessionId: 'c' }, { id: 3, sessionId: 'n' }];
-    const wanted = new Map([[1, 'icons/crown.ico'], [2, 'C:\\ico\\w11m.ico'], [3, '']]);
+    const wanted = new Map([
+      [1, { icon: 'icons/crown.ico', overlay: '' }], [2, { icon: 'C:\\ico\\w11m.ico', overlay: '' }], [3, { icon: '', overlay: '' }],
+    ]);
     expect(publishedIcons(sessions, wanted, 'C:\\repo')).toEqual({
       h: 'C:\\repo\\icons\\crown.ico', c: 'C:\\ico\\w11m.ico', n: '',
     });
+  });
+
+  it('head со значком — читателю иконка проекта, корона только на панели задач', () => {
+    const sessions = [{ id: 1, sessionId: 'h' }];
+    const wanted = new Map([[1, { icon: 'C:\\ico\\home.ico', overlay: 'icons/crown.ico' }]]);
+    expect(publishedIcons(sessions, wanted, 'C:\\repo')).toEqual({ h: 'C:\\ico\\home.ico' });
   });
 });
 
@@ -188,12 +252,18 @@ describe('выключенные иконки окон', () => {
 });
 
 describe('headIcon', () => {
-  it('встроенная корона — от корня репозитория', () => {
-    expect(headIcon(mergeClaudeWtConfig({}), 'C:\\repo')).toBe('C:\\repo\\icons\\crown.ico');
+  it('режим overlay (умолчание) — пусто: закрытый head в истории идёт с иконкой проекта', () => {
+    expect(headIcon(mergeClaudeWtConfig({}), 'C:\\repo')).toBe('');
+    expect(headIcon(mergeClaudeWtConfig({ windowIcons: { head: 'C:\\icons\\king.ico' } }), 'C:\\repo')).toBe('');
   });
 
-  it('своя корона из конфига — как есть', () => {
-    const own = mergeClaudeWtConfig({ windowIcons: { head: 'C:\\icons\\king.ico' } });
+  it('режим replace — встроенная корона от корня репозитория', () => {
+    expect(headIcon(mergeClaudeWtConfig({ windowIcons: { headMode: 'replace' } }), 'C:\\repo'))
+      .toBe('C:\\repo\\icons\\crown.ico');
+  });
+
+  it('режим replace — своя корона из конфига как есть', () => {
+    const own = mergeClaudeWtConfig({ windowIcons: { head: 'C:\\icons\\king.ico', headMode: 'replace' } });
     expect(headIcon(own, 'C:\\repo')).toBe('C:\\icons\\king.ico');
   });
 });

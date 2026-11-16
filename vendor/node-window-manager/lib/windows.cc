@@ -405,11 +405,20 @@ Napi::Object getMonitorInfo (const Napi::CallbackInfo& info) {
 // itself. Window icon calls (WM_SETICON) belong here as well: same kind, by hwnd.
 
 static ITaskbarList3* taskbarList = nullptr;
+static HWND taskbarListTray = nullptr;
 
 // One instance per process: CoCreateInstance and HrInit cost more than the
 // calls themselves, and the service calls them every few seconds.
+// The instance is bound to the explorer it was created with: after explorer
+// restarts (new Shell_TrayWnd) it is recreated, otherwise calls would go to
+// the taskbar that no longer exists.
 static ITaskbarList3* getTaskbarList () {
-    if (taskbarList) return taskbarList;
+    HWND tray{ FindWindowW (L"Shell_TrayWnd", NULL) };
+    if (taskbarList && tray == taskbarListTray) return taskbarList;
+    if (taskbarList) {
+        taskbarList->Release ();
+        taskbarList = nullptr;
+    }
     // RPC_E_CHANGED_MODE: COM is already initialized on this thread in another
     // model. The object can still be created, so this is not an error.
     HRESULT init{ CoInitializeEx (NULL, COINIT_APARTMENTTHREADED) };
@@ -423,7 +432,18 @@ static ITaskbarList3* getTaskbarList () {
         return nullptr;
     }
     taskbarList = list;
+    taskbarListTray = tray;
     return taskbarList;
+}
+
+// getTaskbarWindow(): hwnd of the taskbar (Shell_TrayWnd), 0 when there is
+// none. A new value means explorer restarted and dropped what was drawn on
+// the buttons (overlay icons, progress): the caller draws it again. One
+// FindWindow, no enumeration — cheap enough for a polling timer.
+Napi::Number getTaskbarWindow (const Napi::CallbackInfo& info) {
+    Napi::Env env{ info.Env () };
+    HWND tray{ FindWindowW (L"Shell_TrayWnd", NULL) };
+    return Napi::Number::New (env, static_cast<double> (reinterpret_cast<int64_t> (tray)));
 }
 
 // setTaskbarProgress(hwnd, state, value): state is a TBPFLAG (0 none,
@@ -582,8 +602,71 @@ Napi::Boolean setWindowIcon (const Napi::CallbackInfo& info) {
     return Napi::Boolean::New (env, true);
 }
 
+// --- Overlay icon on the taskbar button (ITaskbarList3::SetOverlayIcon) ---
+//
+// A small badge in the bottom right corner of the button, over the window's
+// own icon. Shown only on the taskbar button (not in the title bar, not in
+// Alt+Tab) and only when Windows shows badges on taskbar buttons. Explorer
+// drops it when it restarts — the caller sets it again (getTaskbarWindow).
+// The badge wants the small icon size (SM_CXSMICON, 16 px at 100%), so it is
+// loaded separately from the 48/32 pair of setWindowIcon and cached the same
+// way: for the life of the process, keyed by path and write time.
+
+static std::map<std::wstring, HICON> overlayCache;
+
+static HICON loadSmallIcon (const std::wstring& path) {
+    int cx{ GetSystemMetrics (SM_CXSMICON) };
+    int cy{ GetSystemMetrics (SM_CYSMICON) };
+    if (endsWithIco (path)) {
+        return (HICON)LoadImageW (NULL, path.c_str (), IMAGE_ICON, cx, cy, LR_LOADFROMFILE);
+    }
+    // Not an .ico: decode with GDI+ as setWindowIcon does; the taskbar scales.
+    IconPair pair{ loadIcon (path) };
+    return pair.smallIcon ? pair.smallIcon : pair.bigIcon;
+}
+
+// setOverlayIcon(hwnd, path, description): path "" removes the badge.
+// Returns false when the window is gone, the file cannot be loaded or the
+// taskbar refused the call.
+Napi::Boolean setOverlayIcon (const Napi::CallbackInfo& info) {
+    Napi::Env env{ info.Env () };
+
+    auto handle{ getValueFromCallbackData<HWND> (info, 0) };
+    std::wstring path{ fromUtf8 (info[1].As<Napi::String> ().Utf8Value ()) };
+    std::wstring description{ info.Length () > 2 && info[2].IsString ()
+                                  ? fromUtf8 (info[2].As<Napi::String> ().Utf8Value ())
+                                  : std::wstring () };
+    if (!IsWindow (handle)) return Napi::Boolean::New (env, false);
+    ITaskbarList3* list{ getTaskbarList () };
+    if (!list) return Napi::Boolean::New (env, false);
+
+    if (path.empty ()) {
+        return Napi::Boolean::New (env, SUCCEEDED (list->SetOverlayIcon (handle, NULL, NULL)));
+    }
+
+    WIN32_FILE_ATTRIBUTE_DATA attrs;
+    if (!GetFileAttributesExW (path.c_str (), GetFileExInfoStandard, &attrs)) {
+        return Napi::Boolean::New (env, false);
+    }
+    std::wstring key{ path + L"|" + std::to_wstring (attrs.ftLastWriteTime.dwHighDateTime) + L":" +
+                      std::to_wstring (attrs.ftLastWriteTime.dwLowDateTime) };
+    auto hit{ overlayCache.find (key) };
+    HICON icon{ nullptr };
+    if (hit != overlayCache.end ()) {
+        icon = hit->second;
+    } else {
+        icon = loadSmallIcon (path);
+        if (!icon) return Napi::Boolean::New (env, false);
+        overlayCache[key] = icon;
+    }
+    HRESULT hr{ list->SetOverlayIcon (handle, icon, description.empty () ? NULL : description.c_str ()) };
+    return Napi::Boolean::New (env, SUCCEEDED (hr));
+}
+
 Napi::Object Init (Napi::Env env, Napi::Object exports) {
     exports.Set (Napi::String::New (env, "setWindowIcon"), Napi::Function::New (env, setWindowIcon));
+    exports.Set (Napi::String::New (env, "setOverlayIcon"), Napi::Function::New (env, setOverlayIcon));
+    exports.Set (Napi::String::New (env, "getTaskbarWindow"), Napi::Function::New (env, getTaskbarWindow));
     exports.Set (Napi::String::New (env, "setTaskbarProgress"), Napi::Function::New (env, setTaskbarProgress));
     exports.Set (Napi::String::New (env, "flashWindow"), Napi::Function::New (env, flashWindow));
     exports.Set (Napi::String::New (env, "getActiveWindow"), Napi::Function::New (env, getActiveWindow));
