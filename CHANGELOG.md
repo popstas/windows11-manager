@@ -1,6 +1,27 @@
 # Changelog
 
 
+## v4.9.0 - 2026-11-16
+
+### Features
+
+- taskbar: Ровный оранжевый вместо мигания; Shift+клик «Mark seen» гасит кнопку
+- taskbar: Законченный ход мигает кнопкой WezTerm до просмотра, как в wt
+- claude-wt: Иконки проектов и корона в файле окон для строк без окна
+- wezterm: Курсор — немигающая черта, как в wt
+- wezterm: Enter переподключает окно к той же сессии после обрыва ssh
+
+### Bug Fixes
+
+- native: FlashWindow(off) действительно гасит ровную подсветку
+- taskbar: Mark seen гасит и idle, Mark unread зажигает review и idle
+- claude-wt: «Mark unread» снова доходит до демона
+- taskbar: Простой не гасит мигание законченного хода
+
+### Refactor
+
+- wezterm: Минимум своего Lua, остальное — дефолты WezTerm
+
 ## v4.8.0 - 2026-11-15
 
 ### Features
