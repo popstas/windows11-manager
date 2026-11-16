@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { getWindowById, getWindows } from '../windows.js';
 import { placeWindowByConfig } from '../placement.js';
 import { getMonitorByPoint } from '../monitors.js';
@@ -314,6 +315,7 @@ async function resumeClaudeSession({ id, cwd = '', terminal, cursor = null } = {
     vars: { id: sessionId },
     profile: profileForTerminal(cwd, chosen.name, cfg),
     terminal: chosen.entry,
+    retry: cfg.launch,
   });
   if (!command) {
     return { ok: false, reason: 'claudeWt: no terminal named by the request or the config' };
@@ -411,12 +413,18 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
   const { chosen, message } = chooseTerminal(terminal, cfg, 'launchNew');
   if (message) console.error(message);
   const effectiveProfile = profile ?? profileForTerminal(cwd, chosen.name, cfg);
+  // Id новой сессии придумывается здесь, а не claude: с ним (шаблон передаёт
+  // его в `claude --session-id`) окно после обрыва ssh возвращается в эту же
+  // беседу, а не заводит пустую тёзку. Шаблон без {sessionId} id не передаёт —
+  // тогда и переподключения нет (см. planWtLaunch).
   const { command, args } = planLaunchNew({
     launchNew: cfg.launchNew,
     cwd,
     name: sessionName,
+    sessionId: randomUUID(),
     profile: effectiveProfile,
     terminal: chosen.entry,
+    retry: cfg.launch,
   });
   if (!command) {
     return { ok: false, reason: 'claudeWt: no terminal named by the request or the config' };

@@ -233,7 +233,11 @@ claudeWt:
   # Пустой — берутся встроенные (wt и wezterm).
   terminals:
     wt: { command: wt.exe, args: ['-w', '-1'], profileArgs: ['-p', '{profile}'] }
-    wezterm: { command: wezterm-gui.exe, args: ['start', '--'] }
+    # reconnect: true — после обрыва ssh окно пишет «Соединение потеряно. Enter —
+    # переподключиться» и по Enter возвращается в ту же сессию шаблоном launch
+    # (по id). Обёртка — src/claude-wt/ssh-reconnect.js. Без id (шаблон его не
+    # передаёт, как launchInbox) окно открывается без неё. У wt свой Enter.
+    wezterm: { command: wezterm-gui.exe, args: ['start', '--'], reconnect: true }
   # Чьи окна считать окнами терминала. Пусто — WindowsTerminal.exe и
   # wezterm-gui.exe.
   terminalExecutables: []
@@ -290,6 +294,10 @@ claudeWt:
   # chpwd hooks — OTEL_RESOURCE_ATTRIBUTES project= among them — never ran.
   # cwd/name are positional args: quotes nested inside the inner script do
   # not survive Windows Terminal's command line on the way to ssh.
+  # {sessionId} — a fresh uuid made up by the manager for `--session-id`: with
+  # it a terminal with `reconnect: true` brings the window back into the same
+  # conversation after an ssh drop (`launch` by that id). Without it there is
+  # no reconnect: a repeated `claude -n` would start an empty namesake.
   launchNew:
     args:
       - ssh
@@ -297,7 +305,7 @@ claudeWt:
       - popstas@pc-virt.popstas.pro
       - -t
       - >-
-        exec $SHELL -ic 'cd -- "$1" && exec claude -n "$2"' claude-wt '{cwd}' '{name}'
+        exec $SHELL -ic 'cd -- "$1" && exec claude -n "$2" --session-id "$3"' claude-wt '{cwd}' '{name}' '{sessionId}'
   # Session per incoming Telegram file (telegramInbox below). Same shape as
   # launchNew, but the remote side runs a vault script, which in turn calls
   # `claude -n <name> ...`. {cwd}, {script}, {file}, {name} are positional

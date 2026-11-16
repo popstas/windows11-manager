@@ -1,6 +1,15 @@
 /** Pure helpers for opening a Claude project by cwd. No I/O. */
 
+import { fileURLToPath } from 'url';
 import { applyWtProfile } from './wt-profile-helpers.js';
+import { encodeArgv } from './reconnect-helpers.js';
+
+/**
+ * Обёртка переподключения (`ssh-reconnect.js`) и чем её запускать: тем же
+ * node, что собирает команду, — на машине он один, и PATH окна терминала
+ * тогда ни при чём.
+ */
+const RECONNECT_WRAPPER = [process.execPath, fileURLToPath(new URL('./ssh-reconnect.js', import.meta.url))];
 
 /** Last path segment of a Linux cwd; used as `claude -n` display name. */
 function basenameOfCwd(cwd) {
@@ -124,8 +133,17 @@ function profileForTerminal(cwd, terminalName, cfg = {}) {
  * Подстановка идёт по собранному списку, а не по хвосту: `{profile}` стоит в
  * профильных аргументах, `{id}`/`{cwd}`/`{name}` — в хвосте, и разделять два
  * прохода было бы двумя местами, где легко забыть про новую подстановку.
+ *
+ * `retry` — блок шаблона для переподключения (у зовущих — `claudeWt.launch`,
+ * `ccfzf --session {id} --kiosk`). У терминала с `reconnect: true` хвост
+ * тогда уходит обёртке `ssh-reconnect.js` вместе с командой повтора, где
+ * `{id}` — id этой сессии. Повтор только по id: исходная команда при повторе
+ * завела бы пустую тёзку (`claude -n`) или снова отдала первый промпт
+ * (`launchSession`). Поэтому обёртки нет, если id неизвестен или шаблон его не
+ * передаёт удалённой стороне (`{id}` / `{sessionId}`): тогда claude этого id
+ * не знает, и возобновлять по нему нечего.
  */
-function planWtLaunch({ launch, vars = {}, profile, terminal }) {
+function planWtLaunch({ launch, vars = {}, profile, terminal, retry }) {
   const id = vars.id ?? '';
   const safeCwd = escapeForSingleQuoted(vars.cwd ?? '');
   const safeName = escapeForSingleQuoted(vars.name ?? '');
@@ -159,19 +177,30 @@ function planWtLaunch({ launch, vars = {}, profile, terminal }) {
     return { command: launch?.command, args: applyWtProfile(tail.map(substitute), profile) };
   }
   const profileArgs = wanted && Array.isArray(terminal.profileArgs) ? terminal.profileArgs : [];
-  return {
-    command: terminal.command,
-    args: [...(terminal.args ?? []), ...profileArgs, ...tail].map(substitute),
-  };
+  const head = [...(terminal.args ?? []), ...profileArgs].map(substitute);
+  const body = tail.map(substitute);
+  const retryId = vars.id || vars.sessionId || '';
+  const passesId = tail.some(a => /\{(id|sessionId)\}/.test(String(a)));
+  const retryTail = Array.isArray(retry?.args) ? retry.args : [];
+  if (terminal.reconnect && retryId && passesId && retryTail.length && body.length) {
+    const again = retryTail.map(arg => substitute(String(arg).replaceAll('{id}', retryId)));
+    return {
+      command: terminal.command,
+      args: [...head, ...RECONNECT_WRAPPER, '--retry', encodeArgv(again), '--', ...body],
+    };
+  }
+  return { command: terminal.command, args: [...head, ...body] };
 }
 
 /**
  * Build the spawn descriptor for a fresh Claude session in a project folder.
- * `{cwd}` and `{name}` in each arg are replaced with single-quote-safe text
- * (templates should wrap them in `'…'` themselves).
+ * `{cwd}`, `{name}` and `{sessionId}` in each arg are replaced with
+ * single-quote-safe text (templates should wrap them in `'…'` themselves).
+ * `{sessionId}` is the id the caller made up for `claude --session-id`: with
+ * it the window can reconnect to the same conversation (see `retry` above).
  */
-function planLaunchNew({ launchNew, cwd, name, profile, terminal }) {
-  return planWtLaunch({ launch: launchNew, vars: { cwd, name }, profile, terminal });
+function planLaunchNew({ launchNew, cwd, name, sessionId, profile, terminal, retry }) {
+  return planWtLaunch({ launch: launchNew, vars: { cwd, name, sessionId }, profile, terminal, retry });
 }
 
 /**
@@ -230,4 +259,5 @@ export {
   profileForTerminal,
   planWtLaunch,
   planLaunchNew,
+  RECONNECT_WRAPPER,
 };

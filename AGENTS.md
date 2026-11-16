@@ -209,6 +209,26 @@ ccfzf) семью позиционными аргументами, пустые 
 сама обёртка. Пустой шаблон — 500, а не голый терминал. `claude-session-open`
 не тронут.
 
+**Переподключение после обрыва ssh (WezTerm).** У WezTerm нет перезапуска
+завершившейся панели, поэтому у терминала с `reconnect: true` в реестре
+`claudeWt.terminals` (встроенный wezterm — да, wt — нет: у него свой Enter)
+`planWtLaunch` ставит перед ssh-хвостом обёртку
+`src/claude-wt/ssh-reconnect.js` (тем же `process.execPath`). ssh вышел с
+255 / -1 (снаружи 4294967295) — окно пишет «Соединение потеряно. Enter —
+переподключиться»; Enter — команда повтора, любая другая клавиша — выход с 0,
+и панель закрывается. Код 0 закрывает как раньше, прочие коды выходят
+насквозь — WezTerm держит панель с ошибкой. Повтор — всегда шаблон `launch`
+(`ccfzf --session {id} --kiosk`) с id этой сессии: исходная команда
+`claude -n` завела бы пустую тёзку, а `launchSession` снова отдал бы первый
+промпт. Отсюда условие: обёртка ставится, только когда id известен и шаблон
+передаёт его удалённой стороне (`{id}` / `{sessionId}`). `launchNew` для этого
+получает придуманный менеджером uuid в `{sessionId}` (`claude -n … --session-id`);
+`launchInbox` id не передаёт и остаётся без переподключения. Повтор, упавший
+быстрее 15 с (обрыв до первого запроса — транскрипта нет, `ccfzf` ответил
+«not found»), предлагает исходную команду. Повтор едет обёртке одним
+аргументом base64(JSON argv), правила — `nextStep()` в `reconnect-helpers.js`.
+Пикеру (`publishedTerminal`) обёртка не отдаётся: его местные запуски — откат.
+
 ## claude-wt polling budget
 
 Three rules keep the once-a-second daemon off the CPU graph; each was paid for once already and must not be re-learned:

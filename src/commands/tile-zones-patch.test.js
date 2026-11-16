@@ -33,7 +33,7 @@ describe('patchTileZonesText: реальный config.example.yaml', () => {
     // перед `#`), не задета — все они всё ещё присутствуют дословно.
     expect(out).toContain("args: ['ssh', '-A', 'popstas@pc-virt.popstas.pro', '-t', 'ccfzf --session {id} --kiosk']");
     expect(out).toContain("terminals:\n    wt: { command: wt.exe, args: ['-w', '-1'], profileArgs: ['-p', '{profile}'] }");
-    expect(out).toContain("exec $SHELL -ic 'cd -- \"$1\" && exec claude -n \"$2\"' claude-wt '{cwd}' '{name}'");
+    expect(out).toContain("exec $SHELL -ic 'cd -- \"$1\" && exec claude -n \"$2\" --session-id \"$3\"' claude-wt '{cwd}' '{name}' '{sessionId}'");
     expect(out).toContain('monitors:  # часто слетает');
     expect(out).toContain('scalc.exe  # libre office');
     expect(out).toContain('desktop: true  # return the window to its virtual desktop too');

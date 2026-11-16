@@ -7,10 +7,14 @@
  * у Windows Terminal это «в текущее окно», у WezTerm — подкоманда `start` и
  * `--`, без которого его разбор принял бы `ssh` за свою подкоманду.
  * `profileArgs` есть только у того, у кого профили вообще бывают.
+ * `reconnect: true` — хвост запускается через обёртку `ssh-reconnect.js`:
+ * после обрыва ssh окно спрашивает Enter и возвращается в ту же сессию. У
+ * WezTerm перезапуска завершившейся панели нет вовсе; у wt он свой (Enter
+ * после выхода с ошибкой), и обёртка ему не нужна.
  */
 const TERMINAL_DEFAULTS = {
   wt: { command: 'wt.exe', args: ['-w', '-1'], profileArgs: ['-p', '{profile}'] },
-  wezterm: { command: 'wezterm-gui.exe', args: ['start', '--'] },
+  wezterm: { command: 'wezterm-gui.exe', args: ['start', '--'], reconnect: true },
 };
 
 function normalizeEntry(raw) {
@@ -19,6 +23,7 @@ function normalizeEntry(raw) {
   if (!command) return null;
   const entry = { command, args: Array.isArray(raw.args) ? raw.args.map(String) : [] };
   if (Array.isArray(raw.profileArgs)) entry.profileArgs = raw.profileArgs.map(String);
+  if (raw.reconnect === true) entry.reconnect = true;
   return entry;
 }
 

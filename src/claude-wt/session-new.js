@@ -90,6 +90,9 @@ async function openNewSession(body, deps = {}) {
     // проекту head), иначе глобальный.
     profile: profileForTerminal(parsed.profileCwd, chosen.name, cfg),
     terminal: chosen.entry,
+    // sessionId у этой дороги есть всегда (присланный или придуманный), и
+    // обрыв ssh возвращает окно в ту же сессию шаблоном `launch`.
+    retry: cfg.launch,
   });
   if (!command) {
     return { ok: false, status: 500, reason: 'claudeWt: no terminal named by the request or the config' };

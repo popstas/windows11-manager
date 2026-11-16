@@ -48,6 +48,8 @@ function planRestore({ state, launch, sessionIds, resolveProfile, terminal }) {
         vars: { id: sessionId },
         profile: resolve(slot.cwd ?? ''),
         terminal,
+        // Повтор после обрыва ssh — тот же шаблон: он и так по id.
+        retry: launch,
       });
       return {
         sessionId,

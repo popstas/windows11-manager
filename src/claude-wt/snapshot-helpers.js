@@ -171,6 +171,7 @@ function planSnapshotRestore({ snapshot, openSessionIds, sessionIds, launch, res
         vars: { id: s.id },
         profile: resolve(s.cwd ?? ''),
         terminal,
+        retry: launch,
       });
       return {
         sessionId: s.id,
