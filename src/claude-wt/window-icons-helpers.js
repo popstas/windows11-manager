@@ -6,7 +6,18 @@
  * карта профилей — только в живом конфиге). Иконку ставит служба по
  * hwnd (WM_SETICON) окнам и wt, и WezTerm: src/mqtt/window-icons.js.
  */
+import { fileURLToPath } from 'node:url';
 import { profileForTerminal } from './project-helpers.js';
+
+// Корень репозитория — от него разрешаются относительные пути иконок
+// (`icons/crown.ico`). Один на службу (src/mqtt/window-icons.js) и демон
+// (иконки проектов в файле окон): разойдись они, одна корона приехала бы
+// читателю двумя путями. Буква диска — заглавной: fileURLToPath отдаёт её
+// такой, какой её назвал запустивший процесс (`c:\projects\...` у трея), а
+// путь уезжает в файл окон.
+const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url))
+  .replace(/[\\/]+$/, '')
+  .replace(/^([a-z]):/, (_, d) => `${d.toUpperCase()}:`);
 
 const BUILTIN_HEAD_ICON = 'icons/crown.ico';
 
@@ -102,4 +113,38 @@ function planIcons(applied, wanted, alive) {
   return { ops, next };
 }
 
-export { BUILTIN_HEAD_ICON, iconFor, resolveIconPath, iconsSidecarPath, publishedIcons, headsDirFor, planIcons };
+/**
+ * Иконки проектов для строк без окна: cwd → абсолютный путь.
+ *
+ * Читатель (ccfzf-picker) рисует иконку и у сессии из истории, и у строки
+ * проекта — а окна там нет, и в записи окна её взять неоткуда. Решение то же,
+ * что у окна не-head сессии этого каталога (`iconFor` без меток head): иначе
+ * одна и та же сессия выглядела бы в списке по-разному с окном и без него.
+ * Проект без иконки в карту не попадает.
+ */
+function projectIcons(cfg, repoRoot) {
+  const out = {};
+  // Выключены иконки окнам — нет и строкам без окна: служба тогда тоже
+  // публикует пустоту (`{}` в window-icons.json).
+  if (cfg.windowIcons?.enabled === false) return out;
+  for (const p of cfg.projects ?? []) {
+    if (typeof p?.cwd !== 'string' || !p.cwd) continue;
+    const icon = resolveIconPath(iconFor({ sessionId: '', cwd: p.cwd }, { heads: null, cfg }), repoRoot);
+    if (icon) out[p.cwd] = icon;
+  }
+  return out;
+}
+
+/**
+ * Корона head абсолютным путём — для закрытой head-сессии в истории читателя.
+ * Та же, что `iconFor` ставит окну head.
+ */
+function headIcon(cfg, repoRoot) {
+  if (cfg.windowIcons?.enabled === false) return '';
+  return resolveIconPath(cfg.windowIcons?.head || BUILTIN_HEAD_ICON, repoRoot);
+}
+
+export {
+  REPO_ROOT, BUILTIN_HEAD_ICON, iconFor, resolveIconPath, iconsSidecarPath, publishedIcons, headsDirFor, planIcons,
+  projectIcons, headIcon,
+};

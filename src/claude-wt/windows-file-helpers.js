@@ -38,7 +38,7 @@ const WINDOWS_FILE_HEARTBEAT_MS = 30_000;
  */
 function buildWindowsFile({
   windows, slots, host, pid, nowMs, snapshots, projects, httpPort, httpHost, layout = null, headZones = {},
-  icons = {},
+  icons = {}, projectIcons = {}, headIcon = '',
 }) {
   const out = {};
   for (const w of windows ?? []) {
@@ -119,13 +119,28 @@ function buildWindowsFile({
     //
     // `profile` не едет намеренно: это знание про Windows Terminal на этой
     // машине, читателю бесполезное.
+    //
+    // Иконка проекта (`projectIcons`, cwd → абсолютный путь) едет туда же:
+    // строкам без окна — истории и проектам пикера — взять её больше неоткуда.
+    // Проект с иконкой, но без хоткея, тоже едет — без ключа `hotkey`, а не с
+    // пустым: агрегатор прежней версии такую запись выбрасывает молча, то есть
+    // новое поле старому читателю ничего не ломает.
     projects: (projects ?? [])
-      .filter(p => typeof p?.hotkey === 'string' && p.hotkey.trim())
       .map(p => ({
+        p,
+        hotkey: typeof p?.hotkey === 'string' ? p.hotkey.trim() : '',
+        icon: typeof p?.cwd === 'string' && typeof projectIcons?.[p.cwd] === 'string' ? projectIcons[p.cwd] : '',
+      }))
+      .filter(({ hotkey, icon }) => hotkey || icon)
+      .map(({ p, hotkey, icon }) => ({
         cwd: typeof p.cwd === 'string' ? p.cwd : '',
         name: typeof p.name === 'string' ? p.name : '',
-        hotkey: p.hotkey.trim(),
+        ...(hotkey ? { hotkey } : {}),
+        ...(icon ? { icon } : {}),
       })),
+    // Корона head абсолютным путём — для закрытой head-сессии в истории
+    // читателя. Ключа нет, когда пути нет: то же правило, что у `http`.
+    ...(typeof headIcon === 'string' && headIcon ? { headIcon } : {}),
     ...(http ? { http } : {}),
     // Раскладка, по которой посчитаны zone/slot выше. Ключ на месте всегда:
     // пустая карта значит «основные зоны здесь не заданы».
@@ -176,7 +191,7 @@ function trimSnapshot(snap) {
  * едут. Без этого запись снимка доезжала бы до читателя только
  * сердцебиением, до тридцати секунд.
  */
-function windowsFingerprint(windows, snapshots, projects) {
+function windowsFingerprint(windows, snapshots, projects, headIcon = '') {
   const win = Object.entries(windows ?? {})
     // Монитор, зона и место — по той же причине, что и свёрнутость:
     // перетащенное в другую зону окно иначе доезжало бы до head только
@@ -196,10 +211,11 @@ function windowsFingerprint(windows, snapshots, projects) {
     .join('');
   // Хоткеи входят по содержимому целиком: их мало, а смена клавиши в конфиге
   // обязана доехать до читателя тем же тиком, а не сердцебиением.
+  // Иконки — так же: правка иконки в настройках не должна ждать сердцебиения.
   const keys = (projects ?? [])
-    .map(p => `${p?.cwd}\u0000${p?.hotkey}`)
+    .map(p => `${p?.cwd}\u0000${p?.hotkey}\u0000${p?.icon ?? ''}`)
     .join('\u0001');
-  const tail = `${snaps}${keys ? `\u0002${keys}` : ''}`;
+  const tail = `${snaps}${keys ? `\u0002${keys}` : ''}${headIcon ? `\u0003${headIcon}` : ''}`;
   return tail ? `${win}${tail}` : win;
 }
 

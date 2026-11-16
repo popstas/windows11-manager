@@ -351,6 +351,46 @@ describe('buildWindowsFile — projects', () => {
   });
 });
 
+describe('buildWindowsFile — иконки проектов', () => {
+  // Строкам без окна (история и проекты пикера) иконку брать больше неоткуда:
+  // в записи окна она есть только у открытого.
+  it('едет полем icon, и проект без хоткея, но с иконкой, тоже едет', () => {
+    const out = buildWindowsFile({
+      windows: [], slots: {}, host: 'pc', pid: 42, nowMs: 0,
+      projects: [
+        { name: 'home', cwd: '/p/home', hotkey: 'Ctrl+F11' },
+        { name: 'plain', cwd: '/p/plain' },
+        { name: 'none', cwd: '/p/none' },
+      ],
+      projectIcons: { '/p/home': 'C:\\ico\\home.ico', '/p/plain': 'C:\\ico\\plain.ico' },
+    });
+    expect(out.projects).toEqual([
+      { cwd: '/p/home', name: 'home', hotkey: 'Ctrl+F11', icon: 'C:\\ico\\home.ico' },
+      // Без ключа hotkey, а не с пустым: агрегатор прежней версии выбрасывает
+      // запись без хоткея — то есть новое поле старому читателю ничего не ломает.
+      { cwd: '/p/plain', name: 'plain', icon: 'C:\\ico\\plain.ico' },
+    ]);
+  });
+
+  it('корона head — верхним полем headIcon, и только когда она есть', () => {
+    const base = { windows: [], slots: {}, host: 'pc', pid: 1, nowMs: 0 };
+    expect(buildWindowsFile({ ...base, headIcon: 'C:\\repo\\icons\\crown.ico' }).headIcon)
+      .toBe('C:\\repo\\icons\\crown.ico');
+    expect('headIcon' in buildWindowsFile(base)).toBe(false);
+  });
+});
+
+describe('windowsFingerprint — иконки проектов', () => {
+  // Правка иконки в настройках не должна ждать сердцебиения.
+  it('замечает сменённую иконку проекта и короны', () => {
+    const win = { one: { desktop: 1, title: 'x', focusedAt: 0 } };
+    const a = [{ cwd: '/p/home', name: 'home', icon: 'C:\\a.ico' }];
+    const b = [{ cwd: '/p/home', name: 'home', icon: 'C:\\b.ico' }];
+    expect(windowsFingerprint(win, [], a)).not.toBe(windowsFingerprint(win, [], b));
+    expect(windowsFingerprint(win, [], a, 'C:\\crown.ico')).not.toBe(windowsFingerprint(win, [], a, 'C:\\king.ico'));
+  });
+});
+
 describe('windowsFingerprint — projects', () => {
   // Без этого смена хоткея в конфиге доезжала бы до читателя только
   // сердцебиением — до тридцати секунд, — а если расклад окон при этом не

@@ -46,7 +46,7 @@ import { activeAgent } from './view-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { snapshotTick, resetSnapshotter, currentSnapshots } from './snapshotter.js';
 import { resolveHeadLayout } from './head-zones.js';
-import { iconsSidecarPath } from './window-icons-helpers.js';
+import { REPO_ROOT, iconsSidecarPath, projectIcons, headIcon } from './window-icons-helpers.js';
 
 function getClaudeWtConfig() {
   return mergeClaudeWtConfig(getConfig().claudeWt);
@@ -400,6 +400,10 @@ function publishWindows(cfg, windows, slots) {
     layout, headZones: cfg.headZones,
     icons: readWindowIcons(cfg.statePath),
     projects: claudeWtProjects(),
+    // Иконки строк без окна — истории и проектов у читателя. Решаются здесь,
+    // а не службой: метки head им не нужны, а конфиг у демона свой и тот же.
+    projectIcons: projectIcons(cfg, REPO_ROOT),
+    headIcon: headIcon(cfg, REPO_ROOT),
     // Ключ верхнего уровня, не внутри claudeWt: вложенный молча ничего не
     // сделает — та же семья, что placeWindowOnOpen и publishStats. `cfg` тут —
     // подобъект claudeWt (см. getClaudeWtConfig), поэтому порт берётся у
@@ -433,7 +437,7 @@ function publishWindows(cfg, windows, slots) {
       console.error(`[claude-wt] signal write failed: ${e.message}`);
     }
   }
-  const fingerprint = windowsFingerprint(payload.windows, payload.snapshots, payload.projects);
+  const fingerprint = windowsFingerprint(payload.windows, payload.snapshots, payload.projects, payload.headIcon);
   const due = shouldWriteWindowsFile({
     fingerprint, lastFingerprint: lastWindowsFingerprint, lastWriteMs: lastWindowsWrite, nowMs,
   });
