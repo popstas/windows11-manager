@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   BUILTIN_HEAD_ICON, resolveIconPath, iconFor, headsDirFor, planIcons, iconsSidecarPath, publishedIcons,
+  projectIcons, headIcon,
 } from './window-icons-helpers.js';
 import { mergeClaudeWtConfig } from './daemon-helpers.js';
 
@@ -145,5 +146,54 @@ describe('publishedIcons', () => {
     expect(publishedIcons(sessions, wanted, 'C:\\repo')).toEqual({
       h: 'C:\\repo\\icons\\crown.ico', c: 'C:\\ico\\w11m.ico', n: '',
     });
+  });
+});
+
+describe('projectIcons', () => {
+  // Строке без окна (история, проекты пикера) иконку решают так же, как окну
+  // не-head сессии того же каталога: иначе одна сессия выглядела бы в списке
+  // по-разному с окном и без него.
+  it('cwd → абсолютный путь, как у окна сессии того же каталога', () => {
+    const icons = projectIcons(cfg, 'C:\\repo');
+    expect(icons).toEqual({
+      '/p/home': 'C:\\ico\\me.ico',
+      '/p/exp': 'C:\\ico\\exp.ico',
+      '/p/own': 'D:\\pics\\own.png',
+      // '/p/bare' — явно пустой профиль: и окну этого каталога иконки нет.
+    });
+  });
+
+  it('относительный путь иконки — от корня репозитория', () => {
+    const own = mergeClaudeWtConfig({ projects: [{ name: 'a', cwd: '/p/a', icon: 'icons/a.ico' }] });
+    expect(projectIcons(own, 'C:\\repo')).toEqual({ '/p/a': 'C:\\repo\\icons\\a.ico' });
+  });
+
+  it('проект без иконки и без профиля с иконкой в карту не попадает', () => {
+    const bare = mergeClaudeWtConfig({ projects: [{ name: 'a', cwd: '/p/a' }] });
+    expect(projectIcons(bare, 'C:\\repo')).toEqual({});
+  });
+});
+
+describe('выключенные иконки окон', () => {
+  // Человек выключил иконки окнам — у строк без окна их тоже нет: иначе
+  // история рисовала бы то, чего на экране нет ни у одного окна.
+  it('ни иконок проектов, ни короны', () => {
+    const off = mergeClaudeWtConfig({
+      windowIcons: { enabled: false },
+      projects: [{ name: 'a', cwd: '/p/a', icon: 'C:\\a.ico' }],
+    });
+    expect(projectIcons(off, 'C:\\repo')).toEqual({});
+    expect(headIcon(off, 'C:\\repo')).toBe('');
+  });
+});
+
+describe('headIcon', () => {
+  it('встроенная корона — от корня репозитория', () => {
+    expect(headIcon(mergeClaudeWtConfig({}), 'C:\\repo')).toBe('C:\\repo\\icons\\crown.ico');
+  });
+
+  it('своя корона из конфига — как есть', () => {
+    const own = mergeClaudeWtConfig({ windowIcons: { head: 'C:\\icons\\king.ico' } });
+    expect(headIcon(own, 'C:\\repo')).toBe('C:\\icons\\king.ico');
   });
 });
