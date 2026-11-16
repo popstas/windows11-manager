@@ -452,7 +452,13 @@ Napi::Boolean setTaskbarProgress (const Napi::CallbackInfo& info) {
 // the window is activated; off takes the light down. One flash cycle without
 // FLASHW_TIMER*: after the cycle Windows leaves the button highlighted, steady,
 // not blinking (checked on Windows 11, nb, 2026-11-16 — Stas asked for a steady
-// light instead of blinking). FLASHW_STOP clears it without activation.
+// light instead of blinking).
+//
+// A bare FLASHW_STOP does NOT clear that leftover highlight: it only stops a
+// flash in progress, and after the cycle there is none (nb, 2026-11-16 — the
+// button stayed orange for minutes). So off first starts a timer flash and
+// stops it at once: stopping a running flash restores the button. Back to back,
+// no pause needed (checked the same day).
 Napi::Boolean flashWindow (const Napi::CallbackInfo& info) {
     Napi::Env env{ info.Env () };
 
@@ -463,11 +469,19 @@ Napi::Boolean flashWindow (const Napi::CallbackInfo& info) {
     FLASHWINFO fi{};
     fi.cbSize = sizeof (FLASHWINFO);
     fi.hwnd = handle;
-    fi.dwFlags = on ? FLASHW_TRAY : FLASHW_STOP;
-    fi.uCount = on ? 1 : 0;
     fi.dwTimeout = 0;
     // Returns the previous flash state, not success: the call has no error.
-    FlashWindowEx (&fi);
+    if (on) {
+        fi.dwFlags = FLASHW_TRAY;
+        fi.uCount = 1;
+        FlashWindowEx (&fi);
+    } else {
+        fi.dwFlags = FLASHW_TRAY | FLASHW_TIMER;
+        fi.uCount = 0;
+        FlashWindowEx (&fi);
+        fi.dwFlags = FLASHW_STOP;
+        FlashWindowEx (&fi);
+    }
     return Napi::Boolean::New (env, true);
 }
 
