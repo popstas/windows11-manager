@@ -3,6 +3,8 @@
  * жёлтая с миганием, пока ждёт ответа, — как wt рисует сам по OSC 9;4; и
  * ровный оранжевый без полосы на законченном ходе, пока окно не смотрели, —
  * как wt на звонке. «Смотрели» — окно выходило вперёд (focusedAt демона).
+ * Ход закончен, а фоновая команда агента идёт (`shell` из дампа ccfzf) —
+ * зелёная полоса на 2% поверх того же правила мигания.
  * Отметки человека из ccfzf-picker — `dismiss()` (Mark seen, команда
  * `claude-session-seen`) гасит, `markUnread()` (Mark unread,
  * `claude-session-unread`) зажигает — живут здесь, в памяти службы, потому что
@@ -98,7 +100,7 @@ function startTaskbarState({
       const agents = windows.length ? winMan.claudeWtWindowAgents(windows) : [];
       marks = pruneMarks(marks, agents);
       const markOf = a => (markHolds(marks.get(a.sessionId), a.agentUpdated) ? marks.get(a.sessionId).kind : null);
-      const wanted = new Map(agents.map(a => [a.id, taskbarLook(a.agentState, Boolean(a.agentSeen), markOf(a))]));
+      const wanted = new Map(agents.map(a => [a.id, taskbarLook(a.agentState, Boolean(a.agentSeen), markOf(a), a.shell === true)]));
       const { ops, next } = planTaskbar(applied, wanted, present);
       apply(ops);
       applied = next;

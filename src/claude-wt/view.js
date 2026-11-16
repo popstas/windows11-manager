@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { getWindows } from '../windows.js';
 import { getMons } from '../monitors.js';
 import { readState } from './state.js';
-import { loadSessionIndex, loadBackgroundAgents } from './sessions.js';
+import { loadSessionIndex, loadBackgroundAgents, loadShellSessions } from './sessions.js';
 import { resolveSession } from './tracker-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
@@ -116,21 +116,24 @@ function claudeWtWindowSessions(windows) {
 }
 
 /**
- * То же плюс состояние агента: [{id, title}] → [{id, sessionId, cwd, agentState, agentSeen, agentUpdated}].
+ * То же плюс состояние агента: [{id, title}] → [{id, sessionId, cwd, agentState, agentSeen, agentUpdated, shell}].
  * С сети читаются state.json только переданных окон (кэш 3 с у loadProgress).
  * `agentSeen` — окно выходило вперёд после последней записи агента
- * (`seenSinceUpdate`, тот же признак, что у пикера и панели).
+ * (`seenSinceUpdate`, тот же признак, что у пикера и панели). `shell` — ход
+ * закончен, а фоновая команда идёт (`loadShellSessions`, из дампа ccfzf).
  */
 function claudeWtWindowAgents(windows) {
   const resolved = claudeWtWindowSessions(windows);
   if (!resolved.length) return [];
   const cfg = getClaudeWtConfig();
   const progress = loadProgress(cfg.progressDir, resolved.map(r => r.sessionId));
+  const shells = loadShellSessions(cfg.sessionsFile, cfg.progressDir);
   return resolved.map(r => ({
     ...r,
     agentState: progress[r.sessionId]?.state ?? null,
     agentSeen: seenSinceUpdate({ focusedAt: r.focusedAt }, progress[r.sessionId]),
     agentUpdated: progress[r.sessionId]?.updated ?? 0,
+    shell: shells.has(r.sessionId),
   }));
 }
 

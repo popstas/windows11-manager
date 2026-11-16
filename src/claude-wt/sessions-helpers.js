@@ -180,4 +180,20 @@ function indexBackgroundAgents(dump) {
   return index;
 }
 
-export { compareSessions, byActivityThen, stampOf, hasHookStamp, indexSessions, indexBackgroundAgents };
+/**
+ * Id сессий, у которых ход закончен, а фоновая команда агента ещё идёт.
+ *
+ * Признак ставит ccfzf (`shell` в дампе): это то, что Claude Code сам пишет в
+ * свой реестр процесса статусом `shell` вместо `idle`. Только строгое `true` и
+ * только у живой сессии: ccfzf прошлой версии поля не пишет вовсе, и такой
+ * дамп обязан читаться как прежде — без единой такой сессии.
+ */
+function indexShellSessions(dump) {
+  const sessions = Array.isArray(dump?.sessions) ? dump.sessions : [];
+  return new Set(sessions.filter(s => s?.id && s.live === true && s.shell === true).map(s => s.id));
+}
+
+export {
+  compareSessions, byActivityThen, stampOf, hasHookStamp, indexSessions, indexBackgroundAgents,
+  indexShellSessions,
+};

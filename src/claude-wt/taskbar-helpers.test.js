@@ -28,6 +28,26 @@ describe('taskbarLook', () => {
     expect(taskbarLook('review', true)).toEqual({ state: 'none', value: 0, flash: false });
   });
 
+  it('фоновая команда при законченном ходе — зелёная полоса на 2%, мигание как без неё', () => {
+    expect(taskbarLook('idle', false, null, true)).toEqual({ state: 'normal', value: 2, flash: null });
+    expect(taskbarLook('review', false, null, true)).toEqual({ state: 'normal', value: 2, flash: true });
+    expect(taskbarLook('review', true, null, true)).toEqual({ state: 'normal', value: 2, flash: false });
+    expect(taskbarLook('review', true, 'unread', true)).toEqual({ state: 'normal', value: 2, flash: true });
+    expect(taskbarLook('idle', false, 'seen', true)).toEqual({ state: 'normal', value: 2, flash: false });
+  });
+
+  it('работа и вопрос фоновой командой не перекрашиваются', () => {
+    expect(taskbarLook('active', false, null, true)).toEqual(taskbarLook('active'));
+    expect(taskbarLook('question', false, null, true)).toEqual(taskbarLook('question'));
+    expect(taskbarLook(null, false, null, true)).toEqual({ state: 'none', value: 0, flash: false });
+  });
+
+  it('конец фоновой команды снимает полосу, мигание сохраняется', () => {
+    const shell = taskbarLook('review', false, null, true);
+    const { ops } = planTaskbar(new Map([[1, shell]]), new Map([[1, taskbarLook('review')]]), new Set([1]));
+    expect(ops).toEqual([{ id: 1, state: 'none', value: 0, flash: null }]);
+  });
+
   it('unknown — бегущая полоса', () => {
     expect(taskbarLook('unknown')).toEqual({ state: 'indeterminate', value: 0, flash: false });
   });

@@ -1,8 +1,10 @@
 import fs from 'node:fs';
-import { indexSessions, indexBackgroundAgents, hasHookStamp } from './sessions-helpers.js';
+import { indexSessions, indexBackgroundAgents, indexShellSessions, hasHookStamp } from './sessions-helpers.js';
 import { progressStamp, activityAt } from './progress.js';
 
-let cache = { path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {}, agents: {}, usesHookStamps: true };
+let cache = {
+  path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {}, agents: {}, shells: new Set(), usesHookStamps: true,
+};
 let lastWarnedAt = 0;
 const WARN_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -102,13 +104,13 @@ function dumpNeedsHookStamps(dump) {
  * Either way the tracker degrades to its own title history rather than throwing.
  */
 function loadDump(filePath, progressDir = '', nowMs = Date.now(), wanted = false) {
-  if (!filePath) return { index: {}, agents: {} };
+  if (!filePath) return { index: {}, agents: {}, shells: new Set() };
   let stat;
   try {
     stat = fs.statSync(filePath);
   } catch (e) {
     warnThrottled(`session dump unreachable (${filePath}): ${e.message}`);
-    return cache.path === filePath ? cache : { index: {}, agents: {} };
+    return cache.path === filePath ? cache : { index: {}, agents: {}, shells: new Set() };
   }
   // Индекс зависит не только от дампа: у спорных заголовков победителя выбирают
   // отметки хуков, а они меняются независимо. Каталог состояний меняет mtime
@@ -136,14 +138,14 @@ function loadDump(filePath, progressDir = '', nowMs = Date.now(), wanted = false
     );
     cache = {
       path: filePath, mtimeMs: stat.mtimeMs, stamp, readAt: nowMs,
-      index, agents: indexBackgroundAgents(dump),
+      index, agents: indexBackgroundAgents(dump), shells: indexShellSessions(dump),
       usesHookStamps: dumpNeedsHookStamps(dump),
     };
   } catch (e) {
     warnThrottled(`session dump unreadable (${filePath}): ${e.message}`);
     cache = {
       path: filePath, mtimeMs: stat.mtimeMs, stamp, readAt: nowMs, index: {}, agents: {},
-      usesHookStamps: true,
+      shells: new Set(), usesHookStamps: true,
     };
   }
   return cache;
@@ -162,10 +164,21 @@ function loadBackgroundAgents(filePath, progressDir = '', nowMs = Date.now()) {
   return loadDump(filePath, progressDir, nowMs).agents;
 }
 
-/** Drop the cached dump so the next loadSessionIndex re-reads from disk. */
-function invalidateSessionIndex() {
-  cache = { path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {}, agents: {}, usesHookStamps: true };
+/**
+ * Сессии с фоновой командой при законченном ходе (`shell` в дампе) — для
+ * кнопки окна на панели задач. Из того же дампа и того же кэша, что индекс:
+ * отставание то же — дамп плюс MAX_AGE_MS.
+ */
+function loadShellSessions(filePath, progressDir = '', nowMs = Date.now()) {
+  return loadDump(filePath, progressDir, nowMs).shells;
 }
 
-export { indexSessions, indexBackgroundAgents, compareSessions } from './sessions-helpers.js';
-export { loadSessionIndex, loadBackgroundAgents, invalidateSessionIndex };
+/** Drop the cached dump so the next loadSessionIndex re-reads from disk. */
+function invalidateSessionIndex() {
+  cache = {
+    path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {}, agents: {}, shells: new Set(), usesHookStamps: true,
+  };
+}
+
+export { indexSessions, indexBackgroundAgents, indexShellSessions, compareSessions } from './sessions-helpers.js';
+export { loadSessionIndex, loadBackgroundAgents, loadShellSessions, invalidateSessionIndex };

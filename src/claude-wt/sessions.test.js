@@ -22,7 +22,7 @@ vi.mock('./progress.js', async (importOriginal) => ({
   progressStamp,
 }));
 
-import { loadSessionIndex, invalidateSessionIndex } from './sessions.js';
+import { loadSessionIndex, loadShellSessions, invalidateSessionIndex } from './sessions.js';
 
 // loadSessionIndex keeps its cache at module scope, keyed by path. Every test
 // therefore writes to its own file inside the temp dir, so nothing leaks from
@@ -332,5 +332,21 @@ describe('loadSessionIndex и отметка каталога состояний
     expect(loadSessionIndex(p, '/progress', base + 1000).home)
       .toEqual({ id: 's0', cwd: '/p0', title: 'home', ambiguous: false });
     expect(progressStamp).toHaveBeenCalled();
+  });
+});
+
+describe('loadShellSessions', () => {
+  it('сессии с фоновой командой из того же дампа', () => {
+    const p = freshPath();
+    writeDump(p, { sessions: [
+      { id: 'a', title: 'x', cwd: '/x', live: true, mtime: 1, shell: true },
+      { id: 'b', title: 'y', cwd: '/y', live: true, mtime: 2, shell: false },
+    ] }, T0);
+    expect([...loadShellSessions(p, '', 1)]).toEqual(['a']);
+  });
+
+  it('нет файла — пусто, а не падение', () => {
+    expect(loadShellSessions(path.join(dir, 'нет.json'), '', 1).size).toBe(0);
+    expect(loadShellSessions('', '', 1).size).toBe(0);
   });
 });
