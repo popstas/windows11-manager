@@ -85,6 +85,9 @@ config.color_scheme = DEFAULT_SCHEME
 config.font = wezterm.font 'DejaVuSansM Nerd Font Mono'
 config.font_size = 14
 config.audible_bell = 'Disabled'
+-- Немигающая черта между знаками, как в wt (Стас 16.11). Дефолтный блок
+-- закрашивал символ под собой цветом курсора схемы (у Argonaut красный).
+config.default_cursor_style = 'SteadyBar'
 -- Модель «одна сессия = одно окно»: вкладок нет, полоса вкладок не нужна.
 config.hide_tab_bar_if_only_one_tab = true
 -- Окно с упавшим ssh остаётся открытым, видно ошибку; w11m и пикер закрывают
