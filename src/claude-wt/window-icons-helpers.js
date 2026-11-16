@@ -1,10 +1,17 @@
 /**
  * Какую иконку поставить окну сессии claude. Без I/O.
  *
- * Решения Стаса 15.11: окно head — корона, окно сессии — иконка её проекта,
- * а без своей — иконка профиля wt проекта (как у профилей Windows Terminal;
- * карта профилей — только в живом конфиге). Иконку ставит служба по
- * hwnd (WM_SETICON) окнам и wt, и WezTerm: src/mqtt/window-icons.js.
+ * Решения Стаса 15.11: окно сессии — иконка её проекта, а без своей — иконка
+ * профиля wt проекта (как у профилей Windows Terminal; карта профилей — только
+ * в живом конфиге). Иконку ставит служба по hwnd (WM_SETICON) окнам и wt, и
+ * WezTerm: src/mqtt/window-icons.js.
+ *
+ * Корона head (решение Стаса 16.11) — не вместо иконки, а значком в правом
+ * нижнем углу кнопки на панели задач (ITaskbarList3::SetOverlayIcon), главная
+ * иконка у head та же, что у обычной сессии его проекта. Прежнее поведение —
+ * корона вместо иконки — остаётся режимом `windowIcons.headMode: icon`.
+ * Значок виден только на кнопке панели задач (не в заголовке и не в Alt+Tab)
+ * и только при включённых в Windows значках на кнопках панели задач.
  */
 import { fileURLToPath } from 'node:url';
 import { profileForTerminal } from './project-helpers.js';
@@ -19,21 +26,43 @@ const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url))
   .replace(/[\\/]+$/, '')
   .replace(/^([a-z]):/, (_, d) => `${d.toUpperCase()}:`);
 
+// Корона в 16 px читается (кадр 16x16 есть в файле), поэтому значку
+// отдельный файл не нужен: служба грузит из того же .ico маленький кадр.
 const BUILTIN_HEAD_ICON = 'icons/crown.ico';
 
+// Как окну head показывать корону: значком поверх иконки проекта (умолчание)
+// или вместо неё.
+const HEAD_MODES = ['badge', 'icon'];
+
+function headModeOf(cfg) {
+  const mode = cfg.windowIcons?.headMode;
+  return HEAD_MODES.includes(mode) ? mode : 'badge';
+}
+
 /**
- * Путь иконки для окна сессии; пустая строка — иконку не трогать.
+ * Иконка проекта по каталогу; пустая строка — иконку не трогать.
  *
  * Профиль берётся как у wt (`profileForTerminal(cwd, 'wt')`): иконки повторяют
  * профили wt, и окно WezTerm того же проекта должно выглядеть так же.
  */
-function iconFor({ sessionId, cwd }, { heads, cfg }) {
-  const icons = cfg.windowIcons ?? {};
-  if (sessionId && heads?.has(sessionId)) return icons.head || BUILTIN_HEAD_ICON;
+function projectIconFor(cwd, cfg) {
   const project = (cfg.projects ?? []).find(p => p.cwd === cwd);
   if (project?.icon) return project.icon;
   const profile = profileForTerminal(cwd, 'wt', cfg);
-  return (profile && icons.profiles?.[profile]) || '';
+  return (profile && cfg.windowIcons?.profiles?.[profile]) || '';
+}
+
+/**
+ * Что поставить окну сессии: `{icon, overlay}` — главная иконка (WM_SETICON)
+ * и значок на кнопке панели задач; пустая строка — не трогать / без значка.
+ * Значок бывает только у head в режиме `badge`.
+ */
+function iconFor({ sessionId, cwd }, { heads, cfg }) {
+  const isHead = Boolean(sessionId && heads?.has(sessionId));
+  if (!isHead) return { icon: projectIconFor(cwd, cfg), overlay: '' };
+  const crown = cfg.windowIcons?.head || BUILTIN_HEAD_ICON;
+  if (headModeOf(cfg) === 'icon') return { icon: crown, overlay: '' };
+  return { icon: projectIconFor(cwd, cfg), overlay: crown };
 }
 
 const ABSOLUTE = /^(?:[a-zA-Z]:[\\/]|[\\/])/;
@@ -66,14 +95,17 @@ function iconsSidecarPath(statePath) {
 }
 
 /**
- * Что публиковать: иконка, которую служба окну ставит или поставила бы, по
- * sessionId, абсолютным путём. Окно без иконки — пустая строка.
+ * Что публиковать: главная иконка окна (не значок) по sessionId, абсолютным
+ * путём. Окно без иконки — пустая строка. `wanted` — hwnd → `{icon, overlay}`
+ * из `iconFor`. Решение Стаса 16.11: в пикере у head иконка проекта, корона —
+ * только значком на панели задач; в режиме icon иконка окна head и есть
+ * корона, и читатель видит её, как раньше.
  */
 function publishedIcons(sessions, wanted, repoRoot) {
   const out = {};
   for (const s of sessions ?? []) {
     if (!s?.sessionId) continue;
-    out[s.sessionId] = resolveIconPath(wanted.get(s.id) ?? '', repoRoot);
+    out[s.sessionId] = resolveIconPath(wanted.get(s.id)?.icon ?? '', repoRoot);
   }
   return out;
 }
@@ -92,23 +124,31 @@ function headsDirFor(cfg) {
   return `${file.slice(0, slash)}/.ccfzf/heads`;
 }
 
+const KINDS = ['icon', 'overlay'];
+
 /**
- * Что поменять, чтобы из `applied` стало `wanted` (hwnd → путь, '' — без
- * иконки). Снимается только то, что ставили мы: чужое окно с пустым путём
- * никто не трогает. Закрытое окно (нет в `alive`) забывается без вызова.
- * Операция {id, path}; path '' — снять иконку.
+ * Что поменять, чтобы из `applied` стало `wanted` (hwnd → `{icon, overlay}`,
+ * '' — без иконки / без значка). Иконка и значок планируются порознь: смена
+ * одного не трогает другой. Снимается только то, что ставили мы: чужое окно с
+ * пустым путём никто не трогает. Закрытое окно (нет в `alive`) забывается без
+ * вызова. Операция {id, kind, path}; kind 'icon' | 'overlay', path '' — снять.
  */
 function planIcons(applied, wanted, alive) {
   const ops = [];
   const next = new Map();
-  for (const [id, path] of wanted) {
-    const prev = applied.get(id) ?? '';
-    if (prev !== path) ops.push({ id, path });
-    if (path) next.set(id, path);
+  for (const [id, look] of wanted) {
+    const prev = applied.get(id) ?? {};
+    const kept = {};
+    for (const kind of KINDS) {
+      const path = look?.[kind] ?? '';
+      if ((prev[kind] ?? '') !== path) ops.push({ id, kind, path });
+      if (path) kept[kind] = path;
+    }
+    if (Object.keys(kept).length) next.set(id, kept);
   }
-  for (const [id] of applied) {
+  for (const [id, prev] of applied) {
     if (wanted.has(id) || !alive.has(id)) continue;
-    ops.push({ id, path: '' });
+    for (const kind of KINDS) if (prev[kind]) ops.push({ id, kind, path: '' });
   }
   return { ops, next };
 }
@@ -118,7 +158,7 @@ function planIcons(applied, wanted, alive) {
  *
  * Читатель (ccfzf-picker) рисует иконку и у сессии из истории, и у строки
  * проекта — а окна там нет, и в записи окна её взять неоткуда. Решение то же,
- * что у окна не-head сессии этого каталога (`iconFor` без меток head): иначе
+ * что у окна не-head сессии этого каталога (`projectIconFor`): иначе
  * одна и та же сессия выглядела бы в списке по-разному с окном и без него.
  * Проект без иконки в карту не попадает.
  */
@@ -129,7 +169,7 @@ function projectIcons(cfg, repoRoot) {
   if (cfg.windowIcons?.enabled === false) return out;
   for (const p of cfg.projects ?? []) {
     if (typeof p?.cwd !== 'string' || !p.cwd) continue;
-    const icon = resolveIconPath(iconFor({ sessionId: '', cwd: p.cwd }, { heads: null, cfg }), repoRoot);
+    const icon = resolveIconPath(projectIconFor(p.cwd, cfg), repoRoot);
     if (icon) out[p.cwd] = icon;
   }
   return out;
@@ -137,14 +177,16 @@ function projectIcons(cfg, repoRoot) {
 
 /**
  * Корона head абсолютным путём — для закрытой head-сессии в истории читателя.
- * Та же, что `iconFor` ставит окну head.
+ * Только в режиме icon, где корона и есть иконка окна head; в режиме
+ * badge пусто — читатель берёт иконку проекта по каталогу, как у окна.
  */
 function headIcon(cfg, repoRoot) {
   if (cfg.windowIcons?.enabled === false) return '';
+  if (headModeOf(cfg) !== 'icon') return '';
   return resolveIconPath(cfg.windowIcons?.head || BUILTIN_HEAD_ICON, repoRoot);
 }
 
 export {
-  REPO_ROOT, BUILTIN_HEAD_ICON, iconFor, resolveIconPath, iconsSidecarPath, publishedIcons, headsDirFor, planIcons,
-  projectIcons, headIcon,
+  REPO_ROOT, BUILTIN_HEAD_ICON, HEAD_MODES, headModeOf, iconFor, resolveIconPath, iconsSidecarPath,
+  publishedIcons, headsDirFor, planIcons, projectIcons, headIcon,
 };

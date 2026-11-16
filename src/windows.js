@@ -79,6 +79,28 @@ function setWindowIcon(id, path) {
 }
 
 /**
+ * Значок в правом нижнем углу кнопки окна на панели задач
+ * (ITaskbarList3::SetOverlayIcon), по hwnd любого процесса. Пустой путь —
+ * снять. Виден только на кнопке панели задач и только при включённых в
+ * Windows значках на кнопках. Explorer теряет его при перезапуске — новый
+ * `getTaskbarWindow()` говорит, что значки пора поставить заново.
+ */
+function hasOverlayIconControl() {
+  return Boolean(addon?.setOverlayIcon && addon?.getTaskbarWindow);
+}
+
+function setOverlayIcon(id, path, description = '') {
+  if (!hasOverlayIconControl()) return false;
+  return addon.setOverlayIcon(id, String(path ?? ''), String(description ?? ''));
+}
+
+// hwnd панели задач (Shell_TrayWnd), 0 — нет; смена — explorer перезапущен.
+function getTaskbarWindow() {
+  if (!hasOverlayIconControl()) return 0;
+  return addon.getTaskbarWindow();
+}
+
+/**
  * Bring a window to the foreground, un-minimizing it first if needed.
  *
  * Признак свёрнутого — общая isMinimized(), а не свой порог. Прежде здесь
@@ -192,6 +214,9 @@ export {
   flashWindow,
   hasWindowIconControl,
   setWindowIcon,
+  hasOverlayIconControl,
+  setOverlayIcon,
+  getTaskbarWindow,
   getActiveWindowId,
   getWindowById,
   focusWindowById,

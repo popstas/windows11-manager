@@ -83,10 +83,12 @@ const CLAUDE_WT_DEFAULTS = {
   // открыться в любом его подкаталоге, если проект head в projects или тоже
   // под корнем. Пусто — ребёнок только из projects, как раньше.
   childCwdRoot: '',
-  // Иконки окон claude (src/mqtt/window-icons.js): окно head — корона, окно
-  // сессии — иконка её проекта (projects[].icon), иначе иконка профиля wt
-  // проекта из `profiles`. Относительные пути — от корня репозитория. `head`
-  // пусто — встроенная icons/crown.ico. `headsDir` пусто — каталог меток head
+  // Иконки окон claude (src/mqtt/window-icons.js): окно сессии — иконка её
+  // проекта (projects[].icon), иначе иконка профиля wt проекта из `profiles`.
+  // Окно head — та же иконка проекта и корона `head` значком в углу кнопки на
+  // панели задач (`headMode: badge`) или корона вместо иконки (`icon`).
+  // Относительные пути — от корня репозитория. `head` пусто — встроенная
+  // icons/crown.ico. `headsDir` пусто — каталог меток head
   // рядом с sessionsFile (`.ccfzf/heads`). Выключается `enabled: false`.
   // Встроенная карта профилей пуста: иконки проектов — чужие логотипы и
   // личные картинки, в публичный репозиторий они не кладутся; пути к ним
@@ -95,6 +97,7 @@ const CLAUDE_WT_DEFAULTS = {
     enabled: true,
     headsDir: '',
     head: '',
+    headMode: 'badge',
     profiles: {},
   },
 };

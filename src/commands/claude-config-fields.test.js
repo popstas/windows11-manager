@@ -34,7 +34,7 @@ describe('CLAUDE_CONFIG_FIELDS', () => {
 
   it('умолчания claudeWt.windowIcons совпадают с CLAUDE_WT_DEFAULTS.windowIcons', () => {
     const fields = CLAUDE_CONFIG_FIELDS.filter((f) => f.section === 'claudeWt.windowIcons');
-    expect(fields.map((f) => f.key).sort()).toEqual(['enabled', 'head']);
+    expect(fields.map((f) => f.key).sort()).toEqual(['enabled', 'head', 'headMode']);
     for (const f of fields) expect(f.default).toBe(CLAUDE_WT_DEFAULTS.windowIcons[f.key]);
   });
 

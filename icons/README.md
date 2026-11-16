@@ -1,7 +1,8 @@
 # icons
 
 `crown.ico` — окно head-сессии claude (`claudeWt.windowIcons.head`, пусто —
-этот файл). Нарисован из эмодзи 👑 набора [Noto Emoji](https://github.com/googlefonts/noto-emoji)
+этот файл): значком в углу кнопки на панели задач (`headMode: badge`, берётся
+кадр 16x16 — в нём корона читается) или вместо иконки окна (`icon`). Нарисован из эмодзи 👑 набора [Noto Emoji](https://github.com/googlefonts/noto-emoji)
 (картинки — Apache License 2.0).
 
 Иконки проектов сюда не кладутся: это личные картинки и чужие логотипы, а
