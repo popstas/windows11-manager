@@ -87,9 +87,35 @@ function planTaskbar(applied, wanted, alive) {
   return { ops, next };
 }
 
+/**
+ * Отпустил ли человек подсветку этой сессии мимо фокуса — Shift+кликом
+ * («Mark seen») в ccfzf-picker, просьбой `claude-session-seen`.
+ *
+ * Отметка — секунда просьбы; действует, пока хук не написал новое состояние:
+ * следующий законченный ход должен загореться снова. Запись хука без времени
+ * (`updated` 0) считается старше любой отметки.
+ */
+function dismissedSeen(dismissedAt, updated) {
+  if (!Number.isFinite(dismissedAt) || dismissedAt <= 0) return false;
+  return dismissedAt >= (Number.isFinite(updated) ? updated : 0);
+}
+
+/**
+ * Выбросить отметки, которые уже ничего не значат: хук написал свежее, либо
+ * сессии нет среди окон на экране. Карта иначе росла бы всю жизнь службы.
+ */
+function pruneDismissed(dismissed, agents) {
+  const updatedBySession = new Map(agents.map(a => [a.sessionId, a.agentUpdated ?? 0]));
+  const next = new Map();
+  for (const [id, at] of dismissed) {
+    if (updatedBySession.has(id) && dismissedSeen(at, updatedBySession.get(id))) next.set(id, at);
+  }
+  return next;
+}
+
 /** Снять всё с перечисленных окон: на старте службы и на её остановке. */
 function resetOps(ids) {
   return ids.map(id => ({ id, state: 'none', value: 0, flash: 'off' }));
 }
 
-export { TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps };
+export { TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, dismissedSeen, pruneDismissed };

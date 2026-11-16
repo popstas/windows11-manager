@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps } from './taskbar-helpers.js';
+import { TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, dismissedSeen, pruneDismissed } from './taskbar-helpers.js';
 
 describe('taskbarLook', () => {
   // Соответствие из ~/.claude/hooks/wt-progress.sh: то, что wt рисует по OSC 9;4.
@@ -106,5 +106,25 @@ describe('resetOps', () => {
       { id: 1, state: 'none', value: 0, flash: 'off' },
       { id: 2, state: 'none', value: 0, flash: 'off' },
     ]);
+  });
+});
+
+describe('dismissedSeen', () => {
+  it('отметка после записи хука или в ту же секунду — отпущено', () => {
+    expect(dismissedSeen(100, 99)).toBe(true);
+    expect(dismissedSeen(100, 100)).toBe(true);
+    expect(dismissedSeen(100, 0)).toBe(true);
+  });
+  it('хук написал позже отметки, отметки нет — не отпущено', () => {
+    expect(dismissedSeen(100, 101)).toBe(false);
+    for (const at of [undefined, 0, NaN, -1]) expect(dismissedSeen(at, 1)).toBe(false);
+  });
+});
+
+describe('pruneDismissed', () => {
+  it('оставляет действующие, выкидывает перекрытые хуком и сессии без окна', () => {
+    const dismissed = new Map([['a', 100], ['b', 100], ['c', 100]]);
+    const agents = [{ sessionId: 'a', agentUpdated: 90 }, { sessionId: 'b', agentUpdated: 150 }];
+    expect([...pruneDismissed(dismissed, agents)]).toEqual([['a', 100]]);
   });
 });

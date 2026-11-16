@@ -116,7 +116,7 @@ function claudeWtWindowSessions(windows) {
 }
 
 /**
- * То же плюс состояние агента: [{id, title}] → [{id, sessionId, cwd, agentState, agentSeen}].
+ * То же плюс состояние агента: [{id, title}] → [{id, sessionId, cwd, agentState, agentSeen, agentUpdated}].
  * С сети читаются state.json только переданных окон (кэш 3 с у loadProgress).
  * `agentSeen` — окно выходило вперёд после последней записи агента
  * (`seenSinceUpdate`, тот же признак, что у пикера и панели).
@@ -130,6 +130,7 @@ function claudeWtWindowAgents(windows) {
     ...r,
     agentState: progress[r.sessionId]?.state ?? null,
     agentSeen: seenSinceUpdate({ focusedAt: r.focusedAt }, progress[r.sessionId]),
+    agentUpdated: progress[r.sessionId]?.updated ?? 0,
   }));
 }
 

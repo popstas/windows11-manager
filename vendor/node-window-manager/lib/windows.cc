@@ -448,8 +448,11 @@ Napi::Boolean setTaskbarProgress (const Napi::CallbackInfo& info) {
     return Napi::Boolean::New (env, SUCCEEDED (hr));
 }
 
-// flashWindow(hwnd, on): on flashes the button until the window comes to the
-// foreground (what Windows Terminal does on a bell); off stops flashing.
+// flashWindow(hwnd, on): on lights the button orange and keeps it lit until
+// the window is activated; off takes the light down. One flash cycle without
+// FLASHW_TIMER*: after the cycle Windows leaves the button highlighted, steady,
+// not blinking (checked on Windows 11, nb, 2026-11-16 — Stas asked for a steady
+// light instead of blinking). FLASHW_STOP clears it without activation.
 Napi::Boolean flashWindow (const Napi::CallbackInfo& info) {
     Napi::Env env{ info.Env () };
 
@@ -460,8 +463,8 @@ Napi::Boolean flashWindow (const Napi::CallbackInfo& info) {
     FLASHWINFO fi{};
     fi.cbSize = sizeof (FLASHWINFO);
     fi.hwnd = handle;
-    fi.dwFlags = on ? (FLASHW_TRAY | FLASHW_TIMERNOFG) : FLASHW_STOP;
-    fi.uCount = 0;
+    fi.dwFlags = on ? FLASHW_TRAY : FLASHW_STOP;
+    fi.uCount = on ? 1 : 0;
     fi.dwTimeout = 0;
     // Returns the previous flash state, not success: the call has no error.
     FlashWindowEx (&fi);

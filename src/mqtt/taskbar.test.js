@@ -7,7 +7,7 @@ const WT = 'C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal\\WindowsTe
 function setup({ windows = [], agents = {}, control = true } = {}) {
   const calls = [];
   const logs = [];
-  const world = { windows, agents, seen: {} };
+  const world = { windows, agents, seen: {}, updated: {}, foreground: 0 };
   const winMan = {
     hasTaskbarControl: () => control,
     getVisibleWindowIds: vi.fn(() => world.windows.map(w => w.id)),
@@ -17,7 +17,11 @@ function setup({ windows = [], agents = {}, control = true } = {}) {
     }),
     claudeWtWindowAgents: vi.fn(list => list
       .filter(w => world.agents[w.id] !== undefined)
-      .map(w => ({ id: w.id, sessionId: `s${w.id}`, agentState: world.agents[w.id], agentSeen: Boolean(world.seen?.[w.id]) }))),
+      .map(w => ({
+        id: w.id, sessionId: `s${w.id}`, agentState: world.agents[w.id],
+        agentSeen: Boolean(world.seen?.[w.id]), agentUpdated: world.updated?.[w.id] ?? 1,
+      }))),
+    getActiveWindowId: vi.fn(() => world.foreground ?? 0),
     setTaskbarProgress: vi.fn((id, state, value) => calls.push(['progress', id, state, value])),
     flashWindow: vi.fn((id, on) => calls.push(['flash', id, on])),
   };
@@ -151,5 +155,66 @@ describe('startTaskbarState', () => {
     svc.tick();
     svc.tick();
     expect(logs.filter(l => l.includes('V: недоступен'))).toHaveLength(1);
+  });
+
+  it('окно, которое и так впереди, не зажигается', () => {
+    const { svc, winMan, logs, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: 'active' } });
+    svc.tick();
+    winMan.flashWindow.mockClear();
+    world.foreground = 1;
+    world.agents[1] = 'review';
+    svc.tick();
+    expect(winMan.flashWindow).not.toHaveBeenCalled();
+    expect(logs.at(-1)).toMatch(/flash skip \(foreground\)/);
+    // И потом, когда человек уйдёт с окна, — тоже: он его видел.
+    world.foreground = 2;
+    svc.tick();
+    expect(winMan.flashWindow).not.toHaveBeenCalled();
+  });
+
+  it('dismiss гасит подсветку сразу, без ожидания тика, и держит её погашенной', () => {
+    const { svc, winMan, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: 'review' } });
+    world.updated[1] = 1;
+    svc.tick();
+    winMan.flashWindow.mockClear();
+    svc.dismiss('s1');
+    expect(winMan.flashWindow.mock.calls).toEqual([[1, false]]);
+    svc.tick();
+    svc.tick();
+    expect(winMan.flashWindow.mock.calls).toEqual([[1, false]]);
+  });
+
+  it('следующий законченный ход после dismiss загорается снова', () => {
+    const { svc, winMan, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: 'review' } });
+    world.updated[1] = 1;
+    svc.tick();
+    svc.dismiss('s1');
+    world.agents[1] = 'active';
+    world.updated[1] = Math.floor(Date.now() / 1000) + 60;
+    svc.tick();
+    winMan.flashWindow.mockClear();
+    world.agents[1] = 'review';
+    world.updated[1] += 10;
+    svc.tick();
+    expect(winMan.flashWindow.mock.calls).toEqual([[1, true]]);
+  });
+
+  it('undismiss возвращает подсветку непросмотренному ходу', () => {
+    const { svc, winMan, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: 'review' } });
+    world.updated[1] = 1;
+    svc.tick();
+    svc.dismiss('s1');
+    winMan.flashWindow.mockClear();
+    svc.undismiss('s1');
+    expect(winMan.flashWindow.mock.calls).toEqual([[1, true]]);
+  });
+
+  it('dismiss сессии без окна ничего не ломает и не зовёт аддон', () => {
+    const { svc, winMan } = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: 'active' } });
+    svc.tick();
+    winMan.flashWindow.mockClear();
+    svc.dismiss('nope');
+    svc.undismiss('nope');
+    expect(winMan.flashWindow).not.toHaveBeenCalled();
   });
 });

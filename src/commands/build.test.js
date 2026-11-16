@@ -49,6 +49,33 @@ describe('buildCommandMap', () => {
     }
   });
 
+  it('claude-session-seen гасит кнопку окна через taskbar.dismiss', async () => {
+    const taskbar = { dismiss: vi.fn(), undismiss: vi.fn() };
+    const m = makeMap({ taskbar });
+    expect(await m['claude-session-seen']('{"id":"abc"}')).toEqual({ ok: true });
+    expect(taskbar.dismiss).toHaveBeenCalledWith('abc');
+    expect(await m['claude-session-seen']('')).toEqual({ ok: false, reason: 'no id' });
+    expect(taskbar.dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('claude-session-unread снимает отметку «отпущено» у кнопки', async () => {
+    const taskbar = { dismiss: vi.fn(), undismiss: vi.fn() };
+    const winMan = winManStub();
+    winMan.markSessionUnread.mockReturnValue({ ok: true, ids: ['abc'] });
+    const m = makeMap({ taskbar, winMan });
+    await m['claude-session-unread']('{"id":"abc"}');
+    expect(winMan.markSessionUnread).toHaveBeenCalledWith('abc');
+    expect(taskbar.undismiss).toHaveBeenCalledWith('abc');
+  });
+
+  it('без службы панели задач seen и unread не падают', async () => {
+    const winMan = winManStub();
+    winMan.markSessionUnread.mockReturnValue({ ok: true, ids: ['abc'] });
+    const m = makeMap({ winMan });
+    expect(await m['claude-session-seen']('abc')).toEqual({ ok: true });
+    await expect(m['claude-session-unread']('abc')).resolves.toBeUndefined();
+  });
+
   it('содержит claude-place', () => {
     expect(typeof map['claude-place']).toBe('function');
   });

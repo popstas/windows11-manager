@@ -5,7 +5,7 @@
  * mqtt/ он тянул бы за собой клиент брокера, который ему не нужен.
  */
 import { windowCommands } from './window-commands.js';
-import { claudeCommands, slotFromPayload } from './claude-commands.js';
+import { claudeCommands, parseIdPayload, slotFromPayload } from './claude-commands.js';
 import { throttlePress } from './press-throttle.js';
 import { createDelayedSlotOff } from './delayed-slot-off.js';
 
@@ -20,7 +20,7 @@ const SLOT_COUNT_DEFAULT = 10;
  * настоящая работа. `claude-focus` без ограничителя: там источник — Enter в
  * списке пикера, дребезжать нечему.
  */
-function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = () => {}, dock = null }) {
+function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = () => {}, dock = null, taskbar = null }) {
   const windows = windowCommands({ winMan, config, log, notify });
   const claude = claudeCommands({ winMan, log, notify, slots: () => haExport.slots() });
 
@@ -111,7 +111,25 @@ function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = 
         onDrop: (payload) => log(`claude-dock-press ${payload} — отброшено, не чаще раза в секунду`, 'warn'),
       },
     ),
-    'claude-session-unread': withRefresh(claude['claude-session-unread']),
+    // Непрочитанное снимает и отметку «отпущено» у кнопки на панели задач:
+    // иначе она держала бы кнопку тёмной до следующей записи хука.
+    'claude-session-unread': withRefresh(async (payload) => {
+      const result = await claude['claude-session-unread'](payload);
+      const { id } = parseIdPayload(payload);
+      if (id) taskbar?.undismiss(id);
+      return result;
+    }),
+    // Shift+клик «Mark seen» в ccfzf-picker: человек отпустил сессию, не
+    // открывая окна. Пикер ставит свою отметку сам; здесь гаснет кнопка окна
+    // на панели задач (её держит служба, src/mqtt/taskbar.js). Состояние
+    // демона не трогается: focusedAt — про переход на окно, а его не было.
+    async 'claude-session-seen'(payload) {
+      const { id } = parseIdPayload(payload);
+      if (!id) return { ok: false, reason: 'no id' };
+      taskbar?.dismiss(id);
+      log(`claude-wt marked seen: ${id}`);
+      return { ok: true };
+    },
     'claude-session-open': withRefresh(claude['claude-session-open']),
     'claude-session-new': claude['claude-session-new'],
     'claude-terminal': claude['claude-terminal'],

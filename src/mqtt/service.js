@@ -73,8 +73,13 @@ function startService({
   // Блока `streamdock` в конфиге нет — доски нет, и роутов у сервера тоже.
   const dock = createDock({ winMan, config: withBase, log });
 
+  // Кнопки окон WezTerm на панели задач (прогресс и подсветка по состоянию
+  // агента) — wt рисует их сам, WezTerm не умеет. Брокер не нужен. Заводится
+  // до роутера: команда `claude-session-seen` гасит подсветку через него.
+  const taskbar = startTaskbarState({ winMan, log });
+
   const router = createRouter(buildCommandMap({
-    winMan, config: withBase, log, notify, haExport, publishDone, dock,
+    winMan, config: withBase, log, notify, haExport, publishDone, dock, taskbar,
   }));
 
   // Брокер этим троим не нужен, и ждать подключения они не должны: расстановка
@@ -87,9 +92,6 @@ function startService({
   // Входящие из Telegram: брокер не нужен и ему. Заводится всегда, а включается
   // ключом `claudeWt.telegramInbox.enabled` — конфиг читается на каждом проходе.
   const telegramInbox = startTelegramInbox({ winMan, log });
-  // Кнопки окон WezTerm на панели задач (прогресс и мигание по состоянию
-  // агента) — wt рисует их сам, WezTerm не умеет. Брокер не нужен.
-  const taskbar = startTaskbarState({ winMan, log });
   // Иконки окон claude: head — корона, сессия — иконка проекта. Окнам и wt, и
   // WezTerm; держит их этот процесс.
   const windowIcons = startWindowIcons({ winMan, log });
