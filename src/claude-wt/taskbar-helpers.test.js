@@ -12,9 +12,13 @@ describe('taskbarLook', () => {
   });
 
   it('простой и нет состояния — сброс', () => {
-    for (const s of ['idle', null, undefined, 'что-то']) {
+    for (const s of [null, undefined, 'что-то']) {
       expect(taskbarLook(s)).toEqual({ state: 'none', value: 0, flash: false });
     }
+  });
+
+  it('простой мигание не трогает', () => {
+    expect(taskbarLook('idle')).toEqual({ state: 'none', value: 0, flash: null });
   });
 
   it('ход закончен и не просмотрен — мигание без полосы, просмотрен — сброс', () => {
@@ -29,7 +33,7 @@ describe('taskbarLook', () => {
   });
 
   it('у каждого состояния есть флаг TBPFLAG', () => {
-    for (const s of ['active', 'question', 'review', 'unknown']) {
+    for (const s of ['active', 'question', 'review', 'idle', 'unknown']) {
       expect(TBPF[taskbarLook(s).state]).toBeTypeOf('number');
     }
   });
@@ -51,7 +55,7 @@ describe('isWeztermPath', () => {
 describe('planTaskbar', () => {
   const active = taskbarLook('active');
   const question = taskbarLook('question');
-  const none = taskbarLook('idle');
+  const none = taskbarLook(null);
 
   it('новое состояние — одна операция, без мигания', () => {
     const { ops, next } = planTaskbar(new Map(), new Map([[1, active]]), new Set([1]));

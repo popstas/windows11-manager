@@ -77,6 +77,28 @@ describe('startTaskbarState', () => {
     expect(winMan.flashWindow.mock.calls).toEqual([[1, true]]);
   });
 
+  it('переход review → idle (уведомление о простое) мигание не гасит', () => {
+    // Хук переводит сессию в idle через минуту после конца хода, хотя окно
+    // никто не смотрел; оранжевый должен держаться до фокуса, как в wt.
+    const { svc, calls, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: 'review' } });
+    svc.tick();
+    world.agents[1] = 'idle';
+    calls.length = 0;
+    svc.tick();
+    svc.tick();
+    expect(calls).toEqual([]);
+    world.agents[1] = 'active';
+    svc.tick();
+    expect(calls).toEqual([['progress', 1, 2, 100], ['flash', 1, false]]);
+  });
+
+  it('простой без мигания до него ничего не зажигает', () => {
+    const { svc, calls } = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: 'idle' } });
+    calls.length = 0;
+    svc.tick();
+    expect(calls).toEqual([]);
+  });
+
   it('просмотренный конец хода гасит мигание и не зажигает его снова', () => {
     const { svc, calls, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: 'review' } });
     calls.length = 0;

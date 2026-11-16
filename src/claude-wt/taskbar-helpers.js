@@ -25,6 +25,12 @@ const NONE = { state: 'none', value: 0, flash: false };
  * на звонок кнопкой не мигает. Просмотренное не мигает: иначе каждый
  * перезапуск службы зажигал бы давно прочитанные окна.
  *
+ * `idle` мигание не трогает (`flash: null` — «как было»): через минуту после
+ * конца хода хук переводит сессию в idle уведомлением «waiting for your
+ * input», хотя на окно никто не смотрел, и выключать на этом мигание значило
+ * бы гасить оранжевый, который в wt держался до фокуса. Гаснет он сам, когда
+ * окно выходит вперёд (FLASHW_TIMERNOFG).
+ *
  * `unknown` сюда сейчас не доезжает: normalizeProgress его отбрасывает, и
  * такое окно получает сброс. Ветка оставлена, чтобы соответствие хуку было
  * записано целиком.
@@ -34,6 +40,7 @@ function taskbarLook(agentState, seen = false) {
     case 'active': return { state: 'normal', value: 100, flash: false };
     case 'question': return { state: 'paused', value: 22, flash: true };
     case 'review': return { state: 'none', value: 0, flash: !seen };
+    case 'idle': return { state: 'none', value: 0, flash: null };
     case 'unknown': return { state: 'indeterminate', value: 0, flash: false };
     default: return { ...NONE };
   }
@@ -56,14 +63,17 @@ const isNone = look => look.state === 'none' && !look.flash;
  * FLASHW_TIMERNOFG гаснет само, когда человек выводит окно вперёд, и включать
  * его заново на каждом тике значило бы мигать уже прочитанным.
  *
+ * Вид с `flash: null` берёт мигание у прежнего вида окна (см. `idle`).
+ *
  * Операция: {id, state, value, flash: 'on' | 'off' | null}. В `next` остаются
  * только окна с непустым видом.
  */
 function planTaskbar(applied, wanted, alive) {
   const ops = [];
   const next = new Map();
-  for (const [id, look] of wanted) {
+  for (const [id, raw] of wanted) {
     const prev = applied.get(id) ?? NONE;
+    const look = raw.flash === null ? { ...raw, flash: prev.flash } : raw;
     if (!sameLook(prev, look)) {
       const flash = prev.flash === look.flash ? null : (look.flash ? 'on' : 'off');
       ops.push({ id, state: look.state, value: look.value, flash });
