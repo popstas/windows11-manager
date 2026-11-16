@@ -74,12 +74,12 @@ describe('startWindowIcons', () => {
     expect(overlays).toEqual([[1, 'C:/repo/icons/crown.ico', 'head'], [2, '', '']]);
   });
 
-  it('режим replace — корона вместо иконки, значков нет', () => {
+  it('режим icon — корона вместо иконки, значков нет', () => {
     const { calls, overlays } = setup({
       windows: [{ id: 1, path: WT, title: 'h' }, { id: 2, path: WEZ, title: 'c' }],
       sessions: { 1: { sessionId: 'h', cwd: '/p/home' }, 2: { sessionId: 'c', cwd: '/p/exp' } },
       heads: ['h'],
-      config: { windowIcons: { headMode: 'replace', profiles: { home: 'C:/ico/me.ico', ExpertizeMe: 'C:/ico/exp.ico' } } },
+      config: { windowIcons: { headMode: 'icon', profiles: { home: 'C:/ico/me.ico', ExpertizeMe: 'C:/ico/exp.ico' } } },
     });
     expect(calls).toEqual([[1, 'C:/repo/icons/crown.ico'], [2, 'C:/ico/exp.ico']]);
     expect(overlays.filter(o => o[1])).toEqual([]);
@@ -91,13 +91,13 @@ describe('startWindowIcons', () => {
     });
     calls.length = 0;
     overlays.length = 0;
-    world.cfg = mergeClaudeWtConfig({ ...world.cfg, windowIcons: { ...world.cfg.windowIcons, headMode: 'replace' } });
+    world.cfg = mergeClaudeWtConfig({ ...world.cfg, windowIcons: { ...world.cfg.windowIcons, headMode: 'icon' } });
     svc.tick();
     expect(calls).toEqual([[1, 'C:/repo/icons/crown.ico']]);
     expect(overlays).toEqual([[1, '', '']]);
     calls.length = 0;
     overlays.length = 0;
-    world.cfg = mergeClaudeWtConfig({ ...world.cfg, windowIcons: { ...world.cfg.windowIcons, headMode: 'overlay' } });
+    world.cfg = mergeClaudeWtConfig({ ...world.cfg, windowIcons: { ...world.cfg.windowIcons, headMode: 'badge' } });
     svc.tick();
     expect(calls).toEqual([[1, 'C:/ico/me.ico']]);
     expect(overlays).toEqual([[1, 'C:/repo/icons/crown.ico', 'head']]);
@@ -253,12 +253,12 @@ describe('startWindowIcons', () => {
       heads: ['h'],
       config: { profile: '' },
     });
-    // head в режиме overlay — иконка проекта: корона только значком на панели.
+    // head в режиме badge — иконка проекта: корона только значком на панели.
     expect(published).toEqual([{ h: 'C:/ico/me.ico', c: 'C:/ico/exp.ico', n: '' }]);
     advance(16000);
     svc.tick();
     expect(published).toHaveLength(1);
-    world.cfg = mergeClaudeWtConfig({ ...world.cfg, windowIcons: { ...world.cfg.windowIcons, headMode: 'replace' } });
+    world.cfg = mergeClaudeWtConfig({ ...world.cfg, windowIcons: { ...world.cfg.windowIcons, headMode: 'icon' } });
     svc.tick();
     expect(published.at(-1)).toEqual({ h: 'C:/repo/icons/crown.ico', c: 'C:/ico/exp.ico', n: '' });
   });

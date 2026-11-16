@@ -18,7 +18,7 @@ const cfg = mergeClaudeWtConfig({
 });
 
 describe('iconFor', () => {
-  const replace = mergeClaudeWtConfig({ ...cfg, windowIcons: { ...cfg.windowIcons, headMode: 'replace' } });
+  const iconMode = mergeClaudeWtConfig({ ...cfg, windowIcons: { ...cfg.windowIcons, headMode: 'icon' } });
 
   it('head по умолчанию — иконка проекта и корона значком', () => {
     const heads = new Set(['h1']);
@@ -31,8 +31,8 @@ describe('iconFor', () => {
       .toEqual({ icon: '', overlay: BUILTIN_HEAD_ICON });
   });
 
-  it('head в режиме replace — корона вместо иконки, без значка', () => {
-    expect(iconFor({ sessionId: 'h1', cwd: '/p/own' }, { heads: new Set(['h1']), cfg: replace }))
+  it('head в режиме icon — корона вместо иконки, без значка', () => {
+    expect(iconFor({ sessionId: 'h1', cwd: '/p/own' }, { heads: new Set(['h1']), cfg: iconMode }))
       .toEqual({ icon: BUILTIN_HEAD_ICON, overlay: '' });
   });
 
@@ -40,13 +40,13 @@ describe('iconFor', () => {
     const own = mergeClaudeWtConfig({ windowIcons: { head: 'C:\\icons\\king.ico' } });
     expect(iconFor({ sessionId: 'h1', cwd: '' }, { heads: new Set(['h1']), cfg: own }))
       .toEqual({ icon: '', overlay: 'C:\\icons\\king.ico' });
-    const ownReplace = mergeClaudeWtConfig({ windowIcons: { head: 'C:\\icons\\king.ico', headMode: 'replace' } });
+    const ownReplace = mergeClaudeWtConfig({ windowIcons: { head: 'C:\\icons\\king.ico', headMode: 'icon' } });
     expect(iconFor({ sessionId: 'h1', cwd: '' }, { heads: new Set(['h1']), cfg: ownReplace }))
       .toEqual({ icon: 'C:\\icons\\king.ico', overlay: '' });
   });
 
   it('не-head — без значка в обоих режимах', () => {
-    for (const c of [cfg, replace]) {
+    for (const c of [cfg, iconMode]) {
       expect(iconFor({ sessionId: 's', cwd: '/p/own' }, { heads: new Set(['h1']), cfg: c }))
         .toEqual({ icon: 'D:\\pics\\own.png', overlay: '' });
     }
@@ -146,7 +146,7 @@ describe('planIcons', () => {
       .toEqual([{ id: 1, kind: 'overlay', path: 'crown.ico' }]);
   });
 
-  it('смена режима overlay → replace — иконка короной, значок снять', () => {
+  it('смена режима badge → icon — иконка короной, значок снять', () => {
     expect(planIcons(new Map([[1, HEAD]]), new Map([[1, { icon: 'crown.ico', overlay: '' }]]), new Set([1])).ops)
       .toEqual([
         { id: 1, kind: 'icon', path: 'crown.ico' },
@@ -176,10 +176,10 @@ describe('planIcons', () => {
 });
 
 describe('headModeOf', () => {
-  it('умолчание и мусор — overlay, replace — replace', () => {
-    expect(headModeOf(mergeClaudeWtConfig({}))).toBe('overlay');
-    expect(headModeOf(mergeClaudeWtConfig({ windowIcons: { headMode: 'nonsense' } }))).toBe('overlay');
-    expect(headModeOf(mergeClaudeWtConfig({ windowIcons: { headMode: 'replace' } }))).toBe('replace');
+  it('умолчание и мусор — badge, icon — icon', () => {
+    expect(headModeOf(mergeClaudeWtConfig({}))).toBe('badge');
+    expect(headModeOf(mergeClaudeWtConfig({ windowIcons: { headMode: 'nonsense' } }))).toBe('badge');
+    expect(headModeOf(mergeClaudeWtConfig({ windowIcons: { headMode: 'icon' } }))).toBe('icon');
   });
 });
 
@@ -252,18 +252,18 @@ describe('выключенные иконки окон', () => {
 });
 
 describe('headIcon', () => {
-  it('режим overlay (умолчание) — пусто: закрытый head в истории идёт с иконкой проекта', () => {
+  it('режим badge (умолчание) — пусто: закрытый head в истории идёт с иконкой проекта', () => {
     expect(headIcon(mergeClaudeWtConfig({}), 'C:\\repo')).toBe('');
     expect(headIcon(mergeClaudeWtConfig({ windowIcons: { head: 'C:\\icons\\king.ico' } }), 'C:\\repo')).toBe('');
   });
 
-  it('режим replace — встроенная корона от корня репозитория', () => {
-    expect(headIcon(mergeClaudeWtConfig({ windowIcons: { headMode: 'replace' } }), 'C:\\repo'))
+  it('режим icon — встроенная корона от корня репозитория', () => {
+    expect(headIcon(mergeClaudeWtConfig({ windowIcons: { headMode: 'icon' } }), 'C:\\repo'))
       .toBe('C:\\repo\\icons\\crown.ico');
   });
 
-  it('режим replace — своя корона из конфига как есть', () => {
-    const own = mergeClaudeWtConfig({ windowIcons: { head: 'C:\\icons\\king.ico', headMode: 'replace' } });
+  it('режим icon — своя корона из конфига как есть', () => {
+    const own = mergeClaudeWtConfig({ windowIcons: { head: 'C:\\icons\\king.ico', headMode: 'icon' } });
     expect(headIcon(own, 'C:\\repo')).toBe('C:\\icons\\king.ico');
   });
 });

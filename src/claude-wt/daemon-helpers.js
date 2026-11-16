@@ -86,7 +86,7 @@ const CLAUDE_WT_DEFAULTS = {
   // Иконки окон claude (src/mqtt/window-icons.js): окно сессии — иконка её
   // проекта (projects[].icon), иначе иконка профиля wt проекта из `profiles`.
   // Окно head — та же иконка проекта и корона `head` значком в углу кнопки на
-  // панели задач (`headMode: overlay`) или корона вместо иконки (`replace`).
+  // панели задач (`headMode: badge`) или корона вместо иконки (`icon`).
   // Относительные пути — от корня репозитория. `head` пусто — встроенная
   // icons/crown.ico. `headsDir` пусто — каталог меток head
   // рядом с sessionsFile (`.ccfzf/heads`). Выключается `enabled: false`.
@@ -97,7 +97,7 @@ const CLAUDE_WT_DEFAULTS = {
     enabled: true,
     headsDir: '',
     head: '',
-    headMode: 'overlay',
+    headMode: 'badge',
     profiles: {},
   },
 };

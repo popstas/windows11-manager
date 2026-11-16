@@ -9,7 +9,7 @@
  * Корона head (решение Стаса 16.11) — не вместо иконки, а значком в правом
  * нижнем углу кнопки на панели задач (ITaskbarList3::SetOverlayIcon), главная
  * иконка у head та же, что у обычной сессии его проекта. Прежнее поведение —
- * корона вместо иконки — остаётся режимом `windowIcons.headMode: replace`.
+ * корона вместо иконки — остаётся режимом `windowIcons.headMode: icon`.
  * Значок виден только на кнопке панели задач (не в заголовке и не в Alt+Tab)
  * и только при включённых в Windows значках на кнопках панели задач.
  */
@@ -32,11 +32,11 @@ const BUILTIN_HEAD_ICON = 'icons/crown.ico';
 
 // Как окну head показывать корону: значком поверх иконки проекта (умолчание)
 // или вместо неё.
-const HEAD_MODES = ['overlay', 'replace'];
+const HEAD_MODES = ['badge', 'icon'];
 
 function headModeOf(cfg) {
   const mode = cfg.windowIcons?.headMode;
-  return HEAD_MODES.includes(mode) ? mode : 'overlay';
+  return HEAD_MODES.includes(mode) ? mode : 'badge';
 }
 
 /**
@@ -55,13 +55,13 @@ function projectIconFor(cwd, cfg) {
 /**
  * Что поставить окну сессии: `{icon, overlay}` — главная иконка (WM_SETICON)
  * и значок на кнопке панели задач; пустая строка — не трогать / без значка.
- * Значок бывает только у head в режиме `overlay`.
+ * Значок бывает только у head в режиме `badge`.
  */
 function iconFor({ sessionId, cwd }, { heads, cfg }) {
   const isHead = Boolean(sessionId && heads?.has(sessionId));
   if (!isHead) return { icon: projectIconFor(cwd, cfg), overlay: '' };
   const crown = cfg.windowIcons?.head || BUILTIN_HEAD_ICON;
-  if (headModeOf(cfg) === 'replace') return { icon: crown, overlay: '' };
+  if (headModeOf(cfg) === 'icon') return { icon: crown, overlay: '' };
   return { icon: projectIconFor(cwd, cfg), overlay: crown };
 }
 
@@ -98,7 +98,7 @@ function iconsSidecarPath(statePath) {
  * Что публиковать: главная иконка окна (не значок) по sessionId, абсолютным
  * путём. Окно без иконки — пустая строка. `wanted` — hwnd → `{icon, overlay}`
  * из `iconFor`. Решение Стаса 16.11: в пикере у head иконка проекта, корона —
- * только значком на панели задач; в режиме replace иконка окна head и есть
+ * только значком на панели задач; в режиме icon иконка окна head и есть
  * корона, и читатель видит её, как раньше.
  */
 function publishedIcons(sessions, wanted, repoRoot) {
@@ -177,12 +177,12 @@ function projectIcons(cfg, repoRoot) {
 
 /**
  * Корона head абсолютным путём — для закрытой head-сессии в истории читателя.
- * Только в режиме replace, где корона и есть иконка окна head; в режиме
- * overlay пусто — читатель берёт иконку проекта по каталогу, как у окна.
+ * Только в режиме icon, где корона и есть иконка окна head; в режиме
+ * badge пусто — читатель берёт иконку проекта по каталогу, как у окна.
  */
 function headIcon(cfg, repoRoot) {
   if (cfg.windowIcons?.enabled === false) return '';
-  if (headModeOf(cfg) !== 'replace') return '';
+  if (headModeOf(cfg) !== 'icon') return '';
   return resolveIconPath(cfg.windowIcons?.head || BUILTIN_HEAD_ICON, repoRoot);
 }
 

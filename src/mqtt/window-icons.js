@@ -1,8 +1,8 @@
 /**
  * Иконки окон claude: окно сессии — иконка её проекта или профиля, окно head —
  * та же иконка проекта и корона значком в углу кнопки на панели задач (режим
- * `windowIcons.headMode: overlay`, по умолчанию) либо корона вместо иконки
- * (`replace`). Что какой иконке положено — src/claude-wt/window-icons-helpers.js.
+ * `windowIcons.headMode: badge`, по умолчанию) либо корона вместо иконки
+ * (`icon`). Что какой иконке положено — src/claude-wt/window-icons-helpers.js.
  * Иконку ставит WM_SETICON по hwnd окнам и wt, и WezTerm (проба 15.11: держится
  * в обоих, панель задач и Alt+Tab её показывают); значок —
  * ITaskbarList3::SetOverlayIcon, виден только на кнопке панели задач и только
@@ -175,7 +175,7 @@ function startWindowIcons({
       const raw = winMan.getClaudeWtConfig();
       // Без SetOverlayIcon в аддоне корону некуда класть значком — тогда она
       // встаёт вместо иконки, как раньше.
-      const cfg = canOverlay ? raw : { ...raw, windowIcons: { ...raw.windowIcons, headMode: 'replace' } };
+      const cfg = canOverlay ? raw : { ...raw, windowIcons: { ...raw.windowIcons, headMode: 'icon' } };
       if (!cfg.enabled || !cfg.windowIcons?.enabled) {
         if (applied.size) resetAll();
         lastPrint = '';

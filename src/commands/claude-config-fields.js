@@ -69,7 +69,7 @@ const CLAUDE_CONFIG_FIELDS = [
     section: 'claudeWt.windowIcons',
     key: 'headMode',
     type: 'string',
-    default: 'overlay',
+    default: 'badge',
     choices: HEAD_MODES,
     createSection: true,
   },
