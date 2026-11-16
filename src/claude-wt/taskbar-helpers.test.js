@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, dismissedSeen, pruneDismissed } from './taskbar-helpers.js';
+import { TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks } from './taskbar-helpers.js';
 
 describe('taskbarLook', () => {
   // Соответствие из ~/.claude/hooks/wt-progress.sh: то, что wt рисует по OSC 9;4.
@@ -109,22 +109,37 @@ describe('resetOps', () => {
   });
 });
 
-describe('dismissedSeen', () => {
-  it('отметка после записи хука или в ту же секунду — отпущено', () => {
-    expect(dismissedSeen(100, 99)).toBe(true);
-    expect(dismissedSeen(100, 100)).toBe(true);
-    expect(dismissedSeen(100, 0)).toBe(true);
+describe('отметки человека (Mark seen / Mark unread)', () => {
+  it('seen гасит в любом состоянии, полоса остаётся', () => {
+    expect(taskbarLook('review', false, 'seen')).toEqual({ state: 'none', value: 0, flash: false });
+    expect(taskbarLook('idle', false, 'seen')).toEqual({ state: 'none', value: 0, flash: false });
+    expect(taskbarLook('question', false, 'seen')).toEqual({ state: 'paused', value: 22, flash: false });
   });
-  it('хук написал позже отметки, отметки нет — не отпущено', () => {
-    expect(dismissedSeen(100, 101)).toBe(false);
-    for (const at of [undefined, 0, NaN, -1]) expect(dismissedSeen(at, 1)).toBe(false);
+  it('unread зажигает и review, и idle, даже просмотренные', () => {
+    expect(taskbarLook('review', true, 'unread')).toEqual({ state: 'none', value: 0, flash: true });
+    expect(taskbarLook('idle', true, 'unread')).toEqual({ state: 'none', value: 0, flash: true });
+    expect(taskbarLook('question', true, 'unread')).toEqual({ state: 'paused', value: 22, flash: true });
+  });
+  it('работа отметок не слушает', () => {
+    for (const m of ['seen', 'unread']) expect(taskbarLook('active', false, m)).toEqual({ state: 'normal', value: 100, flash: false });
   });
 });
 
-describe('pruneDismissed', () => {
+describe('markHolds', () => {
+  it('держится, пока хук не написал новое', () => {
+    expect(markHolds({ kind: 'seen', at: 100 }, 99)).toBe(true);
+    expect(markHolds({ kind: 'unread', at: 100 }, 100)).toBe(true);
+    expect(markHolds({ kind: 'seen', at: 100 }, 0)).toBe(true);
+    expect(markHolds({ kind: 'seen', at: 100 }, 101)).toBe(false);
+    expect(markHolds(undefined, 1)).toBe(false);
+    expect(markHolds({ kind: 'seen', at: 0 }, 0)).toBe(false);
+  });
+});
+
+describe('pruneMarks', () => {
   it('оставляет действующие, выкидывает перекрытые хуком и сессии без окна', () => {
-    const dismissed = new Map([['a', 100], ['b', 100], ['c', 100]]);
+    const marks = new Map([['a', { kind: 'seen', at: 100 }], ['b', { kind: 'unread', at: 100 }], ['c', { kind: 'seen', at: 100 }]]);
     const agents = [{ sessionId: 'a', agentUpdated: 90 }, { sessionId: 'b', agentUpdated: 150 }];
-    expect([...pruneDismissed(dismissed, agents)]).toEqual([['a', 100]]);
+    expect([...pruneMarks(marks, agents)]).toEqual([['a', { kind: 'seen', at: 100 }]]);
   });
 });

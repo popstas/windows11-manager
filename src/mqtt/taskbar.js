@@ -2,9 +2,10 @@
  * Кнопки окон WezTerm на панели задач: зелёная полоса, пока агент работает,
  * жёлтая с миганием, пока ждёт ответа, — как wt рисует сам по OSC 9;4; и
  * ровный оранжевый без полосы на законченном ходе, пока окно не смотрели, —
- * как wt на звонке. «Смотрели» — окно выходило вперёд (focusedAt демона) или
- * человек отпустил сессию Shift+кликом в ccfzf-picker (`dismiss()`, команда
- * `claude-session-seen`): эта отметка живёт здесь, в памяти службы, потому что
+ * как wt на звонке. «Смотрели» — окно выходило вперёд (focusedAt демона).
+ * Отметки человека из ccfzf-picker — `dismiss()` (Mark seen, команда
+ * `claude-session-seen`) гасит, `markUnread()` (Mark unread,
+ * `claude-session-unread`) зажигает — живут здесь, в памяти службы, потому что
  * подсветку держит этот процесс, а не демон.
  * Почему это делает служба, а не терминал, — в src/claude-wt/taskbar-helpers.js.
  *
@@ -20,7 +21,7 @@
  * следующем старте.
  */
 import {
-  TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, dismissedSeen, pruneDismissed,
+  TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks,
 } from '../claude-wt/taskbar-helpers.js';
 
 // Вопрос агента должен загореться быстро: wt рисует его сразу, а HA-экспорт
@@ -31,7 +32,7 @@ function startTaskbarState({
   winMan, log, intervalMs = TASKBAR_INTERVAL_MS,
   setIntervalFn = setInterval, clearIntervalFn = clearInterval,
 }) {
-  const off = { tick() {}, dismiss() {}, undismiss() {}, stop() {} };
+  const off = { tick() {}, dismiss() {}, markUnread() {}, stop() {} };
   if (typeof winMan?.hasTaskbarControl !== 'function') return off;
   if (!winMan.hasTaskbarControl()) {
     log('taskbar: в аддоне node-window-manager нет setTaskbarProgress/flashWindow — '
@@ -43,8 +44,8 @@ function startTaskbarState({
   // hwnd: Windows переиспользует хэндлы, поэтому пропавший забывается.
   const verdicts = new Map();
   let applied = new Map();
-  // sessionId → секунда, когда человек отпустил подсветку мимо фокуса.
-  let dismissed = new Map();
+  // sessionId → {kind: 'seen'|'unread', at} — отметка человека из пикера.
+  let marks = new Map();
   let lastError = '';
 
   function weztermWindows() {
@@ -95,9 +96,9 @@ function startTaskbarState({
       const { windows, present } = weztermWindows();
       if (!windows.length && !applied.size) return;
       const agents = windows.length ? winMan.claudeWtWindowAgents(windows) : [];
-      dismissed = pruneDismissed(dismissed, agents);
-      const seen = a => Boolean(a.agentSeen) || dismissedSeen(dismissed.get(a.sessionId), a.agentUpdated);
-      const wanted = new Map(agents.map(a => [a.id, taskbarLook(a.agentState, seen(a))]));
+      marks = pruneMarks(marks, agents);
+      const markOf = a => (markHolds(marks.get(a.sessionId), a.agentUpdated) ? marks.get(a.sessionId).kind : null);
+      const wanted = new Map(agents.map(a => [a.id, taskbarLook(a.agentState, Boolean(a.agentSeen), markOf(a))]));
       const { ops, next } = planTaskbar(applied, wanted, present);
       apply(ops);
       applied = next;
@@ -115,26 +116,29 @@ function startTaskbarState({
   const timer = setIntervalFn(tick, intervalMs);
   timer?.unref?.();
 
-  /**
-   * Человек отпустил сессию мимо фокуса — погасить её кнопку сейчас, не
-   * дожидаясь тика. Отметка сгорает сама, как только хук напишет новое.
-   */
-  function dismiss(sessionId) {
+  function mark(sessionId, kind) {
     if (!sessionId) return;
-    dismissed.set(sessionId, Math.floor(Date.now() / 1000));
+    marks.set(sessionId, { kind, at: Math.floor(Date.now() / 1000) });
     tick();
   }
 
-  /** Обратное: сессию вернули в непрочитанное — отметка больше не держит. */
-  function undismiss(sessionId) {
-    if (!dismissed.delete(sessionId)) return;
-    tick();
+  /**
+   * Mark seen: погасить кнопку сессии сейчас, не дожидаясь тика, в любом
+   * состоянии. Отметка сгорает сама, как только хук напишет новое.
+   */
+  function dismiss(sessionId) {
+    mark(sessionId, 'seen');
+  }
+
+  /** Mark unread: зажечь кнопку, даже у просмотренной сессии в review и idle. */
+  function markUnread(sessionId) {
+    mark(sessionId, 'unread');
   }
 
   return {
     tick,
     dismiss,
-    undismiss,
+    markUnread,
     stop() {
       clearIntervalFn(timer);
       try {

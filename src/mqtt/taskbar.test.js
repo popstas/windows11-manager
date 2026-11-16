@@ -184,6 +184,20 @@ describe('startTaskbarState', () => {
     expect(winMan.flashWindow.mock.calls).toEqual([[1, false]]);
   });
 
+  it('dismiss гасит и сессию в idle (Shift+клик через минуту после конца хода)', () => {
+    // Так и было у Стаса 16.11: ход закончился, через минуту хук поставил idle,
+    // и отметка «отпущено» тонула в правиле «idle мигание не трогает».
+    const { svc, winMan, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: 'review' } });
+    world.updated[1] = 1;
+    svc.tick();
+    world.agents[1] = 'idle';
+    world.updated[1] = 2;
+    svc.tick();
+    winMan.flashWindow.mockClear();
+    svc.dismiss('s1');
+    expect(winMan.flashWindow.mock.calls).toEqual([[1, false]]);
+  });
+
   it('следующий законченный ход после dismiss загорается снова', () => {
     const { svc, winMan, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: 'review' } });
     world.updated[1] = 1;
@@ -199,14 +213,31 @@ describe('startTaskbarState', () => {
     expect(winMan.flashWindow.mock.calls).toEqual([[1, true]]);
   });
 
-  it('undismiss возвращает подсветку непросмотренному ходу', () => {
+  it('markUnread зажигает просмотренную сессию в idle и держит, пока хук не напишет новое', () => {
+    const { svc, winMan, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: 'idle' } });
+    world.updated[1] = 1;
+    world.seen[1] = true;
+    svc.tick();
+    winMan.flashWindow.mockClear();
+    svc.markUnread('s1');
+    expect(winMan.flashWindow.mock.calls).toEqual([[1, true]]);
+    svc.tick();
+    expect(winMan.flashWindow.mock.calls).toEqual([[1, true]]);
+    world.agents[1] = 'active';
+    world.updated[1] = Math.floor(Date.now() / 1000) + 60;
+    svc.tick();
+    expect(winMan.flashWindow.mock.calls).toEqual([[1, true], [1, false]]);
+  });
+
+  it('markUnread после dismiss зажигает снова, dismiss после markUnread гасит', () => {
     const { svc, winMan, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: 'review' } });
     world.updated[1] = 1;
     svc.tick();
     svc.dismiss('s1');
     winMan.flashWindow.mockClear();
-    svc.undismiss('s1');
-    expect(winMan.flashWindow.mock.calls).toEqual([[1, true]]);
+    svc.markUnread('s1');
+    svc.dismiss('s1');
+    expect(winMan.flashWindow.mock.calls).toEqual([[1, true], [1, false]]);
   });
 
   it('dismiss сессии без окна ничего не ломает и не зовёт аддон', () => {
@@ -214,7 +245,7 @@ describe('startTaskbarState', () => {
     svc.tick();
     winMan.flashWindow.mockClear();
     svc.dismiss('nope');
-    svc.undismiss('nope');
+    svc.markUnread('nope');
     expect(winMan.flashWindow).not.toHaveBeenCalled();
   });
 });

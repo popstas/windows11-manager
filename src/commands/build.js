@@ -111,12 +111,12 @@ function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = 
         onDrop: (payload) => log(`claude-dock-press ${payload} — отброшено, не чаще раза в секунду`, 'warn'),
       },
     ),
-    // Непрочитанное снимает и отметку «отпущено» у кнопки на панели задач:
-    // иначе она держала бы кнопку тёмной до следующей записи хука.
+    // Непрочитанное зажигает и кнопку окна на панели задач — у review и idle,
+    // даже просмотренных (Стас 16.11: «синхронизация на оба состояния»).
     'claude-session-unread': withRefresh(async (payload) => {
       const result = await claude['claude-session-unread'](payload);
       const { id } = parseIdPayload(payload);
-      if (id) taskbar?.undismiss(id);
+      if (id) taskbar?.markUnread(id);
       return result;
     }),
     // Shift+клик «Mark seen» в ccfzf-picker: человек отпустил сессию, не

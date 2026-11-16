@@ -50,7 +50,7 @@ describe('buildCommandMap', () => {
   });
 
   it('claude-session-seen гасит кнопку окна через taskbar.dismiss', async () => {
-    const taskbar = { dismiss: vi.fn(), undismiss: vi.fn() };
+    const taskbar = { dismiss: vi.fn(), markUnread: vi.fn() };
     const m = makeMap({ taskbar });
     expect(await m['claude-session-seen']('{"id":"abc"}')).toEqual({ ok: true });
     expect(taskbar.dismiss).toHaveBeenCalledWith('abc');
@@ -58,14 +58,14 @@ describe('buildCommandMap', () => {
     expect(taskbar.dismiss).toHaveBeenCalledTimes(1);
   });
 
-  it('claude-session-unread снимает отметку «отпущено» у кнопки', async () => {
-    const taskbar = { dismiss: vi.fn(), undismiss: vi.fn() };
+  it('claude-session-unread зажигает кнопку окна через taskbar.markUnread', async () => {
+    const taskbar = { dismiss: vi.fn(), markUnread: vi.fn() };
     const winMan = winManStub();
     winMan.markSessionUnread.mockReturnValue({ ok: true, ids: ['abc'] });
     const m = makeMap({ taskbar, winMan });
     await m['claude-session-unread']('{"id":"abc"}');
     expect(winMan.markSessionUnread).toHaveBeenCalledWith('abc');
-    expect(taskbar.undismiss).toHaveBeenCalledWith('abc');
+    expect(taskbar.markUnread).toHaveBeenCalledWith('abc');
   });
 
   it('без службы панели задач seen и unread не падают', async () => {

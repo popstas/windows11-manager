@@ -29,18 +29,27 @@ const NONE = { state: 'none', value: 0, flash: false };
  * конца хода хук переводит сессию в idle уведомлением «waiting for your
  * input», хотя на окно никто не смотрел, и выключать на этом мигание значило
  * бы гасить оранжевый, который в wt держался до фокуса. Гаснет он сам, когда
- * окно выходит вперёд (FLASHW_TIMERNOFG).
+ * окно выходит вперёд.
+ *
+ * `mark` — отметка человека из ccfzf-picker, действующая, пока хук не написал
+ * новое (`markHolds`). `seen` (Shift+клик «Mark seen») гасит свет в любом
+ * состоянии, `unread` («Mark unread») зажигает его у review и idle, даже
+ * просмотренных (Стас 16.11: «синхронизация на оба состояния»). Полосу отметки
+ * не трогают: она про то, что агент делает, а не про то, видел ли человек.
+ * Раньше «отпущено» было только сравнением с `seen`, и idle с его `null` его
+ * перекрывал: Shift+клик через минуту после конца хода кнопку не гасил.
  *
  * `unknown` сюда сейчас не доезжает: normalizeProgress его отбрасывает, и
  * такое окно получает сброс. Ветка оставлена, чтобы соответствие хуку было
  * записано целиком.
  */
-function taskbarLook(agentState, seen = false) {
+function taskbarLook(agentState, seen = false, mark = null) {
+  const byMark = fallback => (mark === 'seen' ? false : mark === 'unread' ? true : fallback);
   switch (agentState) {
     case 'active': return { state: 'normal', value: 100, flash: false };
-    case 'question': return { state: 'paused', value: 22, flash: true };
-    case 'review': return { state: 'none', value: 0, flash: !seen };
-    case 'idle': return { state: 'none', value: 0, flash: null };
+    case 'question': return { state: 'paused', value: 22, flash: byMark(true) };
+    case 'review': return { state: 'none', value: 0, flash: byMark(!seen) };
+    case 'idle': return { state: 'none', value: 0, flash: byMark(null) };
     case 'unknown': return { state: 'indeterminate', value: 0, flash: false };
     default: return { ...NONE };
   }
@@ -88,27 +97,24 @@ function planTaskbar(applied, wanted, alive) {
 }
 
 /**
- * Отпустил ли человек подсветку этой сессии мимо фокуса — Shift+кликом
- * («Mark seen») в ccfzf-picker, просьбой `claude-session-seen`.
- *
- * Отметка — секунда просьбы; действует, пока хук не написал новое состояние:
- * следующий законченный ход должен загореться снова. Запись хука без времени
+ * Действует ли отметка человека (`{kind: 'seen'|'unread', at}`, `at` — секунда
+ * просьбы): пока хук не написал новое состояние. Запись хука без времени
  * (`updated` 0) считается старше любой отметки.
  */
-function dismissedSeen(dismissedAt, updated) {
-  if (!Number.isFinite(dismissedAt) || dismissedAt <= 0) return false;
-  return dismissedAt >= (Number.isFinite(updated) ? updated : 0);
+function markHolds(mark, updated) {
+  if (!mark || !Number.isFinite(mark.at) || mark.at <= 0) return false;
+  return mark.at >= (Number.isFinite(updated) ? updated : 0);
 }
 
 /**
  * Выбросить отметки, которые уже ничего не значат: хук написал свежее, либо
  * сессии нет среди окон на экране. Карта иначе росла бы всю жизнь службы.
  */
-function pruneDismissed(dismissed, agents) {
+function pruneMarks(marks, agents) {
   const updatedBySession = new Map(agents.map(a => [a.sessionId, a.agentUpdated ?? 0]));
   const next = new Map();
-  for (const [id, at] of dismissed) {
-    if (updatedBySession.has(id) && dismissedSeen(at, updatedBySession.get(id))) next.set(id, at);
+  for (const [id, mark] of marks) {
+    if (updatedBySession.has(id) && markHolds(mark, updatedBySession.get(id))) next.set(id, mark);
   }
   return next;
 }
@@ -118,4 +124,4 @@ function resetOps(ids) {
   return ids.map(id => ({ id, state: 'none', value: 0, flash: 'off' }));
 }
 
-export { TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, dismissedSeen, pruneDismissed };
+export { TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks };
