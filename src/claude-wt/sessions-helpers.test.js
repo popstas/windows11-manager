@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { indexSessions, indexBackgroundAgents, compareSessions, hasHookStamp } from './sessions-helpers.js';
+import { indexSessions, indexBackgroundAgents, indexShellSessions, compareSessions, hasHookStamp } from './sessions-helpers.js';
 
 const session = (over = {}) => ({
   id: 'a1', cwd: '/home/popstas/p', title: 'ccfzf', mtime: 100, live: false, ...over,
@@ -272,5 +272,23 @@ describe('hasHookStamp', () => {
     expect(hasHookStamp({ activityAt: undefined })).toBe(false);
     expect(hasHookStamp({ activityAt: NaN })).toBe(false);
     expect(hasHookStamp(null)).toBe(false);
+  });
+});
+
+describe('indexShellSessions', () => {
+  it('берёт только живые сессии со строгим shell: true', () => {
+    const got = indexShellSessions({ sessions: [
+      { id: 'a', live: true, shell: true },
+      { id: 'b', live: true, shell: false },
+      { id: 'c', live: false, shell: true },
+      { id: 'd', live: true, shell: 'yes' },
+      { id: '', live: true, shell: true },
+    ] });
+    expect([...got]).toEqual(['a']);
+  });
+
+  it('дамп ccfzf без поля — ни одной такой сессии', () => {
+    expect(indexShellSessions({ sessions: [{ id: 'a', live: true, title: 't' }] }).size).toBe(0);
+    expect(indexShellSessions(null).size).toBe(0);
   });
 });

@@ -7,7 +7,7 @@ const WT = 'C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal\\WindowsTe
 function setup({ windows = [], agents = {}, control = true } = {}) {
   const calls = [];
   const logs = [];
-  const world = { windows, agents, seen: {}, updated: {}, foreground: 0 };
+  const world = { windows, agents, seen: {}, updated: {}, shell: {}, foreground: 0 };
   const winMan = {
     hasTaskbarControl: () => control,
     getVisibleWindowIds: vi.fn(() => world.windows.map(w => w.id)),
@@ -20,6 +20,7 @@ function setup({ windows = [], agents = {}, control = true } = {}) {
       .map(w => ({
         id: w.id, sessionId: `s${w.id}`, agentState: world.agents[w.id],
         agentSeen: Boolean(world.seen?.[w.id]), agentUpdated: world.updated?.[w.id] ?? 1,
+        shell: Boolean(world.shell?.[w.id]),
       }))),
     getActiveWindowId: vi.fn(() => world.foreground ?? 0),
     setTaskbarProgress: vi.fn((id, state, value) => calls.push(['progress', id, state, value])),
@@ -247,5 +248,20 @@ describe('startTaskbarState', () => {
     svc.dismiss('nope');
     svc.markUnread('nope');
     expect(winMan.flashWindow).not.toHaveBeenCalled();
+  });
+
+  it('фоновая команда при законченном ходе — зелёная полоса на 2%, её конец снимает полосу', () => {
+    const { svc, calls, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: 'idle' } });
+    world.shell[1] = true;
+    world.seen[1] = true;
+    calls.length = 0;
+    svc.tick();
+    expect(calls).toEqual([['progress', 1, 2, 2]]);
+    calls.length = 0;
+    svc.tick();
+    expect(calls).toEqual([]);
+    world.shell[1] = false;
+    svc.tick();
+    expect(calls).toEqual([['progress', 1, 0, 0]]);
   });
 });

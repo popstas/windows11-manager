@@ -39,17 +39,27 @@ const NONE = { state: 'none', value: 0, flash: false };
  * Раньше «отпущено» было только сравнением с `seen`, и idle с его `null` его
  * перекрывал: Shift+клик через минуту после конца хода кнопку не гасил.
  *
+ * `shell` — ход закончен, а фоновая команда агента ещё идёт (признак из дампа
+ * ccfzf). У `review` и `idle` он даёт зелёную полосу на 2% (Стас 16.11:
+ * «зелёная 2%»): видно, что в окне что-то крутится, но не так громко, как
+ * работа на 100. Мигание при этом считается как без него — оранжевый review,
+ * seen и unread живут по своим правилам. У `active` и `question` признак
+ * ничего не меняет: агент, который работает или спрашивает, `shell` не пишет.
+ *
  * `unknown` сюда сейчас не доезжает: normalizeProgress его отбрасывает, и
  * такое окно получает сброс. Ветка оставлена, чтобы соответствие хуку было
  * записано целиком.
  */
-function taskbarLook(agentState, seen = false, mark = null) {
+const SHELL_VALUE = 2;
+
+function taskbarLook(agentState, seen = false, mark = null, shell = false) {
   const byMark = fallback => (mark === 'seen' ? false : mark === 'unread' ? true : fallback);
+  const bar = shell ? { state: 'normal', value: SHELL_VALUE } : { state: 'none', value: 0 };
   switch (agentState) {
     case 'active': return { state: 'normal', value: 100, flash: false };
     case 'question': return { state: 'paused', value: 22, flash: byMark(true) };
-    case 'review': return { state: 'none', value: 0, flash: byMark(!seen) };
-    case 'idle': return { state: 'none', value: 0, flash: byMark(null) };
+    case 'review': return { ...bar, flash: byMark(!seen) };
+    case 'idle': return { ...bar, flash: byMark(null) };
     case 'unknown': return { state: 'indeterminate', value: 0, flash: false };
     default: return { ...NONE };
   }
