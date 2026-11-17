@@ -1,7 +1,7 @@
 /**
  * Иконки окон claude: окно сессии — иконка её проекта или профиля, окно head —
- * та же иконка проекта и корона значком в углу кнопки на панели задач (режим
- * `windowIcons.headMode: badge`, по умолчанию) либо корона вместо иконки
+ * та же иконка проекта и значок head в углу кнопки на панели задач (режим
+ * `windowIcons.headMode: badge`, по умолчанию) либо значок head вместо иконки
  * (`icon`). Что какой иконке положено — src/claude-wt/window-icons-helpers.js.
  * Иконку ставит WM_SETICON по hwnd окнам и wt, и WezTerm (проба 15.11: держится
  * в обоих, панель задач и Alt+Tab её показывают); значок —
@@ -27,8 +27,9 @@
  *
  * Решённое (sessionId → абсолютный путь, '' — без иконки) служба кладёт в
  * window-icons.json рядом с файлом состояния: файл окон для пикера пишет
- * демон, а роль окна (метки head) знает только служба. У head там корона в
- * обоих режимах (`roleIcon`). Пишется, только когда карта изменилась;
+ * демон, а роль окна (метки head) знает только служба. У head там главная
+ * иконка окна: в режиме badge — иконка проекта, в режиме icon — значок head
+ * (`publishedIcons`). Пишется, только когда карта изменилась;
  * выключенные иконки — пустая карта.
  */
 import fs from 'node:fs';
@@ -67,7 +68,7 @@ function startWindowIcons({
 
   const canOverlay = typeof winMan.hasOverlayIconControl === 'function' && winMan.hasOverlayIconControl();
   if (!canOverlay) {
-    log('window icons: в аддоне node-window-manager нет setOverlayIcon — корона head ставится вместо иконки '
+    log('window icons: в аддоне node-window-manager нет setOverlayIcon — значок head ставится вместо иконки '
       + '(пересоберите vendor/node-window-manager)', 'warn');
   }
 
@@ -173,8 +174,8 @@ function startWindowIcons({
   function tick() {
     try {
       const raw = winMan.getClaudeWtConfig();
-      // Без SetOverlayIcon в аддоне корону некуда класть значком — тогда она
-      // встаёт вместо иконки, как раньше.
+      // Без SetOverlayIcon в аддоне значок head некуда класть на кнопку —
+      // тогда он встаёт вместо иконки, как раньше.
       const cfg = canOverlay ? raw : { ...raw, windowIcons: { ...raw.windowIcons, headMode: 'icon' } };
       if (!cfg.enabled || !cfg.windowIcons?.enabled) {
         if (applied.size) resetAll();

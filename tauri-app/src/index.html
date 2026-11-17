@@ -231,7 +231,7 @@
       </div>
 
       <h3 class="group">Window icons</h3>
-      <p class="tab-note">Icons of claude terminal windows (wt and WezTerm), set by the service from outside. A session gets its project's icon, or else the icon of the project's wt profile (<code>claudeWt.windowIcons.profiles</code>). A head session gets the same project icon plus the head icon as a badge on its taskbar button, or the head icon instead (head crown: icon or badge). Changes apply to open windows within a few seconds, no restart. <code>.ico</code> or an image (<code>.png</code>).</p>
+      <p class="tab-note">Icons of claude terminal windows (wt and WezTerm), set by the service from outside. A session gets its project's icon, or else the icon of the project's wt profile (<code>claudeWt.windowIcons.profiles</code>). A head session gets the same project icon plus the head icon as a badge on its taskbar button, or the head icon instead (head icon: icon or badge). Changes apply to open windows within a few seconds, no restart. <code>.ico</code> or an image (<code>.png</code>).</p>
 
       <div class="field checkbox">
         <label>
@@ -245,20 +245,20 @@
         <label for="cfg_window_icons_head">claudeWt.windowIcons.head — head window icon</label>
         <div class="icon-row">
           <img class="icon-preview" data-preview-for="cfg_window_icons_head" alt="">
-          <input type="text" id="cfg_window_icons_head" data-cfg="claudeWt.windowIcons.head" data-cfg-default="" data-cfg-type="string" placeholder="(built-in crown)">
+          <input type="text" id="cfg_window_icons_head" data-cfg="claudeWt.windowIcons.head" data-cfg-default="" data-cfg-type="string" placeholder="(built-in head badge)">
           <button type="button" class="icon-pick" data-pick-for="cfg_window_icons_head">Choose…</button>
         </div>
-        <small>Empty = the built-in crown (<code>icons/crown.ico</code>). Relative paths are taken from the windows11-manager folder.</small>
+        <small>Empty = the built-in head badge, an org chart in a blue circle (<code>icons/head-badge.ico</code>). Relative paths are taken from the windows11-manager folder.</small>
       </div>
 
       <div class="field">
-        <label for="cfg_window_icons_head_mode">claudeWt.windowIcons.headMode — head crown: icon or badge</label>
+        <label for="cfg_window_icons_head_mode">claudeWt.windowIcons.headMode — head icon: icon or badge</label>
         <select id="cfg_window_icons_head_mode" data-cfg="claudeWt.windowIcons.headMode" data-cfg-default="badge" data-cfg-type="string">
           <option value="">(default — badge)</option>
-          <option value="badge">badge — project icon + small crown on the taskbar button</option>
-          <option value="icon">icon — crown instead of the window icon</option>
+          <option value="badge">badge — project icon + head badge on the taskbar button</option>
+          <option value="icon">icon — head icon instead of the window icon</option>
         </select>
-        <small>badge: the window keeps its project icon, the crown is a small badge in the bottom right corner of the taskbar button (not in the title bar or Alt+Tab; needs Windows' "Show badges on taskbar apps" setting on). The picker then shows the project icon for head sessions too. icon: the crown is the window icon, as before.</small>
+        <small>badge: the window keeps its project icon, the head icon is a small badge in the bottom right corner of the taskbar button (not in the title bar or Alt+Tab; needs Windows' "Show badges on taskbar apps" setting on). The picker then shows the project icon for head sessions too. icon: the head icon is the window icon, as before.</small>
       </div>
 
       <div class="field">

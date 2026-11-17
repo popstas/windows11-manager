@@ -6,10 +6,12 @@
  * в живом конфиге). Иконку ставит служба по hwnd (WM_SETICON) окнам и wt, и
  * WezTerm: src/mqtt/window-icons.js.
  *
- * Корона head (решение Стаса 16.11) — не вместо иконки, а значком в правом
- * нижнем углу кнопки на панели задач (ITaskbarList3::SetOverlayIcon), главная
- * иконка у head та же, что у обычной сессии его проекта. Прежнее поведение —
- * корона вместо иконки — остаётся режимом `windowIcons.headMode: icon`.
+ * Значок head (решение Стаса 16.11) — не вместо иконки, а в правом нижнем
+ * углу кнопки на панели задач (ITaskbarList3::SetOverlayIcon), главная иконка
+ * у head та же, что у обычной сессии его проекта. Прежнее поведение — значок
+ * head вместо иконки — остаётся режимом `windowIcons.headMode: icon`.
+ * Встроенный значок — оргсхема в синем круге (решение Стаса 17.11, сменила
+ * корону: та плохо читалась поверх части иконок проектов).
  * Значок виден только на кнопке панели задач (не в заголовке и не в Alt+Tab)
  * и только при включённых в Windows значках на кнопках панели задач.
  */
@@ -17,8 +19,8 @@ import { fileURLToPath } from 'node:url';
 import { profileForTerminal } from './project-helpers.js';
 
 // Корень репозитория — от него разрешаются относительные пути иконок
-// (`icons/crown.ico`). Один на службу (src/mqtt/window-icons.js) и демон
-// (иконки проектов в файле окон): разойдись они, одна корона приехала бы
+// (`icons/head-badge.ico`). Один на службу (src/mqtt/window-icons.js) и демон
+// (иконки проектов в файле окон): разойдись они, один значок head приехал бы
 // читателю двумя путями. Буква диска — заглавной: fileURLToPath отдаёт её
 // такой, какой её назвал запустивший процесс (`c:\projects\...` у трея), а
 // путь уезжает в файл окон.
@@ -26,11 +28,12 @@ const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url))
   .replace(/[\\/]+$/, '')
   .replace(/^([a-z]):/, (_, d) => `${d.toUpperCase()}:`);
 
-// Корона в 16 px читается (кадр 16x16 есть в файле), поэтому значку
-// отдельный файл не нужен: служба грузит из того же .ico маленький кадр.
-const BUILTIN_HEAD_ICON = 'icons/crown.ico';
+// Один файл на оба режима: кадры 16/20/24 — значок на кнопке панели задач
+// (служба грузит маленький кадр, SM_CXSMICON), 32–256 — иконка окна в режиме
+// icon. Генератор — icons/head-badge.py.
+const BUILTIN_HEAD_ICON = 'icons/head-badge.ico';
 
-// Как окну head показывать корону: значком поверх иконки проекта (умолчание)
+// Как окну head показывать значок head: поверх иконки проекта (умолчание)
 // или вместо неё.
 const HEAD_MODES = ['badge', 'icon'];
 
@@ -60,9 +63,9 @@ function projectIconFor(cwd, cfg) {
 function iconFor({ sessionId, cwd }, { heads, cfg }) {
   const isHead = Boolean(sessionId && heads?.has(sessionId));
   if (!isHead) return { icon: projectIconFor(cwd, cfg), overlay: '' };
-  const crown = cfg.windowIcons?.head || BUILTIN_HEAD_ICON;
-  if (headModeOf(cfg) === 'icon') return { icon: crown, overlay: '' };
-  return { icon: projectIconFor(cwd, cfg), overlay: crown };
+  const headBadge = cfg.windowIcons?.head || BUILTIN_HEAD_ICON;
+  if (headModeOf(cfg) === 'icon') return { icon: headBadge, overlay: '' };
+  return { icon: projectIconFor(cwd, cfg), overlay: headBadge };
 }
 
 const ABSOLUTE = /^(?:[a-zA-Z]:[\\/]|[\\/])/;
@@ -70,7 +73,7 @@ const ABSOLUTE = /^(?:[a-zA-Z]:[\\/]|[\\/])/;
 /**
  * Относительный путь — от корня репозитория, где лежит каталог icons/.
  * Разделитель — тот, что у корня: путь уходит наружу (файл окон, пикер), и
- * смесь вида `C:\repo/icons/crown.ico` Windows хоть и примет, но сравнивать
+ * смесь вида `C:\repo/icons/head-badge.ico` Windows хоть и примет, но сравнивать
  * её с путями из конфига и читать глазами неудобно.
  */
 function resolveIconPath(iconPath, repoRoot) {
@@ -97,9 +100,9 @@ function iconsSidecarPath(statePath) {
 /**
  * Что публиковать: главная иконка окна (не значок) по sessionId, абсолютным
  * путём. Окно без иконки — пустая строка. `wanted` — hwnd → `{icon, overlay}`
- * из `iconFor`. Решение Стаса 16.11: в пикере у head иконка проекта, корона —
- * только значком на панели задач; в режиме icon иконка окна head и есть
- * корона, и читатель видит её, как раньше.
+ * из `iconFor`. Решение Стаса 16.11: в пикере у head иконка проекта, значок
+ * head — только на панели задач; в режиме icon иконка окна head и есть
+ * значок head, и читатель видит его, как раньше.
  */
 function publishedIcons(sessions, wanted, repoRoot) {
   const out = {};
@@ -176,8 +179,8 @@ function projectIcons(cfg, repoRoot) {
 }
 
 /**
- * Корона head абсолютным путём — для закрытой head-сессии в истории читателя.
- * Только в режиме icon, где корона и есть иконка окна head; в режиме
+ * Значок head абсолютным путём — для закрытой head-сессии в истории читателя.
+ * Только в режиме icon, где значок head и есть иконка окна; в режиме
  * badge пусто — читатель берёт иконку проекта по каталогу, как у окна.
  */
 function headIcon(cfg, repoRoot) {

@@ -92,8 +92,8 @@ function startService({
   // Входящие из Telegram: брокер не нужен и ему. Заводится всегда, а включается
   // ключом `claudeWt.telegramInbox.enabled` — конфиг читается на каждом проходе.
   const telegramInbox = startTelegramInbox({ winMan, log });
-  // Иконки окон claude: сессия — иконка проекта, head — она же и корона значком
-  // на панели задач (или вместо иконки, headMode: icon). Окнам и wt, и
+  // Иконки окон claude: сессия — иконка проекта, head — она же и значок head
+  // на кнопке панели задач (или вместо иконки, headMode: icon). Окнам и wt, и
   // WezTerm; держит их этот процесс.
   const windowIcons = startWindowIcons({ winMan, log });
 

@@ -51,9 +51,9 @@ describe('buildWindowsFile', () => {
   it('carries the window icon from the service map, empty when there is none', () => {
     const out = buildWindowsFile({
       windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000,
-      icons: { aaa: 'C:\\repo\\icons\\crown.ico', bbb: '' },
+      icons: { aaa: 'C:\\repo\\icons\\head-badge.ico', bbb: '' },
     });
-    expect(out.windows.aaa.icon).toBe('C:\\repo\\icons\\crown.ico');
+    expect(out.windows.aaa.icon).toBe('C:\\repo\\icons\\head-badge.ico');
     expect(out.windows.bbb.icon).toBe('');
     const bare = buildWindowsFile({ windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000 });
     expect(bare.windows.aaa.icon).toBe('');
@@ -209,7 +209,7 @@ describe('windowsFingerprint', () => {
   // Новая метка head или правка иконки в настройках не ждут сердцебиения.
   it('notices a changed icon', () => {
     const base = { one: { desktop: 1, title: 'x', icon: '' } };
-    expect(windowsFingerprint({ one: { desktop: 1, title: 'x', icon: 'C:\\ico\\crown.ico' } }))
+    expect(windowsFingerprint({ one: { desktop: 1, title: 'x', icon: 'C:\\ico\\head-badge.ico' } }))
       .not.toBe(windowsFingerprint(base));
   });
 
@@ -372,22 +372,22 @@ describe('buildWindowsFile — иконки проектов', () => {
     ]);
   });
 
-  it('корона head — верхним полем headIcon, и только когда она есть', () => {
+  it('значок head — верхним полем headIcon, и только когда он есть', () => {
     const base = { windows: [], slots: {}, host: 'pc', pid: 1, nowMs: 0 };
-    expect(buildWindowsFile({ ...base, headIcon: 'C:\\repo\\icons\\crown.ico' }).headIcon)
-      .toBe('C:\\repo\\icons\\crown.ico');
+    expect(buildWindowsFile({ ...base, headIcon: 'C:\\repo\\icons\\head-badge.ico' }).headIcon)
+      .toBe('C:\\repo\\icons\\head-badge.ico');
     expect('headIcon' in buildWindowsFile(base)).toBe(false);
   });
 });
 
 describe('windowsFingerprint — иконки проектов', () => {
   // Правка иконки в настройках не должна ждать сердцебиения.
-  it('замечает сменённую иконку проекта и короны', () => {
+  it('замечает сменённую иконку проекта и значок head', () => {
     const win = { one: { desktop: 1, title: 'x', focusedAt: 0 } };
     const a = [{ cwd: '/p/home', name: 'home', icon: 'C:\\a.ico' }];
     const b = [{ cwd: '/p/home', name: 'home', icon: 'C:\\b.ico' }];
     expect(windowsFingerprint(win, [], a)).not.toBe(windowsFingerprint(win, [], b));
-    expect(windowsFingerprint(win, [], a, 'C:\\crown.ico')).not.toBe(windowsFingerprint(win, [], a, 'C:\\king.ico'));
+    expect(windowsFingerprint(win, [], a, 'C:\\head-badge.ico')).not.toBe(windowsFingerprint(win, [], a, 'C:\\other-badge.ico'));
   });
 });
 

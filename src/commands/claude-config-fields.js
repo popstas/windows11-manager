@@ -62,7 +62,7 @@ const CLAUDE_CONFIG_FIELDS = [
   // записи `projectIcons` (claude-config-commands.js).
   { name: 'claudeWt.windowIcons.enabled', section: 'claudeWt.windowIcons', key: 'enabled', type: 'boolean', default: true, createSection: true },
   { name: 'claudeWt.windowIcons.head', section: 'claudeWt.windowIcons', key: 'head', type: 'string', default: '', createSection: true },
-  // Как окну head показывать корону: значком в углу кнопки на панели задач
+  // Как окну head показывать значок head: в углу кнопки на панели задач
   // поверх иконки проекта (решение Стаса 16.11) или вместо иконки, как раньше.
   {
     name: 'claudeWt.windowIcons.headMode',

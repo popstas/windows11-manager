@@ -58,7 +58,7 @@ function setup({ windows = [], sessions = {}, heads = [], config = {}, control =
 }
 
 describe('startWindowIcons', () => {
-  it('при старте ставит иконки окнам wt и WezTerm: head — иконка проекта и корона значком', () => {
+  it('при старте ставит иконки окнам wt и WezTerm: head — иконка проекта и значок head на кнопке', () => {
     const { calls, overlays } = setup({
       windows: [
         { id: 1, path: WT, title: 'wezterm-switch-head' },
@@ -71,17 +71,17 @@ describe('startWindowIcons', () => {
     expect(calls).toEqual([[1, 'C:/ico/me.ico'], [2, 'C:/ico/exp.ico']]);
     // Окну 2 значок не положен — на старте он снимается: его мог оставить
     // прошлый процесс, explorer держит значок сам.
-    expect(overlays).toEqual([[1, 'C:/repo/icons/crown.ico', 'head'], [2, '', '']]);
+    expect(overlays).toEqual([[1, 'C:/repo/icons/head-badge.ico', 'head'], [2, '', '']]);
   });
 
-  it('режим icon — корона вместо иконки, значков нет', () => {
+  it('режим icon — значок head вместо иконки, значков на кнопках нет', () => {
     const { calls, overlays } = setup({
       windows: [{ id: 1, path: WT, title: 'h' }, { id: 2, path: WEZ, title: 'c' }],
       sessions: { 1: { sessionId: 'h', cwd: '/p/home' }, 2: { sessionId: 'c', cwd: '/p/exp' } },
       heads: ['h'],
       config: { windowIcons: { headMode: 'icon', profiles: { home: 'C:/ico/me.ico', ExpertizeMe: 'C:/ico/exp.ico' } } },
     });
-    expect(calls).toEqual([[1, 'C:/repo/icons/crown.ico'], [2, 'C:/ico/exp.ico']]);
+    expect(calls).toEqual([[1, 'C:/repo/icons/head-badge.ico'], [2, 'C:/ico/exp.ico']]);
     expect(overlays.filter(o => o[1])).toEqual([]);
   });
 
@@ -93,14 +93,14 @@ describe('startWindowIcons', () => {
     overlays.length = 0;
     world.cfg = mergeClaudeWtConfig({ ...world.cfg, windowIcons: { ...world.cfg.windowIcons, headMode: 'icon' } });
     svc.tick();
-    expect(calls).toEqual([[1, 'C:/repo/icons/crown.ico']]);
+    expect(calls).toEqual([[1, 'C:/repo/icons/head-badge.ico']]);
     expect(overlays).toEqual([[1, '', '']]);
     calls.length = 0;
     overlays.length = 0;
     world.cfg = mergeClaudeWtConfig({ ...world.cfg, windowIcons: { ...world.cfg.windowIcons, headMode: 'badge' } });
     svc.tick();
     expect(calls).toEqual([[1, 'C:/ico/me.ico']]);
-    expect(overlays).toEqual([[1, 'C:/repo/icons/crown.ico', 'head']]);
+    expect(overlays).toEqual([[1, 'C:/repo/icons/head-badge.ico', 'head']]);
   });
 
   it('перезапуск explorer — значок ставится заново сразу и на следующем обновлении', () => {
@@ -115,13 +115,13 @@ describe('startWindowIcons', () => {
     expect(overlays).toEqual([]);
     world.tray = 200;
     svc.tick();
-    expect(overlays.filter(o => o[1])).toEqual([[1, 'C:/repo/icons/crown.ico', 'head']]);
+    expect(overlays.filter(o => o[1])).toEqual([[1, 'C:/repo/icons/head-badge.ico', 'head']]);
     expect(calls).toEqual([]);
     expect(logs.some(l => l.includes('explorer'))).toBe(true);
     overlays.length = 0;
     advance(16000);
     svc.tick();
-    expect(overlays.filter(o => o[1])).toEqual([[1, 'C:/repo/icons/crown.ico', 'head']]);
+    expect(overlays.filter(o => o[1])).toEqual([[1, 'C:/repo/icons/head-badge.ico', 'head']]);
     overlays.length = 0;
     advance(16000);
     svc.tick();
@@ -138,7 +138,7 @@ describe('startWindowIcons', () => {
     expect(overlays).toEqual([]);
     world.tray = 300;
     svc.tick();
-    expect(overlays).toEqual([[1, 'C:/repo/icons/crown.ico', 'head']]);
+    expect(overlays).toEqual([[1, 'C:/repo/icons/head-badge.ico', 'head']]);
   });
 
   it('значок не встал — повтор на следующем обновлении, предупреждение один раз', () => {
@@ -150,19 +150,19 @@ describe('startWindowIcons', () => {
     world.heads.add('c');
     advance(16000);
     svc.tick();
-    expect(overlays).toEqual([[2, 'C:/repo/icons/crown.ico', 'head']]);
+    expect(overlays).toEqual([[2, 'C:/repo/icons/head-badge.ico', 'head']]);
     advance(16000);
     svc.tick();
     expect(overlays).toHaveLength(2);
     expect(logs.filter(l => l.startsWith('warn:') && l.includes('значок'))).toHaveLength(1);
   });
 
-  it('аддон без setOverlayIcon — корона вместо иконки и одно предупреждение', () => {
+  it('аддон без setOverlayIcon — значок head вместо иконки и одно предупреждение', () => {
     const { calls, overlays, logs } = setup({
       windows: [{ id: 1, path: WT, title: 'h' }], sessions: { 1: { sessionId: 'h', cwd: '/p/home' } }, heads: ['h'],
       overlayControl: false,
     });
-    expect(calls).toEqual([[1, 'C:/repo/icons/crown.ico']]);
+    expect(calls).toEqual([[1, 'C:/repo/icons/head-badge.ico']]);
     expect(overlays).toEqual([]);
     expect(logs.filter(l => l.startsWith('warn:'))).toHaveLength(1);
   });
@@ -186,9 +186,9 @@ describe('startWindowIcons', () => {
     world.heads.add('c');
     advance(16000);
     svc.tick();
-    // Главная иконка та же (проект), корона — значком.
+    // Главная иконка та же (проект), значок head — на кнопке.
     expect(calls).toEqual([]);
-    expect(overlays).toEqual([[2, 'C:/repo/icons/crown.ico', 'head']]);
+    expect(overlays).toEqual([[2, 'C:/repo/icons/head-badge.ico', 'head']]);
   });
 
   it('смена иконки проекта в настройках применяется сразу, без ожидания', () => {
@@ -253,14 +253,14 @@ describe('startWindowIcons', () => {
       heads: ['h'],
       config: { profile: '' },
     });
-    // head в режиме badge — иконка проекта: корона только значком на панели.
+    // head в режиме badge — иконка проекта: значок head только на кнопке панели.
     expect(published).toEqual([{ h: 'C:/ico/me.ico', c: 'C:/ico/exp.ico', n: '' }]);
     advance(16000);
     svc.tick();
     expect(published).toHaveLength(1);
     world.cfg = mergeClaudeWtConfig({ ...world.cfg, windowIcons: { ...world.cfg.windowIcons, headMode: 'icon' } });
     svc.tick();
-    expect(published.at(-1)).toEqual({ h: 'C:/repo/icons/crown.ico', c: 'C:/ico/exp.ico', n: '' });
+    expect(published.at(-1)).toEqual({ h: 'C:/repo/icons/head-badge.ico', c: 'C:/ico/exp.ico', n: '' });
   });
 
   it('выключенные иконки — пустая карта демону', () => {
