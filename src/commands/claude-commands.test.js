@@ -478,6 +478,162 @@ describe('claude-session-open', () => {
   });
 });
 
+describe('claude-session-open: имя сессии вместо id', () => {
+  // Клик по `- Сессия <имя>` в tasks.md: плагин tasks-mover шлёт имя из
+  // /rename в поле id. Настоящий id сессии — UUID.
+  const UUID = 'bbb704a8-18fb-4c93-accb-f51a223de0ad';
+  const OLD = '11111111-2222-4333-8444-555555555555';
+  const named = (sessions) => deps({
+    winMan: {
+      claudeWtSessions: vi.fn().mockReturnValue({ ok: true, sessions }),
+      getWindowById: vi.fn((windowId) => (windowId === 42 ? { id: 42 } : null)),
+    },
+  });
+
+  it('имя находит сессию по заголовку и поднимает её окно', async () => {
+    const d = named([{ id: UUID, title: 'nginx-cve-1811', windowId: 42, open: true }]);
+    const res = await claudeCommands(d)['claude-session-open']({ id: 'nginx-cve-1811', action: 'terminal' });
+    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledWith(42, expect.any(Function));
+    expect(d.winMan.resumeClaudeSession).not.toHaveBeenCalled();
+    expect(res).toEqual({ action: 'focus' });
+  });
+
+  it('закрытую сессию по имени восстанавливает под её настоящим id', async () => {
+    const d = named([{ id: UUID, title: 'nginx-cve-1811', windowId: null, open: false }]);
+    const res = await claudeCommands(d)['claude-session-open']({ id: 'nginx-cve-1811', action: 'terminal' });
+    expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledWith({ sessionIds: [UUID] });
+    expect(res).toEqual({ action: 'restore' });
+  });
+
+  it('из тёзок выбирает ту, чьё окно на экране, даже если другая свежее', async () => {
+    const d = named([
+      { id: OLD, title: 'site', windowId: 7, open: true, lastActivity: 900 },
+      { id: UUID, title: 'site', windowId: 42, open: true, lastActivity: 100 },
+    ]);
+    await claudeCommands(d)['claude-session-open']({ id: 'site', action: 'terminal' });
+    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledWith(42, expect.any(Function));
+  });
+
+  it('из закрытых тёзок берёт самую свежую по активности', async () => {
+    const d = named([
+      { id: OLD, title: 'site', open: false, lastActivity: 100 },
+      { id: UUID, title: 'site', open: false, lastActivity: 900 },
+    ]);
+    await claudeCommands(d)['claude-session-open']({ id: 'site', action: 'terminal' });
+    expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledWith({ sessionIds: [UUID] });
+  });
+
+  it('незнакомое имя уходит в ccfzf как есть — он разрешит его сам', async () => {
+    const d = named([{ id: UUID, title: 'other', open: false }]);
+    const res = await claudeCommands(d)['claude-session-open']({ id: 'nginx-cve-1811', action: 'terminal' });
+    expect(d.winMan.resumeClaudeSession).toHaveBeenCalledWith({ id: 'nginx-cve-1811' });
+    expect(res).toEqual({ action: 'resume' });
+  });
+
+  it('имя на кириллице и с └ проходит', async () => {
+    const d = named([]);
+    await claudeCommands(d)['claude-session-open']({ id: '└задача_1.2', action: 'terminal' });
+    expect(d.winMan.resumeClaudeSession).toHaveBeenCalledWith({ id: '└задача_1.2' });
+  });
+
+  it.each([
+    ['пробел', 'a b'],
+    ['кавычка', "x'; rm -rf ~"],
+    ['точка с запятой — разделитель панелей WT', 'a;b'],
+    ['подстановка шелла', '$(id)'],
+    ['обратная кавычка', '`id`'],
+    ['амперсанд', 'a&b'],
+    ['слэш', '../x'],
+    ['ведущий дефис — опция ccfzf', '--kiosk'],
+  ])('имя с запрещённым символом (%s) отклоняется до запуска', async (_why, bad) => {
+    const d = named([{ id: UUID, title: bad, open: false }]);
+    const res = await claudeCommands(d)['claude-session-open']({ id: bad, action: 'terminal' });
+    expect(res).toEqual({ httpStatus: 400, error: expect.stringContaining('forbidden') });
+    expect(d.winMan.resumeClaudeSession).not.toHaveBeenCalled();
+    expect(d.winMan.restoreClaudeSessions).not.toHaveBeenCalled();
+    expect(d.winMan.focusTerminalWindow).not.toHaveBeenCalled();
+    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('forbidden'));
+  });
+
+  it('слишком длинное имя отклоняется', async () => {
+    const d = named([]);
+    const res = await claudeCommands(d)['claude-session-open']({ id: 'a'.repeat(129), action: 'terminal' });
+    expect(res.httpStatus).toBe(400);
+    expect(d.winMan.resumeClaudeSession).not.toHaveBeenCalled();
+  });
+
+  it('UUID-путь прежний: ищется по id, а не по заголовку', async () => {
+    // Сессия с заголовком, равным чужому UUID, не должна перехватить просьбу.
+    const d = named([
+      { id: OLD, title: UUID, windowId: 42, open: true },
+    ]);
+    const res = await claudeCommands(d)['claude-session-open']({ id: UUID, action: 'terminal' });
+    expect(d.winMan.focusTerminalWindow).not.toHaveBeenCalled();
+    expect(d.winMan.resumeClaudeSession).toHaveBeenCalledWith({ id: UUID });
+    expect(res).toEqual({ action: 'resume' });
+  });
+
+  it('UUID из слотов поднимается по id', async () => {
+    const d = named([{ id: UUID, title: 'x', windowId: 42, open: true }]);
+    const res = await claudeCommands(d)['claude-session-open']({ id: UUID, action: 'terminal' });
+    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledWith(42, expect.any(Function));
+    expect(res).toEqual({ action: 'focus' });
+  });
+
+  it('id не строкой не падает, а приводится', async () => {
+    const d = named([]);
+    await claudeCommands(d)['claude-session-open']({ id: 123, action: 'terminal' });
+    expect(d.winMan.resumeClaudeSession).toHaveBeenCalledWith({ id: '123' });
+  });
+});
+
+describe('claude-session-open: ответ для http', () => {
+  it('неудавшееся восстановление — 500', async () => {
+    const d = deps({
+      winMan: {
+        getWindowById: vi.fn().mockReturnValue(null),
+        restoreClaudeSessions: vi.fn().mockResolvedValue({ restored: [], skipped: ['abc'] }),
+      },
+    });
+    const res = await claudeCommands(d)['claude-session-open']({ id: 'abc', action: 'terminal' });
+    expect(res).toEqual({ httpStatus: 500, error: expect.stringContaining('abc') });
+  });
+
+  it('отказ resume — 500 с причиной', async () => {
+    const d = deps({
+      winMan: { resumeClaudeSession: vi.fn().mockResolvedValue({ ok: false, reason: 'no terminal' }) },
+    });
+    const res = await claudeCommands(d)['claude-session-open']({ id: 'zzz', action: 'terminal' });
+    expect(res).toEqual({ httpStatus: 500, error: 'no terminal' });
+  });
+
+  it('исключение resume — 500', async () => {
+    const d = deps({ winMan: { resumeClaudeSession: vi.fn().mockRejectedValue(new Error('wt.exe not found')) } });
+    const res = await claudeCommands(d)['claude-session-open']({ id: 'zzz', action: 'terminal' });
+    expect(res).toEqual({ httpStatus: 500, error: 'wt.exe not found' });
+  });
+
+  it('незнакомое действие и пустая просьба — 400', async () => {
+    const d = deps();
+    const cmd = claudeCommands(d)['claude-session-open'];
+    expect((await cmd({ action: 'pr', id: 'abc' })).httpStatus).toBe(400);
+    expect((await cmd({ action: 'terminal' })).httpStatus).toBe(400);
+    expect((await cmd({ action: 'terminal-new' })).httpStatus).toBe(400);
+  });
+
+  it('открытие проекта по каталогу отвечает действием', async () => {
+    const d = deps();
+    const res = await claudeCommands(d)['claude-session-open']({ action: 'terminal', cwd: '/p/site' });
+    expect(res).toEqual({ action: 'focus' });
+  });
+
+  it('id сессии в ответ не попадает', async () => {
+    const d = deps();
+    const res = await claudeCommands(d)['claude-session-open']({ id: 'zzz', action: 'terminal' });
+    expect(JSON.stringify(res)).not.toContain('sessionId');
+  });
+});
+
 describe('claude-session-open: имя терминала', () => {
   it('terminal из просьбы доезжает до openClaudeProject', async () => {
     const d = deps({ winMan: { claudeWtSessions: vi.fn().mockReturnValue({ ok: true, sessions: [] }) } });

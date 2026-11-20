@@ -14,6 +14,7 @@ import { parseRestorePayload } from './restore-payload.js';
 import { parseArrangePayload } from '../claude-layout-helpers.js';
 import { startTiming, noTiming } from '../claude-wt/timing.js';
 import { publishedTerminal } from '../claude-wt/terminal-helpers.js';
+import { isSessionUuid, sessionNameProblem, pickSessionByTitle } from '../claude-wt/session-name-helpers.js';
 
 /** Тело просьбы: `{"id": …}` либо голый id строкой — ради вызова руками. */
 function parseIdPayload(payload) {
@@ -47,7 +48,7 @@ function claudeCommands({ winMan, log, notify, slots }) {
    * Ровно эту секунду с лишним человек и ждал, выбирая в пикере уже открытое
    * окно: сама расстановка фокуса занимает миллисекунды.
    */
-  function findSession(id, mark = noTiming) {
+  function findSession(id, mark = noTiming, { byTitle = false } = {}) {
     let res;
     try {
       res = winMan.claudeWtSessions({ mark, brief: true });
@@ -55,7 +56,13 @@ function claudeCommands({ winMan, log, notify, slots }) {
       return { error: e.message };
     }
     if (!res.ok) return { error: res.reason };
-    const session = res.sessions.find((s) => s.id === id);
+    let session = res.sessions.find((s) => s.id === id);
+    // Имя вместо id (подпункт `- Сессия <имя>` из tasks.md): ищется по
+    // заголовку, точно. UUID по заголовку не ищем — у настоящего id тёзок
+    // среди имён не бывает, а совпадение было бы случайным.
+    if (!session && byTitle && !isSessionUuid(id)) {
+      session = pickSessionByTitle(res.sessions, id, (windowId) => !!winMan.getWindowById(windowId)) ?? undefined;
+    }
     // `unknown` отделяет «слота под этот id нет» от «список не прочитался
     // вовсе»: первое для session-open — обычное дело (сессия с чужой машины),
     // второе — поломка, о которой надо сказать. Без флага их пришлось бы
@@ -76,10 +83,16 @@ function claudeCommands({ winMan, log, notify, slots }) {
       if (cursor) opts.cursor = cursor;
       const { restored, skipped } = await winMan.restoreClaudeSessions(opts);
       log(`claude-wt restored ${restored.length}, skipped ${skipped.length}`);
-      if (!restored.length) notify(`claude-wt: не удалось поднять сессию ${id}`);
+      if (!restored.length) {
+        const reason = `не удалось поднять сессию ${id}`;
+        notify(`claude-wt: ${reason}`);
+        return { ok: false, reason };
+      }
+      return { ok: true };
     } catch (e) {
       log(`claude-wt restore failed: ${e.message}`, 'error');
       notify(`claude-wt: ошибка восстановления — ${e.message}`);
+      return { ok: false, reason: e.message };
     }
   }
 
@@ -103,10 +116,12 @@ function claudeCommands({ winMan, log, notify, slots }) {
    */
   async function focusOrRestore(id, session, terminal, mark = noTiming, cursor = null) {
     if (chooseAction(session, (windowId) => !!winMan.getWindowById(windowId)) === 'restore') {
-      await restoreOne(id, terminal, cursor);
-      return;
+      return { action: 'restore', ...(await restoreOne(id, terminal, cursor)) };
     }
     if (!(await winMan.focusTerminalWindow(session.windowId, mark))) log(`claude-wt: ${id} is not on screen`, 'warn');
+    // Окно не вышло вперёд — не отказ: оно есть, и стол или фокус ему мог не
+    // отдать Windows. Второе окно той же сессии тут хуже, чем журнал.
+    return { action: 'focus', ok: true };
   }
 
   /**
@@ -143,15 +158,16 @@ function claudeCommands({ winMan, log, notify, slots }) {
     } catch (e) {
       log(`claude-wt session-open ${cwd}: ${e.message}`, 'error');
       notify(`claude-wt: ${e.message}`);
-      return;
+      return { ok: false, reason: e.message };
     }
     if (!res?.ok) {
       const reason = res?.reason ?? 'не удалось открыть';
       log(`claude-wt session-open ${cwd}: ${reason}`, 'warn');
       notify(`claude-wt: ${reason}`);
-      return;
+      return { ok: false, reason };
     }
     log(`claude-wt session-open ${cwd}: ${res.action}`);
+    return { ok: true, action: res.action };
   }
 
   /**
@@ -178,15 +194,16 @@ function claudeCommands({ winMan, log, notify, slots }) {
     } catch (e) {
       log(`claude-wt session-open ${id}: ${e.message}`, 'error');
       notify(`claude-wt: ${e.message}`);
-      return;
+      return { ok: false, reason: e.message };
     }
     if (!res?.ok) {
       const reason = res?.reason ?? 'не удалось поднять сессию';
       log(`claude-wt session-open ${id}: ${reason}`, 'warn');
       notify(`claude-wt: ${reason}`);
-      return;
+      return { ok: false, reason };
     }
     log(`claude-wt session-open ${id}: ${res.action}`);
+    return { ok: true, action: res.action };
   }
 
   async function focus(payload) {
@@ -340,18 +357,40 @@ function claudeCommands({ winMan, log, notify, slots }) {
      *     твоей сессии вот тебе новая»;
      *  4. нет ни того, ни другого — говорим об этом в журнал и человеку.
      *     Молчание здесь было бы неотличимо от успеха.
+     *
+     * В `id` может приехать и имя сессии (`/rename`) — так просит плагин
+     * tasks-mover по клику на `- Сессия <имя>` в tasks.md. Имя ищется по
+     * заголовку среди слотов (`pickSessionByTitle`), и найденная сессия идёт
+     * дальше по шагу 1 уже под своим id. Не нашлась — шаг 2 с самим именем:
+     * `ccfzf --session` на pc-virt разрешает имя сам, по всем транскриптам.
+     * Имя попадает в командную строку (WT → ssh → шелл), поэтому не-UUID
+     * проходит белый список символов (`sessionNameProblem`) раньше всего.
+     *
+     * Ответ — для http-слушателя; по MQTT его никто не читает. Отказ несёт
+     * `httpStatus` (400 — кривая просьба, 500 — поднять не вышло), успех —
+     * `{action}`: focus | restore | resume | spawn… Id сессии наружу не
+     * отдаётся: слушатель без авторизации, а живой sessionId открывает
+     * head-session второй проход session-new.
      */
     async 'claude-session-open'(payload) {
       const { id, action, cwd, name, terminal, cursor, noAutoplace } = parseIdPayload(payload);
-      if (!action) return;
+      // Отказ: в журнал и человеку — у публикации в MQTT ответа нет, и
+      // молчание было бы неотличимо от успеха, — и кодом для http.
+      const refuse = (reason, status = 400) => {
+        log(`claude-wt ${reason}`, 'warn');
+        notify(`claude-wt: ${reason}`);
+        return { httpStatus: status, error: reason };
+      };
+      // Исход ветки → ответ. Об отказе ветка уже сказала сама.
+      const answer = (res) => (res?.ok
+        ? { action: res.action }
+        : { httpStatus: 500, error: res?.reason ?? 'не удалось открыть' });
+      if (!action) return undefined;
       if (action !== 'terminal' && action !== 'terminal-new') {
         // Незнакомое действие не делает хотя бы ничего и жалуется — тем же
         // стилем, что terminal-new без cwd: в журнал и человеку, а не только
         // в журнал, иначе отказ был бы неотличим от тишины.
-        const reason = `session-open: unsupported action ${action}`;
-        log(`claude-wt ${reason}`, 'warn');
-        notify(`claude-wt: ${reason}`);
-        return;
+        return refuse(`session-open: unsupported action ${action}`);
       }
       const dir = typeof cwd === 'string' ? cwd.trim() : '';
       const asked = typeof name === 'string' ? name.trim() : '';
@@ -378,16 +417,17 @@ function claudeCommands({ winMan, log, notify, slots }) {
       // открыть новую, и вместо второго терминала человек получил бы подъём
       // первого — обратное тому, о чём просил.
       if (action === 'terminal-new') {
-        if (!dir) {
-          const reason = 'session-open: terminal-new нужен cwd проекта';
-          log(`claude-wt ${reason}`, 'warn');
-          notify(`claude-wt: ${reason}`);
-          return;
-        }
-        await openProject(dir, asked, { reuseOpen: false, terminal: wantedTerminal, cursor: at });
-        return;
+        if (!dir) return refuse('session-open: terminal-new нужен cwd проекта');
+        return answer(await openProject(dir, asked, { reuseOpen: false, terminal: wantedTerminal, cursor: at }));
       }
-      const found = id ? findSession(id, mark) : null;
+      // Строка, а не что попало: id из JSON может приехать числом или
+      // объектом, а дальше он идёт и в поиск, и в шаблон командной строки.
+      const want = typeof id === 'string' ? id.trim() : (id == null ? '' : String(id));
+      if (want && !isSessionUuid(want)) {
+        const problem = sessionNameProblem(want);
+        if (problem) return refuse(`session-open: ${problem}`);
+      }
+      const found = want ? findSession(want, mark, { byTitle: true }) : null;
       if (found?.session) {
         // Точка едет и сюда. Прежде эта ветка курсора не получала вовсе — она
         // **тем и занимается**, что возвращает окно в запомненные границы, —
@@ -399,8 +439,9 @@ function claudeCommands({ winMan, log, notify, slots }) {
         //
         // У живого окна точка не значит ничего: подъём — не открытие, ставить
         // нечего, а второе окно той же сессии человек не просил.
-        await focusOrRestore(id, found.session, wantedTerminal, mark, at);
-        return;
+        const sid = found.session.id;
+        if (sid !== want) log(`claude-wt session-open ${want}: по имени → ${sid}`);
+        return answer(await focusOrRestore(sid, found.session, wantedTerminal, mark, at));
       }
       // Список сессий не прочитался — это поломка, а не «сессии тут нет»;
       // сказать о ней надо, но не встать: поднять сессию по id можно и без
@@ -408,17 +449,9 @@ function claudeCommands({ winMan, log, notify, slots }) {
       // обязателен: сюда доходит и найденная сессия, у которой ошибки нет
       // вовсе, — без проверки в журнал ушло бы слово `undefined`.
       if (found && !found.unknown && found.error) log(`claude-wt session-open: ${found.error}`, 'warn');
-      if (id) {
-        await resumeSession(id, dir, wantedTerminal, at);
-        return;
-      }
-      if (dir) {
-        await openProject(dir, asked, { terminal: wantedTerminal, cursor: at });
-        return;
-      }
-      const reason = 'session-open: нужен id сессии или cwd проекта';
-      log(`claude-wt session-open: ${reason}`, 'warn');
-      notify(`claude-wt: ${reason}`);
+      if (want) return answer(await resumeSession(want, dir, wantedTerminal, at));
+      if (dir) return answer(await openProject(dir, asked, { terminal: wantedTerminal, cursor: at }));
+      return refuse('session-open: нужен id сессии или cwd проекта');
     },
 
     /**
