@@ -39,7 +39,42 @@ function slotFromPayload(payload) {
   return parsed.slot !== undefined ? parsed.slot : parsed.id;
 }
 
-function claudeCommands({ winMan, log, notify, slots }) {
+/**
+ * Сколько после открытия сессии повторная просьба о ней же не открывает окно.
+ * Окно поднимается не сразу: restore и resume отвечают, когда терминал
+ * запущен, а демон узнаёт окно тиком позже. Второй клик в эти секунды
+ * (двойной клик по `- Сессия <имя>` в Obsidian, 2026-11-20 на nb) видел
+ * сессию закрытой и запускал второй `ccfzf --session` на ту же сессию.
+ */
+const OPEN_GUARD_MS = 10_000;
+
+function claudeCommands({ winMan, log, notify, slots, now = () => Date.now() }) {
+  // id сессии → до какого момента новое открытие её не запускает. Infinity —
+  // открытие ещё идёт. Ключ — настоящий id после поиска по имени, чтобы имя и
+  // uuid одной сессии делили одну защиту.
+  const opening = new Map();
+
+  /** Запустить открытие `key`, если такое же не идёт и не шло только что. */
+  async function guardOpen(key, run) {
+    const until = opening.get(key);
+    if (until !== undefined && now() < until) {
+      log(`claude-wt session-open ${key}: уже открывается — повтор пропущен`);
+      return { ok: true, action: 'pending' };
+    }
+    opening.set(key, Infinity);
+    let res;
+    try {
+      res = await run();
+    } catch (e) {
+      opening.delete(key);
+      throw e;
+    }
+    // Отказ защиту снимает: повторить неудавшееся человек вправе сразу.
+    if (res?.ok) opening.set(key, now() + OPEN_GUARD_MS);
+    else opening.delete(key);
+    return res;
+  }
+
   /**
    * `brief: true` — по той же причине, что и в openClaudeProject: решается
    * здесь «открыто ли окно этой сессии», а на это состояние агента не влияет
@@ -116,7 +151,7 @@ function claudeCommands({ winMan, log, notify, slots }) {
    */
   async function focusOrRestore(id, session, terminal, mark = noTiming, cursor = null) {
     if (chooseAction(session, (windowId) => !!winMan.getWindowById(windowId)) === 'restore') {
-      return { action: 'restore', ...(await restoreOne(id, terminal, cursor)) };
+      return guardOpen(id, async () => ({ action: 'restore', ...(await restoreOne(id, terminal, cursor)) }));
     }
     if (!(await winMan.focusTerminalWindow(session.windowId, mark))) log(`claude-wt: ${id} is not on screen`, 'warn');
     // Окно не вышло вперёд — не отказ: оно есть, и стол или фокус ему мог не
@@ -368,7 +403,8 @@ function claudeCommands({ winMan, log, notify, slots }) {
      *
      * Ответ — для http-слушателя; по MQTT его никто не читает. Отказ несёт
      * `httpStatus` (400 — кривая просьба, 500 — поднять не вышло), успех —
-     * `{action}`: focus | restore | resume | spawn… Id сессии наружу не
+     * `{action}`: focus | restore | resume | pending | spawn… (`pending` —
+     * та же сессия уже открывается, `OPEN_GUARD_MS`). Id сессии наружу не
      * отдаётся: слушатель без авторизации, а живой sessionId открывает
      * head-session второй проход session-new.
      */
@@ -449,7 +485,9 @@ function claudeCommands({ winMan, log, notify, slots }) {
       // обязателен: сюда доходит и найденная сессия, у которой ошибки нет
       // вовсе, — без проверки в журнал ушло бы слово `undefined`.
       if (found && !found.unknown && found.error) log(`claude-wt session-open: ${found.error}`, 'warn');
-      if (want) return answer(await resumeSession(want, dir, wantedTerminal, at));
+      // Ключ здесь — то, что пришло: id настоящий у пикера, а имя, которое
+      // трекер не знает, разрешит только ccfzf на той стороне.
+      if (want) return answer(await guardOpen(want, () => resumeSession(want, dir, wantedTerminal, at)));
       if (dir) return answer(await openProject(dir, asked, { terminal: wantedTerminal, cursor: at }));
       return refuse('session-open: нужен id сессии или cwd проекта');
     },

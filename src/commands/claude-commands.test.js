@@ -587,6 +587,90 @@ describe('claude-session-open: имя сессии вместо id', () => {
   });
 });
 
+describe('claude-session-open: повтор, пока сессия открывается', () => {
+  const UUID = 'bbb704a8-18fb-4c93-accb-f51a223de0ad';
+  const closed = (extra = {}) => {
+    const d = deps({
+      winMan: {
+        claudeWtSessions: vi.fn().mockReturnValue({
+          ok: true, sessions: [{ id: UUID, title: 'nginx-cve-1811', windowId: null, open: false }],
+        }),
+        getWindowById: vi.fn().mockReturnValue(null),
+        ...extra,
+      },
+    });
+    let t = 1000;
+    d.now = () => t;
+    d.tick = (ms) => { t += ms; };
+    return d;
+  };
+
+  it('два клика подряд — одно восстановление, второй отвечает pending', async () => {
+    const d = closed();
+    const cmd = claudeCommands(d)['claude-session-open'];
+    expect(await cmd({ id: 'nginx-cve-1811', action: 'terminal' })).toEqual({ action: 'restore' });
+    expect(await cmd({ id: 'nginx-cve-1811', action: 'terminal' })).toEqual({ action: 'pending' });
+    expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it('имя и uuid одной сессии делят защиту', async () => {
+    const d = closed();
+    const cmd = claudeCommands(d)['claude-session-open'];
+    await cmd({ id: 'nginx-cve-1811', action: 'terminal' });
+    expect(await cmd({ id: UUID, action: 'terminal' })).toEqual({ action: 'pending' });
+    expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it('одновременные просьбы, пока первая в полёте, — тоже одно открытие', async () => {
+    let finish;
+    const d = closed({
+      restoreClaudeSessions: vi.fn(() => new Promise((r) => { finish = r; })),
+    });
+    const cmd = claudeCommands(d)['claude-session-open'];
+    const first = cmd({ id: 'nginx-cve-1811', action: 'terminal' });
+    await vi.waitFor(() => expect(finish).toBeDefined());
+    expect(await cmd({ id: 'nginx-cve-1811', action: 'terminal' })).toEqual({ action: 'pending' });
+    finish({ restored: [UUID], skipped: [] });
+    expect(await first).toEqual({ action: 'restore' });
+    expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it('через 10 с открывает снова', async () => {
+    const d = closed();
+    const cmd = claudeCommands(d)['claude-session-open'];
+    await cmd({ id: 'nginx-cve-1811', action: 'terminal' });
+    d.tick(10_001);
+    expect(await cmd({ id: 'nginx-cve-1811', action: 'terminal' })).toEqual({ action: 'restore' });
+    expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledTimes(2);
+  });
+
+  it('неудавшееся открытие защиту не держит', async () => {
+    const d = closed({
+      restoreClaudeSessions: vi.fn().mockResolvedValue({ restored: [], skipped: [UUID] }),
+    });
+    const cmd = claudeCommands(d)['claude-session-open'];
+    expect((await cmd({ id: UUID, action: 'terminal' })).httpStatus).toBe(500);
+    expect((await cmd({ id: UUID, action: 'terminal' })).httpStatus).toBe(500);
+    expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledTimes(2);
+  });
+
+  it('resume незнакомого имени защищён тем же образом', async () => {
+    const d = closed();
+    const cmd = claudeCommands(d)['claude-session-open'];
+    expect(await cmd({ id: 'unknown-name', action: 'terminal' })).toEqual({ action: 'resume' });
+    expect(await cmd({ id: 'unknown-name', action: 'terminal' })).toEqual({ action: 'pending' });
+    expect(d.winMan.resumeClaudeSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('подъём открытого окна защитой не ограничен', async () => {
+    const d = deps();
+    const cmd = claudeCommands(d)['claude-session-open'];
+    await cmd({ id: 'abc', action: 'terminal' });
+    expect(await cmd({ id: 'abc', action: 'terminal' })).toEqual({ action: 'focus' });
+    expect(d.winMan.focusTerminalWindow).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('claude-session-open: ответ для http', () => {
   it('неудавшееся восстановление — 500', async () => {
     const d = deps({
