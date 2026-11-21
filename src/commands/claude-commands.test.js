@@ -397,6 +397,33 @@ describe('claude-session-open', () => {
     expect(d.winMan.focusTerminalWindow).not.toHaveBeenCalled();
   });
 
+  it('terminal-prompt заводит новую сессию и везёт промпт base64-ом', async () => {
+    // `/p <проект> <промпт>` в пикере: новая сессия, открытую не ищем, а
+    // промпт до шелла едет только base64-ом — сито знаков здесь не нужно.
+    const d = deps();
+    const prompt = `fix "it"; $HOME\nёж`;
+    await claudeCommands(d)['claude-session-open']({
+      action: 'terminal-prompt', cwd: '/p/site', name: 'site-2', prompt,
+    });
+    expect(d.winMan.openClaudeProject).toHaveBeenCalledWith({
+      cwd: '/p/site', name: 'site-2', reuseOpen: false,
+      promptB64: Buffer.from(prompt, 'utf8').toString('base64'),
+    });
+    expect(d.winMan.focusTerminalWindow).not.toHaveBeenCalled();
+  });
+
+  it('terminal-prompt без промпта или каталога — отказ вслух, а не сессия без промпта', async () => {
+    const d = deps();
+    const cmd = claudeCommands(d)['claude-session-open'];
+    expect((await cmd({ action: 'terminal-prompt', cwd: '/p/site', name: 'x' })).httpStatus).toBe(400);
+    expect((await cmd({ action: 'terminal-prompt', cwd: '/p/site', prompt: '  ' })).httpStatus).toBe(400);
+    expect((await cmd({ action: 'terminal-prompt', prompt: 'hi' })).httpStatus).toBe(400);
+    const long = await cmd({ action: 'terminal-prompt', cwd: '/p/site', prompt: 'x'.repeat(9000) });
+    expect(long).toEqual({ httpStatus: 400, error: expect.stringContaining('8192') });
+    expect(d.winMan.openClaudeProject).not.toHaveBeenCalled();
+    expect(d.notify).toHaveBeenCalled();
+  });
+
   it('terminal-new с id всё равно про каталог, а не про сессию', async () => {
     // Пикер id сюда не шлёт, но если он появится, поднимать сессию нельзя:
     // просили обратного.

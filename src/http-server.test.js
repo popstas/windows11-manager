@@ -80,6 +80,26 @@ describe('startHttpServer', () => {
     server.close();
   });
 
+  it('промпт terminal-prompt в журнал не пишется целиком, а роутеру доходит целиком', async () => {
+    const prompt = `секрет ${'ж'.repeat(3000)}`;
+    let got;
+    const router = { dispatch: async (_c, body) => { got = body; return { ok: true, result: { action: 'spawn' } }; } };
+    const logged = [];
+    const server = startHttpServer({ router, port: 0, log: (msg) => logged.push(msg) });
+    await new Promise((resolve) => server.once('listening', resolve));
+    const port = server.address().port;
+
+    await fetch(`http://127.0.0.1:${port}/claude-wt/session-open`, {
+      method: 'POST', body: JSON.stringify({ action: 'terminal-prompt', cwd: '/p/site', prompt }),
+    });
+    expect(got.prompt).toBe(prompt);
+    const line = logged.find(l => l.includes('terminal-prompt'));
+    expect(line).toContain('секрет');
+    expect(line).not.toContain('ж'.repeat(200));
+
+    server.close();
+  });
+
   const fakeDock = { count: 5, svg: (n) => (n <= 5 ? `<svg data-slot="${n}"></svg>` : null) };
 
   async function listen(opts) {

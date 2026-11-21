@@ -314,6 +314,14 @@ claudeWt:
       - -t
       - >-
         exec $SHELL -ic 'cd -- "$1" && exec claude -n "$2" --session-id "$3"' claude-wt '{cwd}' '{name}' '{sessionId}'
+  # New session with a first prompt (`terminal-prompt` from ccfzf-picker,
+  # `/p <project> <prompt>`). Usually left unset: it is derived from launchNew
+  # by appending `-- "$(printf %s {promptB64} | base64 --decode)"` inside its
+  # `$SHELL -ic '…'` script. {promptB64} is the prompt in base64 (at most
+  # 8192 bytes of UTF-8) — no quotes, `;` or `$` reach the command line.
+  # Set it only when launchNew has no such script.
+  # launchPrompt:
+  #   args: [...same as launchNew, with {promptB64}...]
   # Session per incoming Telegram file (telegramInbox below). Same shape as
   # launchNew, but the remote side runs a vault script, which in turn calls
   # `claude -n <name> ...`. {cwd}, {script}, {file}, {name} are positional
