@@ -11,6 +11,7 @@
  * о чём тут же и написано ниже.
  */
 import { createRouter } from '../commands/router.js';
+import { redactPayload } from '../log-redact.js';
 import { buildCommandMap } from '../commands/build.js';
 import { createHaExport } from '../claude-wt/ha/export.js';
 import { topics } from '../claude-wt/ha/discovery.js';
@@ -124,7 +125,8 @@ function startService({
         // сообщение в файл трея, удалён, а обработчики windows-mqtt со своим
         // `< topic: message` остались в том проекте. Нажатие на панели, которое
         // ничего не сделало, не оставляло следа нигде.
-        log(`< ${topic ?? command}: ${payload}`);
+        // Промпт `terminal-prompt` — длиной и началом (`redactPayload`).
+        log(`< ${topic ?? command}: ${redactPayload(payload)}`);
         if (FOREIGN_COMMANDS.has(command)) return;
         const res = await router.dispatch(command, payload);
         if (!res.ok) log(`MQTT ${command}: ${res.error}`, 'warn');

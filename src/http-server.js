@@ -12,6 +12,7 @@
  */
 import http from 'node:http';
 import { DROPPED } from './commands/press-throttle.js';
+import { redactBody } from './log-redact.js';
 
 const ROUTES = {
   '/place': 'place',
@@ -168,7 +169,7 @@ function startHttpServer({ router, port = 9722, log, dock = null }) {
       res.end(JSON.stringify({ error: err.message }));
       return;
     }
-    log(`POST ${req.url}: ${JSON.stringify(body)}`);
+    log(`POST ${req.url}: ${JSON.stringify(redactBody(body))}`);
     const result = await router.dispatch(command, body);
     replyResult(res, log, req.url, result);
   });
