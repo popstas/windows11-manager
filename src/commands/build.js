@@ -130,6 +130,15 @@ function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = 
       log(`claude-wt marked seen: ${id}`);
       return { ok: true };
     },
+    // Набор сессий от ccfzf-picker для мигания жёлтым перед остыванием кеша
+    // промпта: `{warnMin, sessions: [{id, cacheAt}]}`. Мигает служба панели
+    // задач (src/mqtt/taskbar.js), она же отсчитывает сроки. В журнал — только
+    // число сессий: пикер повторяет набор раз в пять минут.
+    async 'claude-cache-warn'(payload) {
+      const count = taskbar?.cacheWarn(payload) ?? 0;
+      log(`claude-wt cache warn: ${count} session(s)`);
+      return { ok: true, count };
+    },
     'claude-session-open': withRefresh(claude['claude-session-open']),
     'claude-session-new': claude['claude-session-new'],
     'claude-terminal': claude['claude-terminal'],
