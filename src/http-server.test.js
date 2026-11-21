@@ -19,6 +19,7 @@ describe('routeToCommand', () => {
     expect(routeToCommand('/claude-wt/restore')).toBe('claude-wt-restore');
     expect(routeToCommand('/claude-wt/session-open')).toBe('claude-session-open');
     expect(routeToCommand('/claude-wt/session-seen')).toBe('claude-session-seen');
+    expect(routeToCommand('/claude-wt/cache-warn')).toBe('claude-cache-warn');
   });
 
   it('новая сессия для head-session — свой маршрут, не session-open', () => {

@@ -30,6 +30,7 @@ const ROUTES = {
   '/claude-wt/session-new': 'claude-session-new',
   '/claude-wt/session-unread': 'claude-session-unread',
   '/claude-wt/session-seen': 'claude-session-seen',
+  '/claude-wt/cache-warn': 'claude-cache-warn',
   '/claude-wt/snapshot-restore': 'claude-snapshot-restore',
   '/claude-wt/place': 'claude-place',
   '/claude-wt/terminal': 'claude-terminal',

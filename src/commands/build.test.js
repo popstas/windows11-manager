@@ -68,6 +68,19 @@ describe('buildCommandMap', () => {
     expect(taskbar.markUnread).toHaveBeenCalledWith('abc');
   });
 
+  it('claude-cache-warn отдаёт набор службе панели задач и называет число сессий', async () => {
+    const taskbar = { dismiss: vi.fn(), markUnread: vi.fn(), cacheWarn: vi.fn(() => 2) };
+    const m = makeMap({ taskbar });
+    const body = '{"warnMin":10,"sessions":[{"id":"a","cacheAt":5},{"id":"b","cacheAt":6}]}';
+    expect(await m['claude-cache-warn'](body)).toEqual({ ok: true, count: 2 });
+    expect(taskbar.cacheWarn).toHaveBeenCalledWith(body);
+  });
+
+  it('без службы панели задач claude-cache-warn не падает', async () => {
+    const m = makeMap({});
+    expect(await m['claude-cache-warn']('{"warnMin":10,"sessions":[]}')).toEqual({ ok: true, count: 0 });
+  });
+
   it('без службы панели задач seen и unread не падают', async () => {
     const winMan = winManStub();
     winMan.markSessionUnread.mockReturnValue({ ok: true, ids: ['abc'] });
