@@ -31,7 +31,7 @@
  */
 import {
   TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks,
-  BLINK_MS, cacheWarnDue, blinkBar, cacheWarnKey, parseCacheWarn,
+  BLINK_MS, cacheWarnDue, blinkBar, cacheWarnKey, parseCacheWarn, newTurnSince,
 } from '../claude-wt/taskbar-helpers.js';
 
 // Вопрос агента должен загореться быстро: wt рисует его сразу, а HA-экспорт
@@ -125,21 +125,27 @@ function startTaskbarState({
 
   // Кадр мигания. Окно, которое впереди, снимает мигание: человек смотрит на
   // него — это и есть «увидел». Передний hwnd — один вызов на кадр.
+  // Обработчик таймера ловит ошибку на месте: необработанное исключение в
+  // нём уронило бы всю службу (у src/index.js нет uncaughtException).
   function blinkFrame() {
-    blinkOn = !blinkOn;
-    const fg = winMan.getActiveWindowId?.() ?? 0;
-    for (const [id, sessionId] of [...blinking]) {
-      if (fg === id) {
-        warnDismissed.add(cacheWarnKey(sessionId, warns.get(sessionId)?.cacheAt));
-        blinking.delete(id);
-        restoreBar(id);
-        log(`taskbar: ${id} cache warn off (foreground)`);
-        continue;
+    try {
+      blinkOn = !blinkOn;
+      const fg = winMan.getActiveWindowId?.() ?? 0;
+      for (const [id, sessionId] of [...blinking]) {
+        if (fg === id) {
+          warnDismissed.add(cacheWarnKey(sessionId, warns.get(sessionId)?.cacheAt));
+          blinking.delete(id);
+          restoreBar(id);
+          log(`taskbar: ${id} cache warn off (foreground)`);
+          continue;
+        }
+        const bar = blinkBar(applied.get(id), blinkOn);
+        winMan.setTaskbarProgress(id, TBPF[bar.state], bar.value);
       }
-      const bar = blinkBar(applied.get(id), blinkOn);
-      winMan.setTaskbarProgress(id, TBPF[bar.state], bar.value);
+      if (!blinking.size) stopBlinkTimer();
+    } catch (e) {
+      report(e);
     }
-    if (!blinking.size) stopBlinkTimer();
   }
 
   // Кто должен мигать сейчас — по набору пикера и состоянию окон с тика.
@@ -147,7 +153,15 @@ function startTaskbarState({
     const due = new Map();
     for (const [sessionId, warn] of warns) {
       const w = bySession.get(sessionId);
-      if (!w || warnDismissed.has(cacheWarnKey(sessionId, warn.cacheAt))) continue;
+      const key = cacheWarnKey(sessionId, warn.cacheAt);
+      if (!w || warnDismissed.has(key)) continue;
+      // Новый ход запоминается насовсем для этой метки: через минуту хук
+      // переведёт сессию в idle, а idle по `updated` от старого хода не
+      // отличить — и старый набор зажёг бы мигание на свежем кеше.
+      if (newTurnSince(warn.cacheAt, w.agent)) {
+        warnDismissed.add(key);
+        continue;
+      }
       if (cacheWarnDue(warn, warnSec, nowSec(), w.agent)) due.set(w.id, sessionId);
     }
     for (const id of blinking.keys()) {
@@ -214,8 +228,13 @@ function startTaskbarState({
    * состоянии. Отметка сгорает сама, как только хук напишет новое.
    */
   function dismiss(sessionId) {
+    // Только идущее мигание: Shift+клик гасит оранжевый конец хода через
+    // минуту после него, и отменять этим предупреждение на 50-й минуте
+    // значило бы молча выключить его у большинства сессий.
     const warn = warns.get(sessionId);
-    if (warn) warnDismissed.add(cacheWarnKey(sessionId, warn.cacheAt));
+    if (warn && [...blinking.values()].includes(sessionId)) {
+      warnDismissed.add(cacheWarnKey(sessionId, warn.cacheAt));
+    }
     mark(sessionId, 'seen');
   }
 
@@ -248,9 +267,12 @@ function startTaskbarState({
     stop() {
       clearIntervalFn(timer);
       stopBlinkTimer();
+      // Мигающее окно в `applied` может и не лежать (просмотренный review без
+      // полосы) — сброс берёт оба списка, иначе жёлтая осталась бы висеть.
+      const lit = new Set([...applied.keys(), ...blinking.keys()]);
       blinking = new Map();
       try {
-        apply(resetOps([...applied.keys()]));
+        apply(resetOps([...lit]));
       } catch (e) {
         report(e);
       }

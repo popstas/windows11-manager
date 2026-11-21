@@ -383,6 +383,56 @@ describe('cacheWarn — мигание перед остыванием кеша'
     expect(cleared.length).toBeGreaterThan(0);
   });
 
+  it('новый ход, ушедший в idle, не зажигает мигание на старой метке кеша', () => {
+    // Ответ на 40-й минуте без фокуса окна (head пишет исполнителю), через
+    // минуту хук переводит сессию в idle — старый набор ещё у службы.
+    const { svc, calls, world } = waiting();
+    world.now = END - 1200;
+    svc.cacheWarn(body());
+    world.agents[1] = 'active';
+    world.updated[1] = AT + 2400;
+    svc.tick();
+    world.agents[1] = 'review';
+    world.updated[1] = AT + 2460;
+    svc.tick();
+    world.agents[1] = 'idle';
+    world.updated[1] = AT + 2520;
+    svc.tick();
+    world.now = END - 300;
+    calls.length = 0;
+    svc.tick();
+    expect(calls).not.toContainEqual(['progress', 1, 8, 100]);
+  });
+
+  it('Mark seen до порога не отменяет будущее мигание', () => {
+    const { svc, calls, world } = waiting();
+    world.now = END - 3000;
+    svc.cacheWarn(body());
+    svc.dismiss('s1');
+    world.now = END - 300;
+    calls.length = 0;
+    svc.tick();
+    expect(calls).toContainEqual(['progress', 1, 8, 100]);
+  });
+
+  it('stop() снимает полосу и у мигающего окна без вида в applied', () => {
+    const { svc, calls, world } = waiting();
+    world.seen[1] = true;
+    svc.tick();
+    svc.cacheWarn(body());
+    calls.length = 0;
+    svc.stop();
+    expect(calls).toContainEqual(['progress', 1, 0, 0]);
+  });
+
+  it('ошибка аддона в кадре мигания не роняет таймер', () => {
+    const { svc, timers, winMan, logs } = waiting();
+    svc.cacheWarn(body());
+    winMan.setTaskbarProgress.mockImplementation(() => { throw new Error('boom'); });
+    expect(() => blinkTimer(timers).fn()).not.toThrow();
+    expect(logs.some(l => l.includes('boom'))).toBe(true);
+  });
+
   it('без мигающих таймер мигания не заведён, stop() его снимает', () => {
     const { svc, timers, cleared } = waiting();
     expect(blinkTimer(timers)).toBeUndefined();

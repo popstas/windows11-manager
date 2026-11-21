@@ -183,10 +183,19 @@ function cacheWarnDue(warn, warnSec, nowSec, agent) {
   if (!at) return false;
   const end = at + CACHE_TTL_SEC - CACHE_SAFETY_SEC;
   if (nowSec < end - warnSec || nowSec >= end) return false;
-  if (agent.agentState === 'active') return false;
+  return !newTurnSince(at, agent);
+}
+
+/**
+ * Видно ли по состоянию окна, что после метки кеша был новый ход. Ответ
+ * мгновенный: после хода хук через минуту ставит `idle`, и тот признак
+ * теряет — поэтому служба запоминает «да» для пары (id, cacheAt) сама.
+ */
+function newTurnSince(cacheAt, agent) {
+  if (!agent) return false;
+  if (agent.agentState === 'active') return true;
   const updated = Number(agent.agentUpdated) || 0;
-  if (agent.agentState !== 'idle' && updated > at + NEW_TURN_MARGIN_SEC) return false;
-  return true;
+  return agent.agentState !== 'idle' && updated > (Number(cacheAt) || 0) + NEW_TURN_MARGIN_SEC;
 }
 
 /** Полоса кадра мигания: `on` — жёлтая полная, иначе полоса вида `look`. */
@@ -229,5 +238,5 @@ function parseCacheWarn(body) {
 export {
   TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks,
   CACHE_TTL_SEC, CACHE_SAFETY_SEC, NEW_TURN_MARGIN_SEC, BLINK_MS,
-  cacheWarnDue, blinkBar, cacheWarnKey, parseCacheWarn,
+  cacheWarnDue, blinkBar, cacheWarnKey, parseCacheWarn, newTurnSince,
 };
