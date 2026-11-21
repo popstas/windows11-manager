@@ -75,6 +75,11 @@ const CLAUDE_WT_DEFAULTS = {
     settleMs: 2000,
     gapMs: 3000,
   },
+  // Список inbox'ов той же формы, что telegramInbox, плюс `name` (латиница:
+  // `email`): журнал `[inbox:<name>]`, файл состояния `<name>-inbox.json`.
+  // Умолчаний telegram элементы не наследуют. Старый telegramInbox читается
+  // как элемент `{ name: 'telegram' }` (resolveInboxes).
+  inboxes: [],
   restore: { auto: false, windowTimeoutMs: 30000, launchDelayMs: 2000, settleMs: 500 },
   snapshots: { enabled: true, path: '', debounceMs: 60000, keep: 20 },
   // Основные зоны мониторов для окон head и его детей: номер монитора

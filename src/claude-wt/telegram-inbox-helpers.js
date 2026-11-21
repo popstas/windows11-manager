@@ -1,7 +1,11 @@
 /**
- * Входящие из Telegram: чистая часть наблюдателя. Без I/O.
+ * Входящие (Telegram, почта, …): чистая часть наблюдателя. Без I/O.
  *
- * Цепочка целиком: telegram-resender на pc-virt кладёт файл на каждую
+ * Входящих может быть несколько: список `claudeWt.inboxes`, у каждого своя
+ * папка, свой скрипт и свой файл состояния (`resolveInboxes`). Старый блок
+ * `claudeWt.telegramInbox` читается как элемент `{ name: 'telegram' }`.
+ *
+ * Цепочка у Telegram: telegram-resender на pc-virt кладёт файл на каждую
  * пересылку в `files/incoming-telegram/` vault'а, syncthing довозит его сюда,
  * наблюдатель (`src/mqtt/telegram-inbox.js`) видит новый файл и открывает окно
  * терминала с сессией `tg-<имя>` (или по шаблону `sessionName`) — тем же путём, что проектный хоткей, только
@@ -47,6 +51,13 @@ function isSyncthingTemp(name) {
 }
 
 const DEFAULT_SESSION_NAME = 'tg-{base}';
+const LEGACY_NAME = 'telegram';
+const LEGACY_LABEL = 'claudeWt.telegramInbox';
+
+/** Приставка имени сессии по умолчанию: `tg` у telegram (как было), иначе имя inbox. */
+function sessionPrefixFor(name = LEGACY_NAME) {
+  return name === LEGACY_NAME ? 'tg' : name;
+}
 
 // Имя файла от telegram-resender: `2026-11-06_06-04-22_Olgazdez_424254.md`.
 // `_` в имени пользователя Telegram разрешён, поэтому id — последний числовой
@@ -67,13 +78,14 @@ function parseInboxFileName(name) {
  *
  * Подстановки: `{base}` (имя без `.md`) у любого файла, `{date}`, `{time}`,
  * `{user}`, `{id}` — у файла формата `<date>_<time>_<user>_<id>.md`.
- * Незнакомая подстановка остаётся как есть. Не вышло — `tg-{base}` и
- * `warning` для журнала: файл всё равно должен открыться.
+ * Незнакомая подстановка остаётся как есть. Не вышло — `<prefix>-{base}`
+ * (`tg-{base}` у telegram) и `warning` для журнала: файл всё равно должен
+ * открыться.
  */
-function inboxSessionName(file, template = DEFAULT_SESSION_NAME) {
+function inboxSessionName(file, template = DEFAULT_SESSION_NAME, prefix = 'tg') {
   const base = String(file).replace(/\.md$/i, '');
-  const fallback = `tg-${base}`;
-  const tpl = template || DEFAULT_SESSION_NAME;
+  const fallback = `${prefix}-${base}`;
+  const tpl = template || `${prefix}-{base}`;
   const parsed = parseInboxFileName(file);
   if (!parsed && PARSED_KEYS.some(k => tpl.includes(`{${k}}`))) {
     return { name: fallback, warning: `name does not match <date>_<time>_<user>_<id>.md, session named ${fallback}` };
@@ -114,21 +126,27 @@ function inboxRemoteFile(fileDir, name) {
 
 const positive = (v, fallback) => (Number.isFinite(v) && v >= 0 ? v : fallback);
 
+const str = v => (typeof v === 'string' ? v.trim() : '');
+
 /**
- * Блок `claudeWt.telegramInbox` после умолчаний — с проверкой, хватает ли его
- * для запуска. `problem` — строка для журнала, `null` — можно работать.
+ * Один inbox после умолчаний — с проверкой, хватает ли его для запуска.
+ * `problem` — строка для журнала, `null` — можно работать. `name` — имя
+ * inbox (`telegram` у старого блока), `label` — как он назван в конфиге, для
+ * текста проблемы.
  */
-function normalizeInboxConfig(raw = {}, { statePath = '' } = {}) {
-  const str = v => (typeof v === 'string' ? v.trim() : '');
+function normalizeInboxConfig(raw = {}, { statePath = '', name = LEGACY_NAME, label = LEGACY_LABEL } = {}) {
+  const prefix = sessionPrefixFor(name);
   const cfg = {
+    name,
+    sessionPrefix: prefix,
     enabled: raw.enabled === true,
     dir: str(raw.dir),
     cwd: str(raw.cwd),
     script: str(raw.script),
     fileDir: str(raw.fileDir),
     terminal: str(raw.terminal),
-    sessionName: str(raw.sessionName) || DEFAULT_SESSION_NAME,
-    statePath: str(raw.statePath) || inboxStatePathNextTo(statePath),
+    sessionName: str(raw.sessionName) || `${prefix}-{base}`,
+    statePath: str(raw.statePath) || inboxStatePathNextTo(statePath, name),
     pollMs: Math.max(250, positive(raw.pollMs, 3000)),
     settleMs: positive(raw.settleMs, 2000),
     gapMs: positive(raw.gapMs, 1000),
@@ -137,19 +155,105 @@ function normalizeInboxConfig(raw = {}, { statePath = '' } = {}) {
     background: raw.background !== false,
   };
   let problem = null;
-  if (!cfg.dir) problem = 'claudeWt.telegramInbox.dir is not set';
-  else if (!cfg.cwd) problem = 'claudeWt.telegramInbox.cwd is not set';
-  else if (!cfg.script) problem = 'claudeWt.telegramInbox.script is not set';
-  else if (!cfg.statePath) problem = 'neither claudeWt.telegramInbox.statePath nor claudeWt.statePath is set';
+  if (!cfg.dir) problem = `${label}.dir is not set`;
+  else if (!cfg.cwd) problem = `${label}.cwd is not set`;
+  else if (!cfg.script) problem = `${label}.script is not set`;
+  else if (!cfg.statePath) problem = `neither ${label}.statePath nor claudeWt.statePath is set`;
   return { cfg, problem };
 }
 
-/** Файл состояния рядом с `claudeWt.statePath` — как у `no-autoplace.js`. */
-function inboxStatePathNextTo(statePath) {
+/**
+ * Файл состояния рядом с `claudeWt.statePath` — как у `no-autoplace.js`:
+ * `<name>-inbox.json`. У telegram это прежний `telegram-inbox.json` — смени
+ * его имя, и после деплоя наблюдатель заново открыл бы всё, что лежит в папке.
+ */
+function inboxStatePathNextTo(statePath, name = LEGACY_NAME) {
   const p = typeof statePath === 'string' ? statePath.trim() : '';
   if (!p) return '';
+  const file = `${name}-inbox.json`;
   const cut = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
-  return cut < 0 ? 'telegram-inbox.json' : `${p.slice(0, cut + 1)}telegram-inbox.json`;
+  return cut < 0 ? file : `${p.slice(0, cut + 1)}${file}`;
+}
+
+// Имя inbox идёт в имя файла состояния и в журнал: латиница, цифры, `-`, `_`.
+const INBOX_NAME = /^[a-z0-9][a-z0-9_-]*$/i;
+
+/** Путь для сравнения: Windows не различает регистр и слэши, хвостовой слэш ничего не значит. */
+function samePathKey(p) {
+  return String(p ?? '').trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+}
+
+/**
+ * Список inbox'ов из `claudeWt`: старый блок `telegramInbox` (как
+ * `{ name: 'telegram' }`) и элементы `claudeWt.inboxes` — в таком порядке.
+ *
+ * Старый блок есть в слитом конфиге всегда (`mergeClaudeWtConfig` кладёт
+ * умолчания), поэтому в список он попадает, только если его настроили:
+ * `enabled: true` или непустой `dir`. Элементы списка умолчаний telegram не
+ * наследуют: inbox без `script` — проблема в журнале, а не чужой скрипт.
+ *
+ * Повтор — ошибка, первый побеждает: живой telegram не должен пропасть из-за
+ * неудачной добавки. Повтором считается то же имя (у любых элементов) и, у
+ * включённых и годных к запуску, та же папка или тот же файл состояния — два
+ * наблюдателя на одной папке открыли бы каждое письмо дважды.
+ *
+ * @returns {{ inboxes: Array<{ name: string, label: string, cfg: object, problem: string|null }>, errors: string[] }}
+ */
+function resolveInboxes(claude = {}) {
+  const c = claude ?? {};
+  const errors = [];
+  const candidates = [];
+  const legacy = c.telegramInbox;
+  if (legacy && typeof legacy === 'object' && (legacy.enabled === true || str(legacy.dir))) {
+    candidates.push({ name: LEGACY_NAME, label: LEGACY_LABEL, raw: legacy });
+  }
+  const list = c.inboxes;
+  if (list != null && !Array.isArray(list)) {
+    errors.push('claudeWt.inboxes is not a list, ignored');
+  } else if (Array.isArray(list)) {
+    list.forEach((raw, i) => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        errors.push(`claudeWt.inboxes[${i}] is not a map, skipped`);
+        return;
+      }
+      const name = str(raw.name);
+      if (!INBOX_NAME.test(name)) {
+        errors.push(`claudeWt.inboxes[${i}]: name ${name ? `'${name}' ` : ''}must be latin letters, digits, - or _, skipped`);
+        return;
+      }
+      candidates.push({ name, label: `claudeWt.inboxes[${name}]`, raw });
+    });
+  }
+
+  const inboxes = [];
+  const names = new Map();
+  const dirs = new Map();
+  const states = new Map();
+  for (const { name, label, raw } of candidates) {
+    const key = name.toLowerCase();
+    if (names.has(key)) {
+      errors.push(`${label}: name '${name}' is already used by ${names.get(key)}, skipped`);
+      continue;
+    }
+    names.set(key, label);
+    const { cfg, problem } = normalizeInboxConfig(raw, { statePath: c.statePath, name, label });
+    if (cfg.enabled && !problem) {
+      const dirKey = samePathKey(cfg.dir);
+      const stateKey = samePathKey(cfg.statePath);
+      if (dirs.has(dirKey)) {
+        errors.push(`${label}: dir ${cfg.dir} is already watched by ${dirs.get(dirKey)}, skipped`);
+        continue;
+      }
+      if (states.has(stateKey)) {
+        errors.push(`${label}: statePath ${cfg.statePath} is already used by ${states.get(stateKey)}, skipped`);
+        continue;
+      }
+      dirs.set(dirKey, label);
+      states.set(stateKey, label);
+    }
+    inboxes.push({ name, label, cfg, problem });
+  }
+  return { inboxes, errors };
 }
 
 /**
@@ -241,6 +345,8 @@ export {
   inboxRemoteFile,
   normalizeInboxConfig,
   inboxStatePathNextTo,
+  resolveInboxes,
+  sessionPrefixFor,
   planInboxTick,
   pruneProcessed,
   parseInboxState,

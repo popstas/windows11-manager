@@ -65,6 +65,33 @@ describe('claudeWt.telegramInbox на вкладке Claude', () => {
     expect(writeClaudeConfig({ 'claudeWt.telegramInbox.gapMs': '1000' })).toEqual(['claudeWt.telegramInbox.gapMs']);
     expect(fs.readFileSync(file, 'utf8')).toBe(INBOX_YAML + '    gapMs: 1000\n');
   });
+
+  it('список inboxes рядом не мешает: правится только telegramInbox, элементы списка не тронуты', () => {
+    const yaml = `claudeWt:
+  inboxes:
+    - name: email
+      enabled: false
+      gapMs: 500
+  telegramInbox:
+    enabled: true
+    gapMs: 2000
+  interval: 1000
+`;
+    fs.writeFileSync(file, yaml);
+    expect(writeClaudeConfig({ 'claudeWt.telegramInbox.gapMs': '1000' })).toEqual(['claudeWt.telegramInbox.gapMs']);
+    expect(fs.readFileSync(file, 'utf8')).toBe(yaml.replace('gapMs: 2000', 'gapMs: 1000'));
+
+    const tail = `claudeWt:
+  telegramInbox:
+    enabled: true
+  inboxes:
+    - name: email
+      enabled: false
+`;
+    fs.writeFileSync(file, tail);
+    writeClaudeConfig({ 'claudeWt.telegramInbox.background': false });
+    expect(fs.readFileSync(file, 'utf8')).toBe(tail.replace('    enabled: true\n', '    enabled: true\n    background: false\n'));
+  });
 });
 
 describe('patchProjectIcons', () => {

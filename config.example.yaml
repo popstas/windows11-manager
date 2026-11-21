@@ -322,7 +322,7 @@ claudeWt:
   # Set it only when launchNew has no such script.
   # launchPrompt:
   #   args: [...same as launchNew, with {promptB64}...]
-  # Session per incoming Telegram file (telegramInbox below). Same shape as
+  # Session per incoming file (telegramInbox and inboxes below). Same shape as
   # launchNew, but the remote side runs a vault script, which in turn calls
   # `claude -n <name> ...`. {cwd}, {script}, {file}, {name} are positional
   # args for the same reason as above. The script must pass {name} to
@@ -384,6 +384,26 @@ claudeWt:
     pollMs: 3000
     settleMs: 2000
     gapMs: 1000
+  # More inboxes of the same shape as telegramInbox, plus `name` (latin
+  # letters, digits, - or _): the log line is `[inbox:<name>]`, the default
+  # state file is `<name>-inbox.json` next to claudeWt.statePath, a file not
+  # matching sessionName falls back to `<name>-{base}`. telegramInbox above is
+  # read as the element `name: telegram` (its state file stays
+  # telegram-inbox.json); it may also be moved here under that name. Elements
+  # do not inherit telegramInbox defaults: `script` is required. A repeated
+  # name, or two enabled inboxes on one dir or one statePath, is an error in
+  # the log and the later one is skipped. Windows of all inboxes open one by
+  # one through a single queue.
+  inboxes:
+    # Mail to the agent's mailbox, saved as <date>_<time>_<user>_<uid>.md by
+    # the mail poller ({user} is the sender's local part, {id} the IMAP UID).
+    - name: email
+      enabled: false
+      dir: 'C:/projects/text/obsidian/ExpertizeMe/files/incoming-email'
+      cwd: /home/popstas/projects/text/obsidian/ExpertizeMe
+      script: .scripts/email-incoming
+      fileDir: files/incoming-email
+      sessionName: '{user}-mail-{date}'
   restore: { auto: false, windowTimeoutMs: 30000, launchDelayMs: 2000, settleMs: 500 }
 
 # backup positions for FancyZones

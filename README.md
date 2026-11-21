@@ -215,8 +215,16 @@ in a state file next to `claudeWt.statePath`, so a restart does not reopen anyth
 Files already there on start are opened one by one, `gapMs` (1000 ms) apart. Windows
 open in the background: they are placed as usual but take no focus and do not switch the
 virtual desktop (`background: false` raises them, as before). Every opened and every skipped
-file gets a `[telegram-inbox]` line in the app log. Off by default; see the example in
+file gets an `[inbox:telegram]` line in the app log. Off by default; see the example in
 [config.example.yaml](config.example.yaml).
+
+More inboxes of the same shape go to the `claudeWt.inboxes` list, each with a `name`
+(`email`, for mail saved as files by a poller): its own folder, script and session name
+template, log lines `[inbox:<name>]` and state file `<name>-inbox.json`.
+`telegramInbox` keeps working and is read as the element `name: telegram`, with the
+same `telegram-inbox.json` as before. A repeated name, or two enabled inboxes on one
+folder or one state file, is an `[inbox]` error in the log and the later one is
+skipped. Windows of all inboxes open one at a time through a single queue.
 
 ### Known limits
 
