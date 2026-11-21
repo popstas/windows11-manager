@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { startTelegramInbox, defaultFs } from './telegram-inbox.js';
+import { startInboxes, defaultFs } from './telegram-inbox.js';
 
 let root;
 let dir;
@@ -19,29 +19,33 @@ afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-function setup({ inbox = {}, clock = { t: 0 } } = {}) {
+function setup({ inbox = {}, clock = { t: 0 }, extra = {}, legacy = undefined } = {}) {
   const logged = [];
   const opened = [];
   const winMan = {
+    // `extra` читается на каждом проходе: тест может поменять его на ходу.
     getClaudeWtConfig: () => ({
       statePath,
-      telegramInbox: {
-        enabled: true,
-        dir,
-        cwd: '/home/popstas/projects/text/obsidian/ExpertizeMe',
-        script: '.scripts/telegram-incoming',
-        fileDir: 'files/incoming-telegram',
-        settleMs: 0,
-        gapMs: 0,
-        ...inbox,
-      },
+      ...(legacy === null ? {} : {
+        telegramInbox: {
+          enabled: true,
+          dir,
+          cwd: '/home/popstas/projects/text/obsidian/ExpertizeMe',
+          script: '.scripts/telegram-incoming',
+          fileDir: 'files/incoming-telegram',
+          settleMs: 0,
+          gapMs: 0,
+          ...inbox,
+        },
+      }),
+      ...extra,
     }),
     openInboxSession: vi.fn(async (req) => {
       opened.push(req);
       return { ok: true, action: 'spawn', sessionName: req.name, focused: true };
     }),
   };
-  const watcher = startTelegramInbox({
+  const watcher = startInboxes({
     winMan,
     log: (msg, level) => logged.push(level ? `${level}: ${msg}` : msg),
     deps: { autostart: false, now: () => clock.t, sleep: async () => {} },
@@ -58,7 +62,7 @@ function setup({ inbox = {}, clock = { t: 0 } } = {}) {
 
 const put = (name, text = 'hello') => fs.writeFileSync(path.join(dir, name), text);
 
-describe('startTelegramInbox', () => {
+describe('startInboxes', () => {
   it('opens each new file once, with vault-relative path and tg- name', async () => {
     const { opened, pass } = setup();
     put('2026-11-05-msg.md');
@@ -98,7 +102,7 @@ describe('startTelegramInbox', () => {
     await second.pass();
     await second.pass();
     expect(second.opened.map(r => r.name)).toEqual(['tg-b']);
-    expect(second.logged).toContain('[telegram-inbox] skip a.md: already opened');
+    expect(second.logged).toContain('[inbox:telegram] skip a.md: already opened');
     const saved = JSON.parse(fs.readFileSync(path.join(root, 'state', 'telegram-inbox.json'), 'utf8'));
     expect(Object.keys(saved.processed).sort()).toEqual(['a.md', 'b.md']);
   });
@@ -113,7 +117,7 @@ describe('startTelegramInbox', () => {
     await first.pass();
     expect(first.opened.map(r => r.name)).toEqual(['Olgazdez-tg-2026-11-06', 'Olgazdez-tg-2026-11-06-2']);
     expect(first.logged).toContain(
-      '[telegram-inbox] open 2026-11-06_07-00-00_Olgazdez_424255.md as Olgazdez-tg-2026-11-06-2 '
+      '[inbox:telegram] open 2026-11-06_07-00-00_Olgazdez_424255.md as Olgazdez-tg-2026-11-06-2 '
       + '(files/incoming-telegram/2026-11-06_07-00-00_Olgazdez_424255.md)',
     );
     first.watcher.stop();
@@ -134,7 +138,7 @@ describe('startTelegramInbox', () => {
     await pass();
     await pass();
     expect(opened.map(r => r.name)).toEqual(['tg-note']);
-    expect(logged.some(l => l.startsWith('warn: [telegram-inbox] note.md:') && l.includes('does not match'))).toBe(true);
+    expect(logged.some(l => l.startsWith('warn: [inbox:telegram] note.md:') && l.includes('does not match'))).toBe(true);
   });
 
   it('forgets an issued session name together with its file', async () => {
@@ -171,7 +175,7 @@ describe('startTelegramInbox', () => {
     await pass();
     expect(opened.map(r => r.name)).toEqual(['tg-1', 'tg-2', 'tg-3']);
     expect(maxInFlight).toBe(1);
-    expect(logged).toContain('warn: [telegram-inbox] 3 files queued, opening one by one');
+    expect(logged).toContain('warn: [inbox:telegram] 3 files queued, opening one by one');
   });
 
   it('ignores syncthing temp, conflict copies, hidden files and processed/', async () => {
@@ -185,8 +189,8 @@ describe('startTelegramInbox', () => {
     expect(opened).toEqual([]);
     // Временные syncthing — молча, остальные — строкой с причиной.
     expect(logged.filter(l => l.includes('skip')).sort()).toEqual([
-      '[telegram-inbox] skip .hidden.md: hidden or syncthing temp file',
-      '[telegram-inbox] skip z.sync-conflict-20261105-1-AAA.md: syncthing conflict copy',
+      '[inbox:telegram] skip .hidden.md: hidden or syncthing temp file',
+      '[inbox:telegram] skip z.sync-conflict-20261105-1-AAA.md: syncthing conflict copy',
     ]);
   });
 
@@ -212,7 +216,7 @@ describe('startTelegramInbox', () => {
     const bad = setup({ inbox: { cwd: '' } });
     await bad.pass(); await bad.pass();
     expect(bad.opened).toEqual([]);
-    expect(bad.logged).toEqual(['warn: [telegram-inbox] not started: claudeWt.telegramInbox.cwd is not set']);
+    expect(bad.logged).toEqual(['warn: [inbox:telegram] not started: claudeWt.telegramInbox.cwd is not set']);
   });
 
   it('a failed launch is logged and not retried', async () => {
@@ -221,7 +225,7 @@ describe('startTelegramInbox', () => {
     winMan.openInboxSession.mockResolvedValue({ ok: false, reason: 'claudeWt.launchInbox.args is empty' });
     await pass(); await pass(); await pass(); await pass();
     expect(winMan.openInboxSession).toHaveBeenCalledTimes(1);
-    expect(logged).toContain('error: [telegram-inbox] failed to open a.md: claudeWt.launchInbox.args is empty (marked as opened, not retried)');
+    expect(logged).toContain('error: [inbox:telegram] failed to open a.md: claudeWt.launchInbox.args is empty (marked as opened, not retried)');
   });
 
   it('a file that vanishes between readdir and stat does not break the pass', () => {
@@ -240,5 +244,98 @@ describe('startTelegramInbox', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+
+  it('при отсеянном повторе пишет ошибку один раз, а не на каждом проходе', async () => {
+    const { logged, pass } = setup({ extra: { inboxes: [{ name: 'email', enabled: true, dir, cwd: '/v', script: '.scripts/email-incoming' }] } });
+    await pass(); await pass(); await pass();
+    expect(logged.filter(l => l.startsWith('error: [inbox]'))).toEqual([
+      `error: [inbox] claudeWt.inboxes[email]: dir ${dir} is already watched by claudeWt.telegramInbox, skipped`,
+    ]);
+  });
+});
+
+describe('startInboxes: несколько inbox', () => {
+  let mailDir;
+  beforeEach(() => {
+    mailDir = path.join(root, 'incoming-email');
+    fs.mkdirSync(path.join(mailDir, 'processed'), { recursive: true });
+  });
+
+  const emailInbox = () => ({
+    name: 'email',
+    enabled: true,
+    dir: mailDir,
+    cwd: '/home/popstas/projects/text/obsidian/ExpertizeMe',
+    script: '.scripts/email-incoming',
+    fileDir: 'files/incoming-email',
+    sessionName: '{user}-mail-{date}',
+    settleMs: 0,
+    gapMs: 0,
+  });
+
+  it('каждый inbox — своя папка, свой скрипт, свой файл состояния и своя строка журнала', async () => {
+    const { opened, logged, pass } = setup({ extra: { inboxes: [emailInbox()] } });
+    put('a.md');
+    fs.writeFileSync(path.join(mailDir, '2026-11-21_18-40-12_wyrtensi_123.md'), 'mail');
+    fs.writeFileSync(path.join(mailDir, 'odd.md'), 'mail');
+    await pass(); await pass(); await pass();
+    expect(opened.map(r => [r.name, r.script, r.file])).toEqual([
+      ['tg-a', '.scripts/telegram-incoming', 'files/incoming-telegram/a.md'],
+      ['wyrtensi-mail-2026-11-21', '.scripts/email-incoming', 'files/incoming-email/2026-11-21_18-40-12_wyrtensi_123.md'],
+      ['email-odd', '.scripts/email-incoming', 'files/incoming-email/odd.md'],
+    ]);
+    expect(logged).toContain(`[inbox:telegram] watching ${dir} every 3000ms, state: ${path.join(root, 'state', 'telegram-inbox.json')}`);
+    expect(logged).toContain(`[inbox:email] watching ${mailDir} every 3000ms, state: ${path.join(root, 'state', 'email-inbox.json')}`);
+    const tgState = JSON.parse(fs.readFileSync(path.join(root, 'state', 'telegram-inbox.json'), 'utf8'));
+    const mailState = JSON.parse(fs.readFileSync(path.join(root, 'state', 'email-inbox.json'), 'utf8'));
+    expect(Object.keys(tgState.processed)).toEqual(['a.md']);
+    expect(Object.keys(mailState.processed).sort()).toEqual(['2026-11-21_18-40-12_wyrtensi_123.md', 'odd.md']);
+  });
+
+  it('только новая форма: без telegramInbox в конфиге работает один email', async () => {
+    const { opened, pass } = setup({ legacy: null, extra: { inboxes: [emailInbox()] } });
+    put('a.md');
+    fs.writeFileSync(path.join(mailDir, 'm.md'), 'mail');
+    await pass(); await pass(); await pass();
+    expect(opened.map(r => r.name)).toEqual(['email-m']);
+  });
+
+  it('очередь общая: окна разных inbox открываются по одному', async () => {
+    const { winMan, opened, pass } = setup({ extra: { inboxes: [emailInbox()] } });
+    let inFlight = 0;
+    let maxInFlight = 0;
+    winMan.openInboxSession.mockImplementation(async (req) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise(r => setTimeout(r, 5));
+      inFlight -= 1;
+      opened.push(req);
+      return { ok: true, focused: true };
+    });
+    put('1.md'); put('2.md');
+    fs.writeFileSync(path.join(mailDir, '3.md'), 'mail');
+    await pass(); await pass();
+    expect(opened.map(r => r.name)).toEqual(['tg-1', 'tg-2', 'email-3']);
+    expect(maxInFlight).toBe(1);
+  });
+
+  it('имя сессии не повторяется между inbox: заголовок окна общий', async () => {
+    const { opened, pass } = setup({ inbox: { sessionName: 'same' }, extra: { inboxes: [{ ...emailInbox(), sessionName: 'same' }] } });
+    put('a.md');
+    fs.writeFileSync(path.join(mailDir, 'b.md'), 'mail');
+    await pass(); await pass(); await pass();
+    expect(opened.map(r => r.name)).toEqual(['same', 'same-2']);
+  });
+
+  it('inbox, убранный из конфига, замолкает', async () => {
+    const extra = { inboxes: [emailInbox()] };
+    const { opened, logged, pass } = setup({ extra });
+    await pass();
+    extra.inboxes = [];
+    fs.writeFileSync(path.join(mailDir, 'late.md'), 'mail');
+    await pass(); await pass(); await pass();
+    expect(opened).toEqual([]);
+    expect(logged).toContain('[inbox:email] disabled');
   });
 });

@@ -22,7 +22,7 @@ import { startAutoplacer } from './autoplacer.js';
 import { startTaskbarState } from './taskbar.js';
 import { startWindowIcons } from './window-icons.js';
 import { startDaemonWatchdog } from './daemon-watchdog.js';
-import { startTelegramInbox } from './telegram-inbox.js';
+import { startInboxes } from './telegram-inbox.js';
 import { startHttpServer } from '../http-server.js';
 import { createDock } from '../claude-wt/dock/slots.js';
 
@@ -90,9 +90,10 @@ function startService({
   const httpServer = startHttpServer({ router, port: config?.httpPort ?? 9722, log, dock });
   const autoplacer = startAutoplacer({ winMan, config: withBase, log });
   const daemonWatchdog = startDaemonWatchdog({ winMan, log, notify });
-  // Входящие из Telegram: брокер не нужен и ему. Заводится всегда, а включается
-  // ключом `claudeWt.telegramInbox.enabled` — конфиг читается на каждом проходе.
-  const telegramInbox = startTelegramInbox({ winMan, log });
+  // Входящие (Telegram, почта): брокер не нужен и им. Заводится всегда, а включается
+  // ключом `enabled` у элемента `claudeWt.inboxes` (или старого
+  // `claudeWt.telegramInbox`) — конфиг читается на каждом проходе.
+  const inboxes = startInboxes({ winMan, log });
   // Иконки окон claude: сессия — иконка проекта, head — она же и значок head
   // на кнопке панели задач (или вместо иконки, headMode: icon). Окнам и wt, и
   // WezTerm; держит их этот процесс.
@@ -148,7 +149,7 @@ function startService({
       stats?.stop();
       autoplacer.stop();
       daemonWatchdog.stop();
-      telegramInbox.stop();
+      inboxes.stop();
       taskbar.stop();
       windowIcons.stop();
       client?.end(true);

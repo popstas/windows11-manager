@@ -9,6 +9,7 @@ import {
   inboxRemoteFile,
   normalizeInboxConfig,
   inboxStatePathNextTo,
+  resolveInboxes,
   planInboxTick,
   pruneProcessed,
   parseInboxState,
@@ -239,5 +240,132 @@ describe('state file', () => {
     expect(parseInboxState('{"processed":{"a.md":"x"}}')).toEqual({ processed: {}, sessions: {} });
     expect(parseInboxState('{"processed":{"a.md":5},"sessions":{"a.md":7,"b.md":"x"}}'))
       .toEqual({ processed: { 'a.md': 5 }, sessions: {} });
+  });
+});
+
+describe('inboxStatePathNextTo: имя inbox', () => {
+  it('telegram — прежний telegram-inbox.json, остальные — <name>-inbox.json', () => {
+    const win = 'C:\\Users\\p\\AppData\\Local\\windows11-manager\\claude-wt.json';
+    expect(inboxStatePathNextTo(win, 'telegram')).toBe('C:\\Users\\p\\AppData\\Local\\windows11-manager\\telegram-inbox.json');
+    expect(inboxStatePathNextTo(win, 'email')).toBe('C:\\Users\\p\\AppData\\Local\\windows11-manager\\email-inbox.json');
+    expect(inboxStatePathNextTo('/tmp/x/claude-wt.json', 'email')).toBe('/tmp/x/email-inbox.json');
+    expect(inboxStatePathNextTo('claude-wt.json', 'email')).toBe('email-inbox.json');
+  });
+});
+
+describe('inboxSessionName: приставка inbox', () => {
+  it('не подошедший к шаблону файл получает <prefix>-{base}', () => {
+    expect(inboxSessionName('note.md', '{user}-mail-{date}', 'email').name).toBe('email-note');
+    expect(inboxSessionName('2026-11-21_18-40-12_wyrtensi_123.md', '{user}-mail-{date}', 'email').name)
+      .toBe('wyrtensi-mail-2026-11-21');
+  });
+});
+
+describe('resolveInboxes', () => {
+  const statePath = 'C:\\Users\\p\\AppData\\Local\\windows11-manager\\claude-wt.json';
+  const tg = {
+    enabled: true,
+    dir: 'C:/projects/text/obsidian/ExpertizeMe/files/incoming-telegram',
+    cwd: '/home/popstas/projects/text/obsidian/ExpertizeMe',
+    script: '.scripts/telegram-incoming',
+    fileDir: 'files/incoming-telegram',
+  };
+  const email = {
+    name: 'email',
+    enabled: true,
+    dir: 'C:/projects/text/obsidian/ExpertizeMe/files/incoming-email',
+    cwd: '/home/popstas/projects/text/obsidian/ExpertizeMe',
+    script: '.scripts/email-incoming',
+    fileDir: 'files/incoming-email',
+    sessionName: '{user}-mail-{date}',
+  };
+  // Так выглядит старый блок после mergeClaudeWtConfig, когда его в конфиге нет.
+  const defaultLegacy = {
+    enabled: false, dir: '', cwd: '', script: '.scripts/telegram-incoming', fileDir: 'files/incoming-telegram',
+  };
+
+  it('старая форма: telegramInbox — inbox telegram с прежним файлом состояния и tg-приставкой', () => {
+    const { inboxes, errors } = resolveInboxes({ statePath, telegramInbox: tg });
+    expect(errors).toEqual([]);
+    expect(inboxes).toHaveLength(1);
+    expect(inboxes[0].name).toBe('telegram');
+    expect(inboxes[0].problem).toBeNull();
+    expect(inboxes[0].cfg.statePath).toBe('C:\\Users\\p\\AppData\\Local\\windows11-manager\\telegram-inbox.json');
+    expect(inboxes[0].cfg.sessionName).toBe('tg-{base}');
+    expect(inboxes[0].cfg.sessionPrefix).toBe('tg');
+  });
+
+  it('новая форма: элемент inboxes со своим файлом состояния; пустой старый блок не мешает', () => {
+    const { inboxes, errors } = resolveInboxes({ statePath, telegramInbox: defaultLegacy, inboxes: [email] });
+    expect(errors).toEqual([]);
+    expect(inboxes.map(i => i.name)).toEqual(['email']);
+    const { cfg, problem } = inboxes[0];
+    expect(problem).toBeNull();
+    expect(cfg.statePath).toBe('C:\\Users\\p\\AppData\\Local\\windows11-manager\\email-inbox.json');
+    expect(cfg.sessionName).toBe('{user}-mail-{date}');
+    expect(cfg.sessionPrefix).toBe('email');
+    expect(cfg.script).toBe('.scripts/email-incoming');
+  });
+
+  it('обе формы сразу: telegram первым, затем список', () => {
+    const { inboxes, errors } = resolveInboxes({ statePath, telegramInbox: tg, inboxes: [email] });
+    expect(errors).toEqual([]);
+    expect(inboxes.map(i => [i.name, i.cfg.statePath.split('\\').pop()])).toEqual([
+      ['telegram', 'telegram-inbox.json'],
+      ['email', 'email-inbox.json'],
+    ]);
+  });
+
+  it('выключенный старый блок с dir остаётся в списке — чтобы журнал сказал «disabled»', () => {
+    const { inboxes } = resolveInboxes({ statePath, telegramInbox: { ...tg, enabled: false } });
+    expect(inboxes.map(i => [i.name, i.cfg.enabled])).toEqual([['telegram', false]]);
+  });
+
+  it('элемент списка не наследует скрипт telegram: без script — проблема с именем inbox', () => {
+    const { inboxes } = resolveInboxes({ statePath, inboxes: [{ ...email, script: undefined, fileDir: undefined }] });
+    expect(inboxes[0].problem).toBe('claudeWt.inboxes[email].script is not set');
+    expect(inboxes[0].cfg.fileDir).toBe('');
+  });
+
+  it('повтор имени — ошибка, первый побеждает (и telegram из списка против старого блока)', () => {
+    const twice = resolveInboxes({ statePath, inboxes: [email, { ...email, dir: 'C:/other' }] });
+    expect(twice.inboxes.map(i => i.cfg.dir)).toEqual([email.dir]);
+    expect(twice.errors).toEqual(["claudeWt.inboxes[email]: name 'email' is already used by claudeWt.inboxes[email], skipped"]);
+
+    const tgTwice = resolveInboxes({ statePath, telegramInbox: tg, inboxes: [{ ...tg, name: 'Telegram', dir: 'C:/other' }] });
+    expect(tgTwice.inboxes.map(i => i.label)).toEqual(['claudeWt.telegramInbox']);
+    expect(tgTwice.errors).toEqual(["claudeWt.inboxes[Telegram]: name 'Telegram' is already used by claudeWt.telegramInbox, skipped"]);
+  });
+
+  it('одна папка у двух включённых — ошибка, второго наблюдателя нет; регистр и слэши не спасают', () => {
+    const dup = { ...email, dir: 'c:\\Projects\\text\\obsidian\\ExpertizeMe\\files\\incoming-telegram\\' };
+    const { inboxes, errors } = resolveInboxes({ statePath, telegramInbox: tg, inboxes: [dup] });
+    expect(inboxes.map(i => i.name)).toEqual(['telegram']);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/^claudeWt\.inboxes\[email\]: dir .* is already watched by claudeWt\.telegramInbox, skipped$/);
+  });
+
+  it('одна папка, но второй выключен — не повтор', () => {
+    const { inboxes, errors } = resolveInboxes({ statePath, telegramInbox: tg, inboxes: [{ ...email, dir: tg.dir, enabled: false }] });
+    expect(errors).toEqual([]);
+    expect(inboxes.map(i => i.name)).toEqual(['telegram', 'email']);
+  });
+
+  it('один файл состояния у двух — ошибка', () => {
+    const { inboxes, errors } = resolveInboxes({
+      statePath, telegramInbox: tg, inboxes: [{ ...email, statePath: 'C:\\Users\\p\\AppData\\Local\\windows11-manager\\telegram-inbox.json' }],
+    });
+    expect(inboxes.map(i => i.name)).toEqual(['telegram']);
+    expect(errors[0]).toMatch(/statePath .* is already used by claudeWt\.telegramInbox/);
+  });
+
+  it('плохое имя и не-список — ошибки, без падения', () => {
+    expect(resolveInboxes({ statePath, inboxes: [{ ...email, name: 'mail box' }, { ...email, name: '' }, 'x'] }).errors).toEqual([
+      "claudeWt.inboxes[0]: name 'mail box' must be latin letters, digits, - or _, skipped",
+      'claudeWt.inboxes[1]: name must be latin letters, digits, - or _, skipped',
+      'claudeWt.inboxes[2] is not a map, skipped',
+    ]);
+    expect(resolveInboxes({ statePath, inboxes: { email } })).toEqual({ inboxes: [], errors: ['claudeWt.inboxes is not a list, ignored'] });
+    expect(resolveInboxes(undefined)).toEqual({ inboxes: [], errors: [] });
   });
 });
