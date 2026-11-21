@@ -134,4 +134,100 @@ function resetOps(ids) {
   return ids.map(id => ({ id, state: 'none', value: 0, flash: 'off' }));
 }
 
-export { TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks };
+/*
+ * Мигание перед остыванием кеша промпта (спека ccfzf-picker
+ * docs/superpowers/specs/2026-11-21-cache-warn-design.md).
+ *
+ * Кеш живёт час от последнего ответа ассистента (`cacheAt`, считает ccfzf по
+ * хвосту транскрипта и знает только пикер). Пикер присылает набор
+ * `{warnMin, sessions: [{id, cacheAt}]}`, а сроки отсчитывает служба: скрытый
+ * пикер опрашивает раз в 1–8 минут, и опоздавший набор должен мигать сразу,
+ * если порог уже позади, а кеш ещё жив.
+ *
+ * Мигание — слой поверх вида planTaskbar, а не второй хозяин полосы. Фаза
+ * «вкл» — жёлтая полная (`paused 100`), фаза «выкл» и конец мигания —
+ * полоса последнего применённого вида:
+ *
+ *   question          жёлтая 22% (+ оранжевое FlashWindowEx)  → выкл: жёлтая 22%
+ *   review            без полосы                              → выкл: без полосы
+ *   review/idle+shell зелёная 2%                              → выкл: зелёная 2%
+ *   idle              без полосы                              → выкл: без полосы
+ *
+ * FlashWindowEx слой не трогает: оно всегда оранжевое, жёлтым мигает только
+ * полоса (Стас 21.11, по живой пробе на окне srb-post-vnz).
+ */
+
+// Те же числа, что у cacheRemainingSec в ccfzf-picker (session-glyph.js):
+// вызов, ушедший в последние пять секунд, кеш уже не застанет.
+const CACHE_TTL_SEC = 3600;
+const CACHE_SAFETY_SEC = 5;
+// Конец хода пишет `updated` через доли секунды после метки кеша; состояние
+// новее этого запаса — уже следующий ход.
+const NEW_TURN_MARGIN_SEC = 30;
+const BLINK_MS = 750;
+// 60 и больше — мигала бы каждая ждущая сессия весь час.
+const MAX_WARN_MIN = 59;
+
+/**
+ * Мигать ли кнопке сессии сейчас.
+ *
+ * `agent` — состояние окна сессии у службы (`{agentState, agentUpdated}`),
+ * `null` — окна нет, мигать нечем. Новый ход гасит мигание, даже если набор
+ * пикера ещё не обновился: `active` прямо, а законченный ход — по `updated`
+ * новее метки. `idle` новым ходом не считается: уведомление «жду ввода»
+ * двигает `updated` через минуту после хода без всякого вызова API.
+ */
+function cacheWarnDue(warn, warnSec, nowSec, agent) {
+  if (!agent || !(warnSec > 0)) return false;
+  const at = Number(warn?.cacheAt) || 0;
+  if (!at) return false;
+  const end = at + CACHE_TTL_SEC - CACHE_SAFETY_SEC;
+  if (nowSec < end - warnSec || nowSec >= end) return false;
+  if (agent.agentState === 'active') return false;
+  const updated = Number(agent.agentUpdated) || 0;
+  if (agent.agentState !== 'idle' && updated > at + NEW_TURN_MARGIN_SEC) return false;
+  return true;
+}
+
+/** Полоса кадра мигания: `on` — жёлтая полная, иначе полоса вида `look`. */
+function blinkBar(look, on) {
+  if (on) return { state: 'paused', value: 100 };
+  return look ? { state: look.state, value: look.value } : { state: 'none', value: 0 };
+}
+
+/**
+ * Ключ снятия мигания. Снимает его фокус или «Mark seen» до следующего ответа
+ * агента: у того другая метка кеша, а значит, и другой ключ. Повтор того же
+ * набора раз в пять минут снятое не зажигает.
+ */
+function cacheWarnKey(sessionId, cacheAt) {
+  return `${sessionId}:${cacheAt}`;
+}
+
+/**
+ * Тело просьбы `claude-cache-warn` → `{warnSec, warns}`. Кривое тело и
+ * `warnMin` вне 0…59 выключают мигание: набор заменяется целиком, и на
+ * непонятное ответ — погасить, а не держать прошлое.
+ */
+function parseCacheWarn(body) {
+  const off = { warnSec: 0, warns: new Map() };
+  let src = body;
+  if (typeof body === 'string') {
+    try { src = JSON.parse(body || '{}'); } catch { return off; }
+  }
+  if (!src || typeof src !== 'object') return off;
+  const min = Number(src.warnMin);
+  if (!Number.isInteger(min) || min < 0 || min > MAX_WARN_MIN) return off;
+  const warns = new Map();
+  for (const s of Array.isArray(src.sessions) ? src.sessions : []) {
+    const at = Number(s?.cacheAt);
+    if (typeof s?.id === 'string' && s.id && Number.isFinite(at) && at > 0) warns.set(s.id, { cacheAt: at });
+  }
+  return { warnSec: min * 60, warns };
+}
+
+export {
+  TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks,
+  CACHE_TTL_SEC, CACHE_SAFETY_SEC, NEW_TURN_MARGIN_SEC, BLINK_MS,
+  cacheWarnDue, blinkBar, cacheWarnKey, parseCacheWarn,
+};
