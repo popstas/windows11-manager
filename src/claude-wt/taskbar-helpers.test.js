@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks } from './taskbar-helpers.js';
+import {
+  TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks,
+  cacheWarnDue, blinkBar, cacheWarnKey, parseCacheWarn,
+} from './taskbar-helpers.js';
 
 describe('taskbarLook', () => {
   // Соответствие из ~/.claude/hooks/wt-progress.sh: то, что wt рисует по OSC 9;4.
@@ -161,5 +164,69 @@ describe('pruneMarks', () => {
     const marks = new Map([['a', { kind: 'seen', at: 100 }], ['b', { kind: 'unread', at: 100 }], ['c', { kind: 'seen', at: 100 }]]);
     const agents = [{ sessionId: 'a', agentUpdated: 90 }, { sessionId: 'b', agentUpdated: 150 }];
     expect([...pruneMarks(marks, agents)]).toEqual([['a', { kind: 'seen', at: 100 }]]);
+  });
+});
+
+describe('cacheWarnDue', () => {
+  const at = 1_000_000;
+  const warnSec = 600;
+  const end = at + 3595;
+  const waiting = { agentState: 'review', agentUpdated: at };
+  it('мигает от порога до конца кеша', () => {
+    expect(cacheWarnDue({ cacheAt: at }, warnSec, end - 601, waiting)).toBe(false);
+    expect(cacheWarnDue({ cacheAt: at }, warnSec, end - 600, waiting)).toBe(true);
+    expect(cacheWarnDue({ cacheAt: at }, warnSec, end - 1, waiting)).toBe(true);
+    expect(cacheWarnDue({ cacheAt: at }, warnSec, end, waiting)).toBe(false);
+  });
+  it('опоздавший набор мигает сразу, если кеш жив', () => {
+    expect(cacheWarnDue({ cacheAt: at }, warnSec, end - 120, waiting)).toBe(true);
+  });
+  it('0 — выключено', () => {
+    expect(cacheWarnDue({ cacheAt: at }, 0, end - 60, waiting)).toBe(false);
+  });
+  it('работающая сессия и новый ход не мигают', () => {
+    expect(cacheWarnDue({ cacheAt: at }, warnSec, end - 60, { agentState: 'active', agentUpdated: at })).toBe(false);
+    expect(cacheWarnDue({ cacheAt: at }, warnSec, end - 60, { agentState: 'review', agentUpdated: at + 31 })).toBe(false);
+    expect(cacheWarnDue({ cacheAt: at }, warnSec, end - 60, { agentState: 'question', agentUpdated: at + 31 })).toBe(false);
+  });
+  it('уведомление idle двигает updated без вызова API — мигание держится', () => {
+    expect(cacheWarnDue({ cacheAt: at }, warnSec, end - 60, { agentState: 'idle', agentUpdated: at + 60 })).toBe(true);
+  });
+  it('нет окна у сессии — не мигает', () => {
+    expect(cacheWarnDue({ cacheAt: at }, warnSec, end - 60, null)).toBe(false);
+  });
+});
+
+describe('blinkBar', () => {
+  it('вкл — жёлтая полная', () => {
+    expect(blinkBar({ state: 'paused', value: 22, flash: true }, true)).toEqual({ state: 'paused', value: 100 });
+  });
+  it('выкл — полоса прежнего вида', () => {
+    expect(blinkBar({ state: 'paused', value: 22, flash: true }, false)).toEqual({ state: 'paused', value: 22 });
+    expect(blinkBar({ state: 'normal', value: 2, flash: false }, false)).toEqual({ state: 'normal', value: 2 });
+    expect(blinkBar(null, false)).toEqual({ state: 'none', value: 0 });
+  });
+});
+
+describe('cacheWarnKey', () => {
+  it('ключ снятия — пара id и метки кеша', () => {
+    expect(cacheWarnKey('a', 5)).toBe('a:5');
+    expect(cacheWarnKey('a', 5)).not.toBe(cacheWarnKey('a', 6));
+  });
+});
+
+describe('parseCacheWarn', () => {
+  it('минуты → секунды, набор по id', () => {
+    const r = parseCacheWarn('{"warnMin":10,"sessions":[{"id":"a","cacheAt":5}]}');
+    expect(r.warnSec).toBe(600);
+    expect([...r.warns]).toEqual([['a', { cacheAt: 5 }]]);
+  });
+  it('кривое тело и записи без cacheAt отбрасываются', () => {
+    expect(parseCacheWarn('{').warnSec).toBe(0);
+    expect([...parseCacheWarn({ warnMin: 10, sessions: [{ id: 'a' }, { cacheAt: 5 }] }).warns]).toEqual([]);
+  });
+  it('warnMin вне 0…59 — выключено', () => {
+    expect(parseCacheWarn({ warnMin: 60, sessions: [] }).warnSec).toBe(0);
+    expect(parseCacheWarn({ warnMin: -1, sessions: [] }).warnSec).toBe(0);
   });
 });

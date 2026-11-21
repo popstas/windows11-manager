@@ -7,7 +7,9 @@ const WT = 'C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal\\WindowsTe
 function setup({ windows = [], agents = {}, control = true } = {}) {
   const calls = [];
   const logs = [];
-  const world = { windows, agents, seen: {}, updated: {}, shell: {}, foreground: 0 };
+  const world = { windows, agents, seen: {}, updated: {}, shell: {}, foreground: 0, now: 0 };
+  const timers = [];
+  const cleared = [];
   const winMan = {
     hasTaskbarControl: () => control,
     getVisibleWindowIds: vi.fn(() => world.windows.map(w => w.id)),
@@ -29,10 +31,11 @@ function setup({ windows = [], agents = {}, control = true } = {}) {
   const svc = startTaskbarState({
     winMan,
     log: (m, level = 'info') => logs.push(`${level}: ${m}`),
-    setIntervalFn: () => 1,
-    clearIntervalFn: () => {},
+    setIntervalFn: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
+    clearIntervalFn: t => cleared.push(t),
+    nowSec: () => world.now,
   });
-  return { svc, calls, logs, winMan, world };
+  return { svc, calls, logs, winMan, world, timers, cleared };
 }
 
 describe('startTaskbarState', () => {
@@ -263,5 +266,179 @@ describe('startTaskbarState', () => {
     world.shell[1] = false;
     svc.tick();
     expect(calls).toEqual([['progress', 1, 0, 0]]);
+  });
+});
+
+describe('cacheWarn — мигание перед остыванием кеша', () => {
+  const AT = 1_000_000;
+  const END = AT + 3595;
+  const body = (warnMin = 10) => JSON.stringify({ warnMin, sessions: [{ id: 's1', cacheAt: AT }] });
+  function waiting(state = 'review') {
+    const t = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: state } });
+    t.world.updated[1] = AT;
+    t.world.now = END - 300;
+    t.svc.tick();
+    t.calls.length = 0;
+    return t;
+  }
+  const blinkTimer = timers => timers.find(t => t.ms === 750);
+
+  it('окно на пороге получает paused 100, через кадр — свою полосу', () => {
+    const { svc, calls, timers } = waiting();
+    svc.cacheWarn(body());
+    expect(calls).toEqual([['progress', 1, 8, 100]]);
+    calls.length = 0;
+    blinkTimer(timers).fn();
+    expect(calls).toEqual([['progress', 1, 0, 0]]);
+    calls.length = 0;
+    blinkTimer(timers).fn();
+    expect(calls).toEqual([['progress', 1, 8, 100]]);
+  });
+
+  it('до порога не мигает', () => {
+    const { svc, calls, timers, world } = waiting();
+    world.now = END - 601;
+    svc.cacheWarn(body());
+    expect(calls).toEqual([]);
+    expect(blinkTimer(timers)).toBeUndefined();
+  });
+
+  it('окно впереди снимает мигание, и тот же набор повтором его не зажигает', () => {
+    const { svc, calls, timers, world } = waiting();
+    svc.cacheWarn(body());
+    world.foreground = 1;
+    calls.length = 0;
+    blinkTimer(timers).fn();
+    expect(calls).toEqual([['progress', 1, 0, 0]]);
+    world.foreground = 0;
+    calls.length = 0;
+    svc.cacheWarn(body());
+    svc.tick();
+    expect(calls).toEqual([]);
+  });
+
+  it('новая метка кеша после снятия мигает снова', () => {
+    const { svc, calls, timers, world } = waiting();
+    svc.cacheWarn(body());
+    world.foreground = 1;
+    blinkTimer(timers).fn();
+    world.foreground = 0;
+    world.now += 600;
+    world.updated[1] = AT + 600;
+    calls.length = 0;
+    svc.cacheWarn(JSON.stringify({ warnMin: 10, sessions: [{ id: 's1', cacheAt: AT + 600 }] }));
+    expect(calls).toEqual([['progress', 1, 8, 100]]);
+  });
+
+  it('warnMin 0 гасит уже мигающее окно и возвращает вид question (paused 22)', () => {
+    const { svc, calls, cleared } = waiting('question');
+    svc.cacheWarn(body());
+    calls.length = 0;
+    svc.cacheWarn(body(0));
+    expect(calls).toEqual([['progress', 1, 8, 22]]);
+    expect(cleared.length).toBeGreaterThan(0);
+  });
+
+  it('фоновая команда: фаза «выкл» — зелёная 2%', () => {
+    const t = setup({ windows: [{ id: 1, path: WEZ, title: 'a' }], agents: { 1: 'idle' } });
+    t.world.updated[1] = AT;
+    t.world.shell[1] = true;
+    t.world.now = END - 300;
+    t.svc.tick();
+    t.svc.cacheWarn(body());
+    t.calls.length = 0;
+    blinkTimer(t.timers).fn();
+    expect(t.calls).toEqual([['progress', 1, 2, 2]]);
+  });
+
+  it('Mark seen снимает мигание', () => {
+    const { svc, calls } = waiting();
+    svc.cacheWarn(body());
+    calls.length = 0;
+    svc.dismiss('s1');
+    expect(calls).toContainEqual(['progress', 1, 0, 0]);
+    expect(calls).not.toContainEqual(['progress', 1, 8, 100]);
+    calls.length = 0;
+    svc.cacheWarn(body());
+    expect(calls).toEqual([]);
+  });
+
+  it('работа агента гасит мигание, не дожидаясь нового набора', () => {
+    const { svc, calls, world } = waiting();
+    svc.cacheWarn(body());
+    world.agents[1] = 'active';
+    calls.length = 0;
+    svc.tick();
+    expect(calls).toContainEqual(['progress', 1, 2, 100]);
+    expect(calls).not.toContainEqual(['progress', 1, 8, 100]);
+  });
+
+  it('кеш истёк — мигание кончается само', () => {
+    const { svc, calls, world, cleared } = waiting();
+    svc.cacheWarn(body());
+    world.now = END;
+    calls.length = 0;
+    svc.tick();
+    expect(calls).toEqual([['progress', 1, 0, 0]]);
+    expect(cleared.length).toBeGreaterThan(0);
+  });
+
+  it('новый ход, ушедший в idle, не зажигает мигание на старой метке кеша', () => {
+    // Ответ на 40-й минуте без фокуса окна (head пишет исполнителю), через
+    // минуту хук переводит сессию в idle — старый набор ещё у службы.
+    const { svc, calls, world } = waiting();
+    world.now = END - 1200;
+    svc.cacheWarn(body());
+    world.agents[1] = 'active';
+    world.updated[1] = AT + 2400;
+    svc.tick();
+    world.agents[1] = 'review';
+    world.updated[1] = AT + 2460;
+    svc.tick();
+    world.agents[1] = 'idle';
+    world.updated[1] = AT + 2520;
+    svc.tick();
+    world.now = END - 300;
+    calls.length = 0;
+    svc.tick();
+    expect(calls).not.toContainEqual(['progress', 1, 8, 100]);
+  });
+
+  it('Mark seen до порога не отменяет будущее мигание', () => {
+    const { svc, calls, world } = waiting();
+    world.now = END - 3000;
+    svc.cacheWarn(body());
+    svc.dismiss('s1');
+    world.now = END - 300;
+    calls.length = 0;
+    svc.tick();
+    expect(calls).toContainEqual(['progress', 1, 8, 100]);
+  });
+
+  it('stop() снимает полосу и у мигающего окна без вида в applied', () => {
+    const { svc, calls, world } = waiting();
+    world.seen[1] = true;
+    svc.tick();
+    svc.cacheWarn(body());
+    calls.length = 0;
+    svc.stop();
+    expect(calls).toContainEqual(['progress', 1, 0, 0]);
+  });
+
+  it('ошибка аддона в кадре мигания не роняет таймер', () => {
+    const { svc, timers, winMan, logs } = waiting();
+    svc.cacheWarn(body());
+    winMan.setTaskbarProgress.mockImplementation(() => { throw new Error('boom'); });
+    expect(() => blinkTimer(timers).fn()).not.toThrow();
+    expect(logs.some(l => l.includes('boom'))).toBe(true);
+  });
+
+  it('без мигающих таймер мигания не заведён, stop() его снимает', () => {
+    const { svc, timers, cleared } = waiting();
+    expect(blinkTimer(timers)).toBeUndefined();
+    svc.cacheWarn(body());
+    const id = timers.indexOf(blinkTimer(timers)) + 1;
+    svc.stop();
+    expect(cleared).toContain(id);
   });
 });
