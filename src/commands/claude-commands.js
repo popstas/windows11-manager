@@ -9,7 +9,7 @@
  */
 import { chooseAction } from '../claude-wt/ha/session-groups.js';
 import { sessionIdForSlot } from '../claude-wt/ha/session-slots.js';
-import { basenameOfCwd, parseCursorPoint } from '../claude-wt/project-helpers.js';
+import { basenameOfCwd, parseCursorPoint, promptFromRequest } from '../claude-wt/project-helpers.js';
 import { parseRestorePayload } from './restore-payload.js';
 import { parseArrangePayload } from '../claude-layout-helpers.js';
 import { startTiming, noTiming } from '../claude-wt/timing.js';
@@ -174,7 +174,7 @@ function claudeCommands({ winMan, log, notify, slots, now = () => Date.now() }) 
    * из каталога — ровно так же его считает сам `openClaudeProject`, и так же
    * называет новую сессию ccfzf.
    */
-  async function openProject(cwd, name, { reuseOpen = true, terminal = '', cursor = null } = {}) {
+  async function openProject(cwd, name, { reuseOpen = true, terminal = '', cursor = null, promptB64 = '' } = {}) {
     const opts = { cwd, name: name || basenameOfCwd(cwd) };
     // Ключа `reuseOpen: true` в обычной просьбе нет: у `openClaudeProject` это
     // и так умолчание, а лишний ключ пришлось бы дописать в каждый
@@ -187,6 +187,8 @@ function claudeCommands({ winMan, log, notify, slots, now = () => Date.now() }) 
     // поставит терминал, — ровно как было до появления галки. То же правило,
     // что у `terminal` выше.
     if (cursor) opts.cursor = cursor;
+    // Ключ только у просьбы с промптом — то же правило пустых ключей.
+    if (promptB64) opts.promptB64 = promptB64;
     let res;
     try {
       res = await winMan.openClaudeProject(opts);
@@ -409,7 +411,7 @@ function claudeCommands({ winMan, log, notify, slots, now = () => Date.now() }) 
      * head-session второй проход session-new.
      */
     async 'claude-session-open'(payload) {
-      const { id, action, cwd, name, terminal, cursor, noAutoplace } = parseIdPayload(payload);
+      const { id, action, cwd, name, terminal, cursor, noAutoplace, prompt } = parseIdPayload(payload);
       // Отказ: в журнал и человеку — у публикации в MQTT ответа нет, и
       // молчание было бы неотличимо от успеха, — и кодом для http.
       const refuse = (reason, status = 400) => {
@@ -422,7 +424,7 @@ function claudeCommands({ winMan, log, notify, slots, now = () => Date.now() }) 
         ? { action: res.action }
         : { httpStatus: 500, error: res?.reason ?? 'не удалось открыть' });
       if (!action) return undefined;
-      if (action !== 'terminal' && action !== 'terminal-new') {
+      if (action !== 'terminal' && action !== 'terminal-new' && action !== 'terminal-prompt') {
         // Незнакомое действие не делает хотя бы ничего и жалуется — тем же
         // стилем, что terminal-new без cwd: в журнал и человеку, а не только
         // в журнал, иначе отказ был бы неотличим от тишины.
@@ -455,6 +457,19 @@ function claudeCommands({ winMan, log, notify, slots, now = () => Date.now() }) 
       if (action === 'terminal-new') {
         if (!dir) return refuse('session-open: terminal-new нужен cwd проекта');
         return answer(await openProject(dir, asked, { reuseOpen: false, terminal: wantedTerminal, cursor: at }));
+      }
+      // «Заведи новую и отдай ей этот промпт» (`/p <проект> <промпт>` в
+      // пикере). Своё действие, а не поле `prompt` у `terminal-new`: менеджер
+      // прежней версии незнакомое поле выкинул бы молча и открыл сессию без
+      // промпта, а незнакомое действие он отвергает вслух (ветка выше). Сессию
+      // не ищем по той же причине, что у `terminal-new`.
+      if (action === 'terminal-prompt') {
+        if (!dir) return refuse('session-open: terminal-prompt нужен cwd проекта');
+        const { promptB64, error } = promptFromRequest(prompt);
+        if (error) return refuse(`session-open: ${error}`);
+        return answer(await openProject(dir, asked, {
+          reuseOpen: false, terminal: wantedTerminal, cursor: at, promptB64,
+        }));
       }
       // Строка, а не что попало: id из JSON может приехать числом или
       // объектом, а дальше он идёт и в поиск, и в шаблон командной строки.

@@ -43,6 +43,10 @@ const CLAUDE_WT_DEFAULTS = {
   launch: { args: [] },
   // Fresh session in a project folder (project hotkeys). Placeholders: {cwd}, {name}.
   launchNew: { args: [] },
+  // Новая сессия с первым промптом (просьба `terminal-prompt` из пикера).
+  // Пусто — шаблон выводится из `launchNew` (`promptLaunch` в
+  // project-helpers.js). Placeholders: те же, что у launchNew, и {promptB64}.
+  launchPrompt: { args: [] },
   // Сессия на входящий файл из Telegram (`telegramInbox`). Свой шаблон рядом с
   // launchNew, а не он сам: удалённая команда другая — скрипт vault вместо
   // голого `claude -n`. Placeholders: {cwd}, {script}, {file}, {name}.
@@ -102,7 +106,7 @@ const CLAUDE_WT_DEFAULTS = {
   },
 };
 
-/** Deep-ish merge: launch / launchNew / launchInbox / launchSession / telegramInbox / restore / snapshots / windowIcons merged key by key. */
+/** Deep-ish merge: launch / launchNew / launchPrompt / launchInbox / launchSession / telegramInbox / restore / snapshots / windowIcons merged key by key. */
 function mergeClaudeWtConfig(raw) {
   const cfg = raw ?? {};
   return {
@@ -115,6 +119,11 @@ function mergeClaudeWtConfig(raw) {
       ...CLAUDE_WT_DEFAULTS.launchNew,
       args: [...CLAUDE_WT_DEFAULTS.launchNew.args],
       ...(cfg.launchNew ?? {}),
+    },
+    launchPrompt: {
+      ...CLAUDE_WT_DEFAULTS.launchPrompt,
+      args: [...CLAUDE_WT_DEFAULTS.launchPrompt.args],
+      ...(cfg.launchPrompt ?? {}),
     },
     launchInbox: {
       ...CLAUDE_WT_DEFAULTS.launchInbox,

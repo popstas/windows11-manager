@@ -159,6 +159,9 @@ function planWtLaunch({ launch, vars = {}, profile, terminal, retry }) {
   // (`CCFZF_CHILD_CWD_ROOT`), пусто — обёртка корень не проверяет.
   const sessionVars = Object.fromEntries(['sessionId', 'promptFile', 'permissionMode', 'head', 'headId', 'childCwdRoot']
     .map(key => [key, escapeForSingleQuoted(vars[key] ?? '')]));
+  // `{promptB64}` — у шаблона с первым промптом (`promptLaunch`). Уже base64:
+  // в нём нет ни кавычек, ни `;`, ни `$`, экранировать нечего.
+  const promptB64 = typeof vars.promptB64 === 'string' ? vars.promptB64 : '';
   const wanted = typeof profile === 'string' ? profile : '';
   // Для удалённой стороны: профиль уходит в OSC 1337 SetUserVar, а протокол
   // требует base64. Заодно имя не нужно экранировать — в base64 нет кавычек.
@@ -171,6 +174,7 @@ function planWtLaunch({ launch, vars = {}, profile, terminal, retry }) {
     .replaceAll('{script}', safeScript)
     .replace(/\{(sessionId|promptFile|permissionMode|head|headId|childCwdRoot)\}/g, (_, key) => sessionVars[key])
     .replaceAll('{profileB64}', profileB64)
+    .replaceAll('{promptB64}', promptB64)
     .replaceAll('{profile}', wanted);
   const tail = launch?.args ?? [];
   if (!terminal?.command) {
@@ -199,8 +203,68 @@ function planWtLaunch({ launch, vars = {}, profile, terminal, retry }) {
  * `{sessionId}` is the id the caller made up for `claude --session-id`: with
  * it the window can reconnect to the same conversation (see `retry` above).
  */
-function planLaunchNew({ launchNew, cwd, name, sessionId, profile, terminal, retry }) {
-  return planWtLaunch({ launch: launchNew, vars: { cwd, name, sessionId }, profile, terminal, retry });
+function planLaunchNew({ launchNew, cwd, name, sessionId, promptB64, profile, terminal, retry }) {
+  return planWtLaunch({ launch: launchNew, vars: { cwd, name, sessionId, promptB64 }, profile, terminal, retry });
+}
+
+/**
+ * Предел первого промпта в байтах UTF-8.
+ *
+ * Промпт едет в командной строке терминала base64-ом (треть сверху), а у
+ * Windows на всю строку 32767 знаков, и в ней же ssh, профиль и шаблон.
+ * 8 КБ оставляют запас вдвое. Такой же предел стоит у пикера
+ * (`PROMPT_MAX_BYTES` в open-strategy.js): там его видит человек до
+ * отправки, здесь — сито для чужого тела.
+ */
+const PROMPT_MAX_BYTES = 8192;
+
+/**
+ * Промпт из тела просьбы `terminal-prompt` — или причина отказа.
+ *
+ * Знаки не просеиваются вовсе: кавычки, `;`, `$`, переводы строк — обычный
+ * текст промпта, и до шелла он доезжает только base64-ом.
+ */
+function promptFromRequest(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) return { error: 'terminal-prompt needs a non-empty prompt' };
+  const text = raw.trim();
+  const bytes = Buffer.byteLength(text, 'utf8');
+  if (bytes > PROMPT_MAX_BYTES) {
+    return { error: `prompt is ${bytes} bytes, the limit is ${PROMPT_MAX_BYTES}` };
+  }
+  return { prompt: text, promptB64: Buffer.from(text, 'utf8').toString('base64') };
+}
+
+// Хвост, который уносит промпт в claude: позиционный аргумент после `--`,
+// раскодированный уже на той стороне ssh. Знаки здесь только те, что
+// переживают и wt.exe, и ssh: ни `;`, ни одинарной кавычки.
+const PROMPT_TAIL = ' -- "$(printf %s {promptB64} | base64 --decode)"';
+
+/**
+ * Шаблон окна новой сессии с первым промптом.
+ *
+ * Свой `claudeWt.launchPrompt` главнее. Нет его — шаблон выводится из уже
+ * настроенного `launchNew`, чтобы живой конфиг не пришлось править
+ * (решение head 2026-11-21): в аргументе с `$SHELL -ic '…'` хвост
+ * `PROMPT_TAIL` встаёт перед закрывающей кавычкой скрипта, если в скрипте
+ * зовётся `claude`. Только внутри `-ic '…'`: в старой форме
+ * `cd '{cwd}' && exec claude -n '{name}'` кавычки стоят у аргументов, и
+ * «первая кавычка после claude» попала бы внутрь `'{name}'` — команда
+ * собралась бы, но не та. Такой шаблон — отказ, а не догадка.
+ *
+ * @returns {{ args: string[], command?: string } | null}
+ */
+function promptLaunch(cfg) {
+  const own = cfg?.launchPrompt;
+  if (Array.isArray(own?.args) && own.args.length) return own;
+  const base = cfg?.launchNew;
+  const args = Array.isArray(base?.args) ? base.args : [];
+  const script = /(-ic\s+'[^']*\bclaude\b[^']*)'/;
+  const at = args.findIndex(a => script.test(String(a)));
+  if (at === -1) return null;
+  const derived = args.map((a, i) => (i === at
+    ? String(a).replace(script, (_, body) => `${body}${PROMPT_TAIL}'`)
+    : a));
+  return { ...base, args: derived };
 }
 
 /**
@@ -249,6 +313,9 @@ function centerOnMonitor(monBounds, size) {
 }
 
 export {
+  PROMPT_MAX_BYTES,
+  promptFromRequest,
+  promptLaunch,
   basenameOfCwd,
   parseCursorPoint,
   centerOnMonitor,

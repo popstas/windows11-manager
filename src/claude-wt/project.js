@@ -9,7 +9,7 @@ import { readState } from './state.js';
 import { loadSessionIndex } from './sessions.js';
 import { resolveSession } from './tracker-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
-import { pickOpenProjectSession, planLaunchNew, planWtLaunch, profileForTerminal, sessionNameFor } from './project-helpers.js';
+import { pickOpenProjectSession, planLaunchNew, planWtLaunch, profileForTerminal, promptLaunch, sessionNameFor } from './project-helpers.js';
 import { chooseTerminal } from './terminal-helpers.js';
 import { waitForNewWindow } from './restore.js';
 import { cursorRule, placeByCursor } from './cursor-place.js';
@@ -355,10 +355,16 @@ async function resumeClaudeSession({ id, cwd = '', terminal, cursor = null } = {
  * или свёрнутым. Найденное окно (обе ветки `focus*`) поднимается на месте:
  * там ждать нечего, окно уже стоит там, где стояло.
  *
- * @param {{ cwd: string, name: string, profile?: string, reuseOpen?: boolean, terminal?: string, cursor?: {x: number, y: number} | null }} opts
+ * `promptB64` — первый промпт новой сессии, уже base64 (просьба
+ * `terminal-prompt`, разбор — `promptFromRequest`). С ним команда берётся из
+ * `promptLaunch`, а не из `launchNew`: тот же шаблон с хвостом, уносящим
+ * промпт в claude. Искать открытую сессию с промптом бессмысленно — промпт
+ * просили отдать новой, — поэтому вызывающий ставит `reuseOpen: false`.
+ *
+ * @param {{ cwd: string, name: string, profile?: string, reuseOpen?: boolean, terminal?: string, cursor?: {x: number, y: number} | null, promptB64?: string }} opts
  * @returns {Promise<{ ok: boolean, action?: string, reason?: string, sessionId?: string, sessionName?: string }>}
  */
-async function openClaudeProject({ cwd, name, profile, reuseOpen = true, terminal, cursor = null } = {}, deps = {}) {
+async function openClaudeProject({ cwd, name, profile, reuseOpen = true, terminal, cursor = null, promptB64 = '' } = {}, deps = {}) {
   const {
     spawnProcess = spawn,
     listWindows = terminalWindows,
@@ -417,11 +423,21 @@ async function openClaudeProject({ cwd, name, profile, reuseOpen = true, termina
   // его в `claude --session-id`) окно после обрыва ssh возвращается в эту же
   // беседу, а не заводит пустую тёзку. Шаблон без {sessionId} id не передаёт —
   // тогда и переподключения нет (см. planWtLaunch).
+  // Шаблона под промпт нет — отказ вслух, а не сессия без промпта: человек
+  // написал текст и ждёт, что агент его получит.
+  const launchNew = promptB64 ? promptLaunch(cfg) : cfg.launchNew;
+  if (!launchNew) {
+    return {
+      ok: false,
+      reason: "claudeWt.launchNew has no $SHELL -ic '… claude …' script to carry a prompt; set claudeWt.launchPrompt",
+    };
+  }
   const { command, args } = planLaunchNew({
-    launchNew: cfg.launchNew,
+    launchNew,
     cwd,
     name: sessionName,
     sessionId: randomUUID(),
+    promptB64,
     profile: effectiveProfile,
     terminal: chosen.entry,
     retry: cfg.launch,

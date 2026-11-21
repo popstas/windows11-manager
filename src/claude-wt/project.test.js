@@ -407,3 +407,43 @@ describe('openClaudeProject: чем опознаётся своё окно', () 
     expect(seen).toEqual(['list', 'spawn']);
   });
 });
+
+describe('openClaudeProject: первый промпт', () => {
+  const REMOTE = `exec $SHELL -ic 'cd -- "$1" && exec claude -n "$2"' x '{cwd}' '{name}'`;
+  function run(cfg, opts) {
+    const spawned = [];
+    const deps = {
+      cfg: { projects: [], ...cfg },
+      spawnProcess: (command, args) => { spawned.push([command, ...args]); return { unref: () => {} }; },
+      listWindows: () => [],
+      focusNew: async () => true,
+      focusByTitle: async () => true,
+    };
+    return openClaudeProject({ cwd: '/p/site', name: 'site-2', reuseOpen: false, ...opts }, deps)
+      .then(res => ({ res, spawned }));
+  }
+
+  it('с промптом команда берётся из выведенного шаблона', async () => {
+    const { res, spawned } = await run(
+      { launchNew: { args: ['ssh', '-t', 'h', REMOTE] } },
+      { promptB64: 'QUJD' },
+    );
+    expect(res.ok).toBe(true);
+    expect(spawned[0].at(-1)).toContain(`exec claude -n "$2" -- "$(printf %s QUJD | base64 --decode)"'`);
+  });
+
+  it('без промпта — прежний launchNew, хвоста нет', async () => {
+    const { spawned } = await run({ launchNew: { args: ['ssh', '-t', 'h', REMOTE] } }, {});
+    expect(spawned[0].at(-1)).not.toContain('base64');
+  });
+
+  it('шаблона под промпт нет — отказ, терминал не запускается', async () => {
+    const { res, spawned } = await run(
+      { launchNew: { args: ['ssh', '-t', 'h', 'claude -n {name}'] } },
+      { promptB64: 'QUJD' },
+    );
+    expect(res.ok).toBe(false);
+    expect(res.reason).toMatch(/launchPrompt/);
+    expect(spawned).toEqual([]);
+  });
+});
