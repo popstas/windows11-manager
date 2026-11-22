@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { emptySnapshots, normalizeSnapshots } from './snapshot-helpers.js';
+import { renameWithRetry } from '../rename-retry.js';
 
 /**
  * Где живут снимки.
@@ -42,7 +43,7 @@ function writeSnapshots(filePath, data) {
   } finally {
     fs.closeSync(fd);
   }
-  fs.renameSync(tmp, filePath);
+  renameWithRetry(tmp, filePath);
 }
 
 export * from './snapshot-helpers.js';

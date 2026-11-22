@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { emptyState, normalizeState } from './state-helpers.js';
+import { renameWithRetry } from '../rename-retry.js';
 
 /**
  * Read the state file. A file broken by a power loss is moved aside as .bak
@@ -36,7 +37,7 @@ function writeState(filePath, state) {
   } finally {
     fs.closeSync(fd);
   }
-  fs.renameSync(tmp, filePath);
+  renameWithRetry(tmp, filePath);
 }
 
 export * from './state-helpers.js';

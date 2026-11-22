@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { renameWithRetry } from '../rename-retry.js';
 
 /**
  * Записать опубликованный файл окон.
@@ -19,7 +20,7 @@ function writeWindowsFile(filePath, payload) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmp = `${filePath}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(payload));
-  fs.renameSync(tmp, filePath);
+  renameWithRetry(tmp, filePath);
 }
 
 /**

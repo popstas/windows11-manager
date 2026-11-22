@@ -40,6 +40,7 @@ import {
   serializeInboxState,
   uniqueSessionName,
 } from '../claude-wt/telegram-inbox-helpers.js';
+import { renameWithRetry } from '../rename-retry.js';
 
 const tagOf = name => `[inbox:${name}]`;
 
@@ -73,7 +74,7 @@ const defaultFs = {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const tmp = `${file}.tmp`;
     fs.writeFileSync(tmp, serializeInboxState(state));
-    fs.renameSync(tmp, file);
+    renameWithRetry(tmp, file);
   },
 };
 

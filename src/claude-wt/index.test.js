@@ -118,3 +118,49 @@ describe('отметки из службы: просьба демону в фа�
     expect(fs.existsSync(path.join(dir, 'unread-requests.json'))).toBe(false);
   });
 });
+
+describe('saveState: отказ записи состояния не роняет тик', () => {
+  const eperm = () => Object.assign(new Error("EPERM: operation not permitted, rename 'claude-wt.json.tmp' -> 'claude-wt.json'"), { code: 'EPERM' });
+
+  it('rename держат дольше повтора — false без исключения, одна строка на серию, строка о восстановлении', async () => {
+    const mod = await import('./index.js');
+    const statePath = path.join(dir, 'state.json');
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementation(() => { throw eperm(); });
+    const state = { version: 1, slots: {}, lastLayout: [], updated: 1 };
+    expect(mod.saveState(statePath, state)).toBe(false);
+    expect(mod.saveState(statePath, state)).toBe(false);
+    expect(mod.saveState(statePath, state)).toBe(false);
+    expect(err.mock.calls.filter(c => String(c[0]).includes('state write failed'))).toHaveLength(1);
+    rename.mockRestore();
+    expect(mod.saveState(statePath, state)).toBe(true);
+    expect(JSON.parse(fs.readFileSync(statePath, 'utf8')).updated).toBe(1);
+    expect(log).toHaveBeenCalledWith('[claude-wt] state write recovered');
+    err.mockRestore();
+    log.mockRestore();
+  });
+
+  it('EPERM дважды, потом удача — файл записан с первого вызова', async () => {
+    const mod = await import('./index.js');
+    const statePath = path.join(dir, 'state.json');
+    const real = fs.renameSync;
+    let fails = 2;
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementation((a, b) => {
+      if (fails-- > 0) throw eperm();
+      return real(a, b);
+    });
+    expect(mod.saveState(statePath, { version: 1, slots: {}, lastLayout: [], updated: 7 })).toBe(true);
+    expect(JSON.parse(fs.readFileSync(statePath, 'utf8')).updated).toBe(7);
+    rename.mockRestore();
+  });
+
+  // Текстовый — тик в юнит-тесте не поднять (см. выше). Голый writeState в тике
+  // снова ронял бы его целиком вместе с публикацией файла окон.
+  it('тик и markSession пишут состояние через saveState', () => {
+    const src = fs.readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+    const calls = src.match(/^\s+(?:if \(.*)?writeState\(cfg\.statePath/gm) ?? [];
+    expect(calls).toEqual([]);
+    expect(src.match(/saveState\(cfg\.statePath/g)).toHaveLength(2);
+  });
+});
