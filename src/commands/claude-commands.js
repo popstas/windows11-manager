@@ -312,7 +312,8 @@ function claudeCommands({
      * MQTT ответа нет и молчание неотличимо от успеха.
      *
      * По http отвечает `{ok:true, placed}` или `{ok:false, reason}` (код 200):
-     * тело читает CLI claude-wt агента, пикер — только код ответа.
+     * тело читает CLI claude-wt агента, пикер — только код ответа. `mode:
+     * "zone"` (одно окно в зону, `window place --zone`) отвечает ещё и `zone`.
      */
     async 'claude-place'(payload) {
       const parsed = parseArrangePayload(payload);
@@ -320,23 +321,29 @@ function claudeCommands({
         log(`claude-place: тело не разобрано — ${JSON.stringify(payload)}`, 'warn');
         return { ok: false, reason: 'bad payload' };
       }
+      // Перенос в зону просит агент через CLI и ответ читает сам: его отказы
+      // (чужая зона, свёрнутое окно) человеку уведомлением не шлются — только
+      // в журнал. Раскладки просит человек, и ему молчание MQTT не ответ.
+      const tell = parsed.mode === 'zone' ? () => {} : notify;
       let res;
       try {
         res = await winMan.arrangeClaudeWindows({
-          mode: parsed.mode, ids: parsed.ids, groups: parsed.groups, selected: parsed.selected, log,
+          mode: parsed.mode, ids: parsed.ids, groups: parsed.groups, selected: parsed.selected,
+          id: parsed.id, zone: parsed.zone, log,
         });
       } catch (e) {
         log(`claude-place ${parsed.mode}: ${e.message}`, 'error');
-        notify(`claude-wt: ошибка раскладки — ${e.message}`);
+        tell(`claude-wt: ошибка раскладки — ${e.message}`);
         return { ok: false, reason: e.message };
       }
       if (!res?.ok) {
         const reason = res?.reason ?? 'не удалось разложить';
         log(`claude-place ${parsed.mode}: ${reason}`, 'warn');
-        notify(`claude-wt: ${reason}`);
+        tell(`claude-wt: ${reason}`);
         return { ok: false, reason };
       }
-      return { ok: true, placed: Number.isInteger(res.placed) ? res.placed : 0 };
+      const placed = Number.isInteger(res.placed) ? res.placed : 0;
+      return parsed.mode === 'zone' ? { ok: true, placed, zone: res.zone } : { ok: true, placed };
     },
 
     /**
@@ -385,23 +392,56 @@ function claudeCommands({
       return res;
     },
 
+    /**
+     * Вернуть сессию в непросмотренное: `{id}`. Ответ — результат демона
+     * (`{ok, ids, focusedAt, unreadAt, requested?}`) или `{ok:false, reason}`:
+     * по http его читает `claude-wt session unread`, и «успех» без проверки
+     * выдавал бы ему за сделанное и отказ. `unreadAt` в ответе — признак
+     * менеджера, ставящего отметку в файл трекера.
+     */
     async 'claude-session-unread'(payload) {
       const { id } = parseIdPayload(payload);
-      if (!id) return;
+      if (!id) return { ok: false, reason: 'no id' };
       let res;
       try {
         res = winMan.markSessionUnread(id);
       } catch (e) {
         log(`claude-wt mark unread failed: ${e.message}`, 'error');
         notify(`claude-wt: ${e.message}`);
-        return;
+        return { ok: false, reason: e.message };
       }
       if (!res.ok) {
         log(`claude-wt mark unread: ${res.reason}`, 'warn');
         notify(`claude-wt: ${res.reason}`);
-        return;
+        return res;
       }
       log(`claude-wt marked unread: ${res.ids.join(', ')}`);
+      return res;
+    },
+
+    /**
+     * Явное «просмотрено» без перехода на окно: `{id}`. Демон ставит
+     * `focusedAt` «сейчас» и снимает `unreadAt` — только отметки, окно не
+     * поднимается (решение head 22.11). Отказ человеку не показывается:
+     * «Mark seen» пикера шлёт эту просьбу и про сессии без слота на этой
+     * машине, и тост на каждое такое нажатие был бы шумом.
+     */
+    'claude-session-seen'(payload) {
+      const { id } = parseIdPayload(payload);
+      if (!id) return { ok: false, reason: 'no id' };
+      let res;
+      try {
+        res = winMan.markSessionSeen(id);
+      } catch (e) {
+        log(`claude-wt mark seen failed: ${e.message}`, 'error');
+        return { ok: false, reason: e.message };
+      }
+      if (!res.ok) {
+        log(`claude-wt mark seen: ${res.reason}`, 'warn');
+        return res;
+      }
+      log(`claude-wt marked seen: ${res.ids.join(', ')}`);
+      return res;
     },
 
     // Хвостом, а не до ответа. launchPlan (restore.js) ждёт каждое окно до

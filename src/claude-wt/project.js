@@ -6,7 +6,8 @@ import { getMonitorByPoint } from '../monitors.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { claudeWtSessions } from './view.js';
 import { readState } from './state.js';
-import { loadSessionIndex } from './sessions.js';
+import { loadSessionIndexFor } from './sessions.js';
+import { isLocalCwd } from './restore-helpers.js';
 import { resolveSession } from './tracker-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { pickOpenProjectSession, planLaunchNew, planWtLaunch, profileForTerminal, promptLaunch, sessionNameFor } from './project-helpers.js';
@@ -127,7 +128,7 @@ async function placeSpawnedWindow(win, title, mark = noTiming, cursor = null, de
   try {
     const cfg = getClaudeWtConfig();
     const state = readState(cfg.statePath);
-    const sessionIndex = loadSessionIndex(cfg.sessionsFile, cfg.progressDir);
+    const sessionIndex = loadSessionIndexFor(cfg);
     const resolved = resolveSession(stripTitleDecoration(title), sessionIndex, state.slots);
     slot = resolved ? state.slots[resolved.id] : null;
   } catch (e) {
@@ -305,6 +306,9 @@ async function resumeClaudeSession({ id, cwd = '', terminal, cursor = null } = {
   } = deps;
   const sessionId = typeof id === 'string' ? id.trim() : '';
   if (!sessionId) return { ok: false, reason: 'id is required' };
+  // Местную сессию (`features.localSource`) шаблон ssh не поднимет: на
+  // ssh-хосте её нет (isLocalCwd в restore-helpers.js).
+  if (isLocalCwd(cwd)) return { ok: false, action: 'local', reason: `local session (${cwd}): resume launches over ssh` };
   const mark = deps.mark ?? startTiming(`resume ${sessionId}`);
   // Блок `launch`, а не `launchNew`: здесь собирается возобновление сессии, и
   // старость конфига судится по тому блоку, из которого берётся шаблон.

@@ -51,6 +51,12 @@ function buildWindowsFile({
       desktop: Number.isFinite(slot?.desktop) ? slot.desktop : null,
       lastSeen: Number.isFinite(slot?.lastSeen) ? slot.lastSeen : 0,
       focusedAt: Number.isFinite(slot?.focusedAt) ? slot.focusedAt : 0,
+      // Когда сессию явно вернули в непросмотренное (session-unread), секунды.
+      // У читателя своя отметка взгляда (seen.json пикера), и одного отката
+      // `focusedAt` она не перебивает: пикер считает сессию непросмотренной,
+      // пока `unreadAt` новее и своей отметки, и `focusedAt`. Ноль — отметки
+      // нет; новый фокус окна снимает её сам (`focusedAt` > `unreadAt`).
+      unreadAt: Number.isFinite(slot?.unreadAt) ? slot.unreadAt : 0,
       // Как зовут терминал. Читатель различает по нему строки поимённо: на
       // этой машине рядом живут Windows Terminal и WezTerm, а пометка «окно
       // есть» у них одна и та же. Берётся из окна тика, а не из слота: слот
@@ -204,7 +210,9 @@ function windowsFingerprint(windows, snapshots, projects, headIcon = '') {
     // сердцебиением, до тридцати секунд.
     // Иконка — чтобы новая метка head или правка иконки в настройках не
     // ждали сердцебиения.
-    .map(([id, w]) => `${id}\u0000${w.desktop}\u0000${w.title}\u0000${w.focusedAt}\u0000${w.minimized}`
+    // `unreadAt` — по той же причине, что и `focusedAt`: «непросмотрено» иначе
+    // доезжало бы до пикера только сердцебиением.
+    .map(([id, w]) => `${id}\u0000${w.desktop}\u0000${w.title}\u0000${w.focusedAt}\u0000${w.unreadAt ?? 0}\u0000${w.minimized}`
       + `\u0000${w.monitor}\u0000${w.zone}\u0000${w.slot}\u0000${w.icon ?? ''}`)
     .sort()
     .join('\u0001');
@@ -288,4 +296,16 @@ export {
   signalPrint,
   shouldWriteSignal,
   signalPath,
+  localWindowsFileName,
 };
+
+/**
+ * Имя местной копии файла окон (`features.localSource`) в
+ * `~/.ccfzf/windows/` — по машине, как у macos-windows-manager, а не по
+ * `windowsFile`: там путь удалённого читателя, и имя у него могло быть любым
+ * (старый `.ccfzf.sessions.claude-wt.json`). Знаки вне `[A-Za-z0-9._-]` —
+ * подчёркивание.
+ */
+function localWindowsFileName(host) {
+  return `${String(host || 'unknown').replace(/[^A-Za-z0-9._-]/g, '_')}.json`;
+}

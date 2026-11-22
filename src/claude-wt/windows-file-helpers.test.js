@@ -8,8 +8,7 @@ import {
   shouldWriteWindowsFile,
   signalPrint,
   shouldWriteSignal,
-  signalPath,
-} from './windows-file-helpers.js';
+  signalPath, localWindowsFileName } from './windows-file-helpers.js';
 
 const WINDOWS = [
   { id: 11, title: 'ccfzf-picker', sessionId: 'aaa', app: 'WindowsTerminal.exe' },
@@ -18,7 +17,7 @@ const WINDOWS = [
 ];
 
 const SLOTS = {
-  aaa: { titles: ['ccfzf-picker'], desktop: 2, lastSeen: 1700, focusedAt: 1650 },
+  aaa: { titles: ['ccfzf-picker'], desktop: 2, lastSeen: 1700, focusedAt: 1650, unreadAt: 1680 },
   bbb: { titles: ['notes'], desktop: null, lastSeen: 1690 },
   // Сессия, чьё окно закрыли: слот остался, окна нет.
   ccc: { titles: ['gone'], desktop: 1, lastSeen: 900 },
@@ -37,7 +36,7 @@ describe('buildWindowsFile', () => {
       windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000,
     });
     expect(out.windows.aaa).toEqual({
-      title: 'ccfzf-picker', desktop: 2, lastSeen: 1700, focusedAt: 1650,
+      title: 'ccfzf-picker', desktop: 2, lastSeen: 1700, focusedAt: 1650, unreadAt: 1680,
       app: 'WindowsTerminal.exe', icon: '', minimized: false,
       monitor: null, zone: null, slot: null,
     });
@@ -65,6 +64,16 @@ describe('buildWindowsFile', () => {
     });
     expect(out.windows.aaa.focusedAt).toBe(1650);
     expect(out.windows.bbb.focusedAt).toBe(0);
+  });
+
+  // Отметка «вернули в непросмотренное» едет читателю: у пикера своя отметка
+  // взгляда, и откат одного focusedAt её не перебивает.
+  it('carries unreadAt from the slot, zero when nobody marked it', () => {
+    const out = buildWindowsFile({
+      windows: WINDOWS, slots: SLOTS, host: 'pc', pid: 42, nowMs: 1_800_000,
+    });
+    expect(out.windows.aaa.unreadAt).toBe(1680);
+    expect(out.windows.bbb.unreadAt).toBe(0);
   });
 
   // Читатель различает терминалы в строке поимённо, и узнать их имя ему
@@ -120,7 +129,7 @@ describe('buildWindowsFile', () => {
       windows: [{ title: 'fresh', sessionId: 'zzz' }], slots: {}, host: 'pc', pid: 1, nowMs: 0,
     });
     expect(out.windows.zzz).toEqual({
-      title: 'fresh', desktop: null, lastSeen: 0, focusedAt: 0, app: '', icon: '', minimized: false,
+      title: 'fresh', desktop: null, lastSeen: 0, focusedAt: 0, unreadAt: 0, app: '', icon: '', minimized: false,
       monitor: null, zone: null, slot: null,
     });
   });
@@ -210,6 +219,12 @@ describe('windowsFingerprint', () => {
   it('notices a changed icon', () => {
     const base = { one: { desktop: 1, title: 'x', icon: '' } };
     expect(windowsFingerprint({ one: { desktop: 1, title: 'x', icon: 'C:\\ico\\head-badge.ico' } }))
+      .not.toBe(windowsFingerprint(base));
+  });
+
+  it('notices a fresh unread mark', () => {
+    const base = { one: { desktop: 1, title: 'x', focusedAt: 100, unreadAt: 0 } };
+    expect(windowsFingerprint({ one: { desktop: 1, title: 'x', focusedAt: 100, unreadAt: 150 } }))
       .not.toBe(windowsFingerprint(base));
   });
 
@@ -629,5 +644,13 @@ describe('buildWindowsFile — зоны head', () => {
     const a = build([HEAD], { layout: LAYOUT });
     const b = build([{ ...HEAD, bounds: { x: 892, y: 0, width: 838, height: 1208 } }], { layout: LAYOUT });
     expect(signalPrint(a)).toBe(signalPrint(b));
+  });
+});
+
+describe('localWindowsFileName', () => {
+  it('имя по машине, чужие знаки — подчёркивание', () => {
+    expect(localWindowsFileName('popstas-nb')).toBe('popstas-nb.json');
+    expect(localWindowsFileName('my host/1')).toBe('my_host_1.json');
+    expect(localWindowsFileName('')).toBe('unknown.json');
   });
 });

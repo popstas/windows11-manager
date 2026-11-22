@@ -2,6 +2,19 @@ import { describe, it, expect } from 'vitest';
 import { groupByDesktop, parseArrangePayload, pickFocusTarget, splitCounts, stackInCell, tileByZones, columns, tileGrid, cascade, arrange, toWindowSpace } from './claude-layout-helpers.js';
 
 describe('parseArrangePayload', () => {
+  it('zone — id и зона из объекта и из json-строки', () => {
+    const want = { mode: 'zone', ids: [], id: 's1', zone: { monitor: 3, position: 1 } };
+    expect(parseArrangePayload({ mode: 'zone', id: ' s1 ', zone: { monitor: 3, position: 1 } })).toEqual(want);
+    expect(parseArrangePayload('{"mode":"zone","id":"s1","zone":{"monitor":3,"position":1}}')).toEqual(want);
+  });
+
+  it('zone без id или с кривой зоной — разобрано, но с null: причину назовёт перенос', () => {
+    expect(parseArrangePayload('zone')).toEqual({ mode: 'zone', ids: [], id: null, zone: null });
+    for (const zone of [{ monitor: '3', position: 1 }, { monitor: 0, position: 1 }, { monitor: 1.5, position: 2 }, [3, 1], null]) {
+      expect(parseArrangePayload({ mode: 'zone', id: 's1', zone }).zone).toBeNull();
+    }
+  });
+
   it('разбирает объект с режимом и списком', () => {
     expect(parseArrangePayload({ mode: 'tile', ids: ['a', 'b'] }))
       .toEqual({ mode: 'tile', ids: ['a', 'b'] });

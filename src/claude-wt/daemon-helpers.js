@@ -102,6 +102,14 @@ const CLAUDE_WT_DEFAULTS = {
   // Встроенная карта профилей пуста: иконки проектов — чужие логотипы и
   // личные картинки, в публичный репозиторий они не кладутся; пути к ним
   // задаёт живой конфиг машины.
+  // Выключатели поведения. `localSource` — трекер ведёт ещё и сессии,
+  // запущенные на этой машине: индекс читается и из местного дампа ccfzf
+  // (`~/.ccfzf.sessions.json`, его пишет пикер этой машины), а файл окон
+  // кладётся ещё и в местный `~/.ccfzf/windows/<имя windowsFile>`, откуда
+  // его читает местный агрегатор. Половинки по отдельности бессмысленны,
+  // поэтому выключатель один. Умолчание — выключено: включение меняет живую
+  // картину машины (местные сессии получают слоты).
+  features: { localSource: false },
   windowIcons: {
     enabled: true,
     headsDir: '',
@@ -111,7 +119,7 @@ const CLAUDE_WT_DEFAULTS = {
   },
 };
 
-/** Deep-ish merge: launch / launchNew / launchPrompt / launchInbox / launchSession / telegramInbox / restore / snapshots / windowIcons merged key by key. */
+/** Deep-ish merge: launch / launchNew / launchPrompt / launchInbox / launchSession / telegramInbox / restore / snapshots / features / windowIcons merged key by key. */
 function mergeClaudeWtConfig(raw) {
   const cfg = raw ?? {};
   return {
@@ -143,6 +151,7 @@ function mergeClaudeWtConfig(raw) {
     telegramInbox: { ...CLAUDE_WT_DEFAULTS.telegramInbox, ...(cfg.telegramInbox ?? {}) },
     restore: { ...CLAUDE_WT_DEFAULTS.restore, ...(cfg.restore ?? {}) },
     snapshots: { ...CLAUDE_WT_DEFAULTS.snapshots, ...(cfg.snapshots ?? {}) },
+    features: { localSource: cfg.features?.localSource === true },
     windowIcons: {
       ...CLAUDE_WT_DEFAULTS.windowIcons,
       ...(cfg.windowIcons ?? {}),
@@ -434,6 +443,11 @@ function applyFocusSuppression({ marks = {}, ids = [], nowMs }) {
  * карту слотов, а тик заменяет её целиком своей — see markSessionUnread() и
  * claudeWtTick() в index.js. Id, которых в этой карте уже нет (сессия успела
  * пропасть из состояния), тихо пропускаются — метить нечего.
+ *
+ * Пометка — пара `{focusedAt, unreadAt}` (см. sessionMark): «непросмотрено»
+ * откатывает `focusedAt` и ставит `unreadAt`, «просмотрено» ставит
+ * `focusedAt` и снимает `unreadAt`. Ложатся обе половины разом — по
+ * отдельности одна перебила бы смысл другой.
  */
 function applyPendingUnread(slots, pending) {
   const ids = Object.keys(pending ?? {});
@@ -441,9 +455,28 @@ function applyPendingUnread(slots, pending) {
   const next = { ...slots };
   for (const id of ids) {
     if (!next[id]) continue;
-    next[id] = upsertSlot(next[id], { focusedAt: pending[id] });
+    const { focusedAt, unreadAt } = pending[id] ?? {};
+    next[id] = upsertSlot(next[id], { focusedAt, unreadAt });
   }
   return next;
+}
+
+/**
+ * Что положить в слот по явной отметке человека или агента. Секунды, как
+ * `focusedAt`.
+ *
+ * - `unread`: `focusedAt` откатывается на секунду до записи агента
+ *   (`unreadFocusedAt`) — по нему гаснут панель, HA и читатель прежней
+ *   версии, — а `unreadAt` ставится «сейчас»: у пикера своя отметка взгляда в
+ *   seen.json, и одного отката она не перебивает. Без записи агента — `null`:
+ *   гасить нечего.
+ * - `seen`: `focusedAt` «сейчас», `unreadAt` снят. Окно при этом никто не
+ *   поднимает — это только отметка (решение head 22.11).
+ */
+function sessionMark(kind, { updated = 0, nowSec } = {}) {
+  if (kind === 'seen') return { focusedAt: nowSec, unreadAt: 0 };
+  if (kind !== 'unread' || !(updated > 0)) return null;
+  return { focusedAt: unreadFocusedAt(updated), unreadAt: nowSec };
 }
 
 /** Settled titles of terminal windows that could not be attributed to a session. */
@@ -560,6 +593,7 @@ export {
   suppressFocus,
   applyFocusSuppression,
   applyPendingUnread,
+  sessionMark,
   unresolvedTitles,
   indexWanted,
   emptyTickStats,

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
 import { getConfig } from '../config.js';
 import { getVisibleWindowIds, getWindowById, getActiveWindowId, focusWindowById } from '../windows.js';
 import { placeWindowByConfig } from '../placement.js';
@@ -7,7 +8,7 @@ import { movedDesktop } from '../placement-helpers.js';
 import { noAutoplaceIds } from '../no-autoplace.js';
 import { getWindowsMonitors } from '../monitors.js';
 import { virtualDesktop } from '../virtual-desktop.js';
-import { loadSessionIndex, loadBackgroundAgents } from './sessions.js';
+import { loadSessionIndexFor, loadBackgroundAgentsFor } from './sessions.js';
 import { readState, writeState, upsertSlot } from './state.js';
 import {
   buildWindowsFile,
@@ -18,6 +19,7 @@ import {
   signalPrint,
   shouldWriteSignal,
   signalPath,
+  localWindowsFileName,
 } from './windows-file.js';
 import { step } from './tracker-helpers.js';
 import {
@@ -36,7 +38,7 @@ import {
   recordTick,
   isStaleTick,
   sameTitleSessionIds,
-  unreadFocusedAt,
+  sessionMark,
   suppressFocus,
   applyFocusSuppression,
   applyPendingUnread,
@@ -120,6 +122,16 @@ let lastWritten = '';
 let stateWriteError = '';
 let lastWindowsFingerprint = '';
 let lastWindowsWrite = 0;
+// Местная копия файла окон (`features.localSource`) — свой отпечаток и своё
+// сердцебиение: отвалившийся V: (частая беда nb) не должен глушить местную
+// запись, а удачная местная — притворяться, что удалённая дошла.
+let lastLocalFingerprint = '';
+let lastLocalWrite = 0;
+
+/** `~/.ccfzf/windows/<host>.json` — умолчание `CCFZF_WINDOWS_DIR` у ccfzf. */
+function localWindowsFile(host) {
+  return path.join(os.homedir(), '.ccfzf', 'windows', localWindowsFileName(host));
+}
 // Отпечаток последнего сигнала пикеру (см. signalPrint) — своя, узкая копия
 // расклада без сердцебиения: строка пишется на смену отпечатка и только на неё.
 let lastSignalPrint = null;
@@ -197,7 +209,7 @@ async function claudeWtTick(tickGen = null) {
   if (!liveState) liveState = readState(cfg.statePath);
   takeUnreadRequests(cfg.statePath);
   const windows = snapshot();
-  const sessionIndex = loadSessionIndex(cfg.sessionsFile, cfg.progressDir, Date.now(), wantedIndex);
+  const sessionIndex = loadSessionIndexFor(cfg, Date.now(), wantedIndex);
   wantedIndex = false;
   // monitors нужны ДО actions: step() зажимает координаты сам, иначе запрошенная
   // и фактически применённая позиция расходятся и guard собственного хода
@@ -414,11 +426,16 @@ function takeUnreadRequests(statePath) {
   unreadAppliedAt = lastAt;
   if (!ids.length) return;
   for (const id of ids) {
-    if (liveState.slots[id]) liveState.slots[id] = upsertSlot(liveState.slots[id], { focusedAt: marks[id] });
+    if (liveState.slots[id]) liveState.slots[id] = upsertSlot(liveState.slots[id], marks[id]);
     pendingUnread[id] = marks[id];
   }
-  focusMarks = suppressFocus(focusMarks, ids, Date.now());
-  console.log(`[claude-wt] marked unread by request: ${ids.join(', ')}`);
+  // Возвратный фокус гасится только у «непросмотрено»: после «просмотрено»
+  // переход на окно и есть просмотр.
+  const unread = ids.filter(id => marks[id].unreadAt > 0);
+  const seen = ids.filter(id => !(marks[id].unreadAt > 0));
+  if (unread.length) focusMarks = suppressFocus(focusMarks, unread, Date.now());
+  if (unread.length) console.log(`[claude-wt] marked unread by request: ${unread.join(', ')}`);
+  if (seen.length) console.log(`[claude-wt] marked seen by request: ${seen.join(', ')}`);
 }
 
 /**
@@ -507,6 +524,23 @@ function publishWindows(cfg, windows, slots) {
   const due = shouldWriteWindowsFile({
     fingerprint, lastFingerprint: lastWindowsFingerprint, lastWriteMs: lastWindowsWrite, nowMs,
   });
+  // Второй адрес — свой же каталог: там файл читает агрегатор этой машины, и
+  // только оттуда окно доедет до сессии, которая работает здесь. Отказ одной
+  // записи не отменяет другую: адреса и читатели разные.
+  if (cfg.features?.localSource) {
+    const localDue = shouldWriteWindowsFile({
+      fingerprint, lastFingerprint: lastLocalFingerprint, lastWriteMs: lastLocalWrite, nowMs,
+    });
+    if (localDue) {
+      try {
+        writeWindowsFile(localWindowsFile(os.hostname()), payload);
+        lastLocalFingerprint = fingerprint;
+        lastLocalWrite = nowMs;
+      } catch (e) {
+        console.error(`[claude-wt] local windows file write failed: ${e.message}`);
+      }
+    }
+  }
   if (!due) return;
   try {
     writeWindowsFile(cfg.windowsFile, payload);
@@ -545,6 +579,8 @@ function startClaudeWt({ skipCrashCheck = false } = {}) {
   // а по старому сторож демона снял бы мёртвый процесс — то есть ничей.
   lastWindowsFingerprint = '';
   lastWindowsWrite = 0;
+  lastLocalFingerprint = '';
+  lastLocalWrite = 0;
   prevActiveWindowId = 0;
   focusMarks = {};
   pendingUnread = {};
@@ -606,8 +642,18 @@ function stopClaudeWt() {
     } catch (e) {
       console.error(`[claude-wt] windows file remove failed: ${e.message}`);
     }
+    // Местную копию — тоже, и независимо от выключателя: его могли снять,
+    // пока демон работал, а оставленный файл местный агрегатор читал бы
+    // до WINDOWS_TTL как живой.
+    try {
+      removeWindowsFile(localWindowsFile(os.hostname()));
+    } catch (e) {
+      console.error(`[claude-wt] local windows file remove failed: ${e.message}`);
+    }
     lastWindowsFingerprint = '';
     lastWindowsWrite = 0;
+    lastLocalFingerprint = '';
+    lastLocalWrite = 0;
   }
 }
 
@@ -643,71 +689,93 @@ function claudeWtStatus() {
  * Запись агента берётся та же, по которой пикер рисует кружок: у сессии, чью
  * работу увёл фоновый агент, это запись форка, и отматывать надо относительно
  * неё.
+ *
+ * Кроме отката `focusedAt` ставит `unreadAt` (sessionMark): он едет в файл
+ * трекера, и пикер считает сессию непросмотренной, пока `unreadAt` новее и его
+ * местной отметки, и `focusedAt`.
  */
 function markSessionUnread(id) {
+  return markSession(id, 'unread');
+}
+
+/**
+ * Явное «просмотрено» без перехода на окно: `focusedAt` «сейчас», `unreadAt`
+ * снят. Окно не поднимается и фокус не уходит — только отметки (решение head
+ * 22.11). Записи агента не требует: смотреть можно и на сессию без неё.
+ */
+function markSessionSeen(id) {
+  return markSession(id, 'seen');
+}
+
+function markSession(id, kind) {
   const cfg = getClaudeWtConfig();
   if (!cfg.enabled) return { ok: false, reason: 'claudeWt.enabled is false in config' };
   if (!cfg.statePath) return { ok: false, reason: 'claudeWt.statePath is not set in config' };
   // Демон в другом процессе (так всегда в установке с треем: просьба приходит в
   // службу): его слоты в памяти, и правка файла отсюда не доживала до
   // следующей его записи. Тогда — просьба ему в файле, см. takeUnreadRequests.
-  if (intervalId === null) return requestUnread(cfg, id);
+  if (intervalId === null) return requestMark(cfg, id, kind);
   if (!liveState) liveState = readState(cfg.statePath);
   if (!liveState.slots[id]) return { ok: false, reason: `unknown session ${id}` };
 
-  const agents = loadBackgroundAgents(cfg.sessionsFile, cfg.progressDir);
-  const childIds = (agents[id] ?? []).map(child => child.id);
-  const progress = loadProgress(cfg.progressDir, [id, ...childIds]);
-  const updated = activeAgent(id, progress, agents).agent?.updated ?? 0;
+  const mark = sessionMark(kind, {
+    updated: kind === 'unread' ? agentUpdatedFor(cfg, id) : 0,
+    nowSec: Math.floor(Date.now() / 1000),
+  });
   // Без записи хука сессия и так не «прочитана»: гасить нечего.
-  if (!updated) return { ok: false, reason: 'no agent record yet' };
+  if (!mark) return { ok: false, reason: 'no agent record yet' };
 
   const ids = sameTitleSessionIds(liveState.slots, id);
-  const unreadAt = unreadFocusedAt(updated);
   for (const sid of ids) {
-    liveState.slots[sid] = upsertSlot(liveState.slots[sid], { focusedAt: unreadAt });
+    liveState.slots[sid] = upsertSlot(liveState.slots[sid], mark);
     // Тик, который окажется в полёте прямо сейчас, унесёт свою собственную копию
     // слотов мимо этой правки — см. комментарий у pendingUnread. Дублируем
     // пометку сюда, чтобы claudeWtTick() наложил её поверх nextState перед тем,
     // как тот станет новым liveState.
-    pendingUnread[sid] = unreadAt;
+    pendingUnread[sid] = mark;
   }
-  focusMarks = suppressFocus(focusMarks, ids, Date.now());
+  if (kind === 'unread') focusMarks = suppressFocus(focusMarks, ids, Date.now());
   // Не записалось — пометка уже в liveState, а `lastWritten` прежний: тик
   // увидит разницу отпечатков и запишет сам.
   if (saveState(cfg.statePath, liveState)) lastWritten = layoutFingerprint(liveState);
-  return { ok: true, ids };
+  return { ok: true, ids, ...mark };
 }
 
 /** Запись хука, относительно которой отматывается «просмотрено». */
 function agentUpdatedFor(cfg, id) {
-  const agents = loadBackgroundAgents(cfg.sessionsFile, cfg.progressDir);
+  const agents = loadBackgroundAgentsFor(cfg);
   const childIds = (agents[id] ?? []).map(child => child.id);
   const progress = loadProgress(cfg.progressDir, [id, ...childIds]);
   return activeAgent(id, progress, agents).agent?.updated ?? 0;
 }
 
 /**
- * markSessionUnread вне процесса демона: состояние читается с диска заново на
+ * markSession вне процесса демона: состояние читается с диска заново на
  * каждую просьбу (кэшировать его здесь нельзя — новые сессии появляются у
  * демона, а не тут), и просьба дописывается в unread-requests.json. Запись —
  * через временный файл и rename: демон читает этот файл каждую секунду.
+ *
+ * `requested: true` в ответе — просьба принята, ляжет на ближайшем тике
+ * демона (раз в секунду).
  */
-function requestUnread(cfg, id) {
+function requestMark(cfg, id, kind) {
   const state = readState(cfg.statePath);
   if (!state.slots[id]) return { ok: false, reason: `unknown session ${id}` };
-  const updated = agentUpdatedFor(cfg, id);
-  if (!updated) return { ok: false, reason: 'no agent record yet' };
+  const mark = sessionMark(kind, {
+    updated: kind === 'unread' ? agentUpdatedFor(cfg, id) : 0,
+    nowSec: Math.floor(Date.now() / 1000),
+  });
+  if (!mark) return { ok: false, reason: 'no agent record yet' };
   const file = unreadSidecarPath(cfg.statePath);
   if (!file) return { ok: false, reason: 'claudeWt.statePath has no directory' };
   const ids = sameTitleSessionIds(state.slots, id);
   let prev = null;
   try { prev = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* первый раз или битый — с нуля */ }
-  const next = appendUnreadRequest(prev, { at: Date.now(), ids, unreadAt: unreadFocusedAt(updated) });
+  const next = appendUnreadRequest(prev, { at: Date.now(), ids, ...mark });
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(next));
   renameWithRetry(tmp, file);
-  return { ok: true, ids, requested: true };
+  return { ok: true, ids, requested: true, ...mark };
 }
 
 // Наружу, а не только внутрь: сторож в windows-mqtt принимает решение по этому
@@ -727,6 +795,7 @@ export {
   claudeWtStatus,
   claudeWtTick,
   markSessionUnread,
+  markSessionSeen,
   // Экспортирован ради test/http-port-agreement.test.js: тест зовёт запись
   // файла напрямую, минуя claudeWtTick — тому нужен живой перебор окон.
   publishWindows,

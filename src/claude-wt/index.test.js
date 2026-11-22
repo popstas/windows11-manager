@@ -81,6 +81,44 @@ describe('переход на стол вслед за окном', () => {
   });
 });
 
+describe('отметки из службы: просьба демону в файле рядом с состоянием', () => {
+  // Служба — другой процесс, демона в ней нет (intervalId === null): правка
+  // state-файла отсюда не дожила бы до следующей записи демона, поэтому
+  // отметка уходит просьбой в unread-requests.json, а тик демона кладёт её в
+  // слот и в файл трекера.
+  const bounds = { x: 0, y: 0, width: 10, height: 10 };
+  const writeSlots = (slots) => fs.writeFileSync(
+    path.join(dir, 'state.json'),
+    JSON.stringify({ version: 1, slots, lastLayout: [], updated: 1 }),
+  );
+  const requests = () => JSON.parse(fs.readFileSync(path.join(dir, 'unread-requests.json'), 'utf8')).requests;
+
+  it('seen: focusedAt «сейчас» и unreadAt снят — тёзкам по заголовку тоже', async () => {
+    const mod = await import('./index.js');
+    writeSlots({
+      aaa: { titles: ['work'], bounds, focusedAt: 5, unreadAt: 50 },
+      bbb: { titles: ['work'], bounds, focusedAt: 6 },
+      ccc: { titles: ['other'], bounds },
+    });
+    const before = Math.floor(Date.now() / 1000);
+    const res = mod.markSessionSeen('aaa');
+    expect(res).toMatchObject({ ok: true, requested: true, unreadAt: 0 });
+    expect(res.ids.sort()).toEqual(['aaa', 'bbb']);
+    expect(res.focusedAt).toBeGreaterThanOrEqual(before);
+    const [req] = requests();
+    expect(req).toMatchObject({ focusedAt: res.focusedAt, unreadAt: 0 });
+    expect(req.ids.sort()).toEqual(['aaa', 'bbb']);
+  });
+
+  it('неизвестная сессия — отказ, просьбы нет', async () => {
+    const mod = await import('./index.js');
+    writeSlots({ aaa: { titles: ['work'], bounds } });
+    expect(mod.markSessionSeen('zzz')).toEqual({ ok: false, reason: 'unknown session zzz' });
+    expect(mod.markSessionUnread('zzz')).toEqual({ ok: false, reason: 'unknown session zzz' });
+    expect(fs.existsSync(path.join(dir, 'unread-requests.json'))).toBe(false);
+  });
+});
+
 describe('saveState: отказ записи состояния не роняет тик', () => {
   const eperm = () => Object.assign(new Error("EPERM: operation not permitted, rename 'claude-wt.json.tmp' -> 'claude-wt.json'"), { code: 'EPERM' });
 

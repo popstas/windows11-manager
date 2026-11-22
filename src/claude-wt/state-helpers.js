@@ -19,8 +19,8 @@ function isBounds(b) {
 }
 
 /** Update only the fields that were passed; everything else is carried over. */
-function upsertSlot(slot, { title, cwd, bounds, desktop, focusedAt, now } = {}) {
-  const base = slot ?? { titles: [], cwd: '', bounds: null, desktop: null, focusedAt: 0, lastSeen: 0 };
+function upsertSlot(slot, { title, cwd, bounds, desktop, focusedAt, unreadAt, now } = {}) {
+  const base = slot ?? { titles: [], cwd: '', bounds: null, desktop: null, focusedAt: 0, unreadAt: 0, lastSeen: 0 };
   return {
     titles: title ? rememberTitle(base.titles, title) : base.titles,
     cwd: cwd ?? base.cwd,
@@ -30,6 +30,13 @@ function upsertSlot(slot, { title, cwd, bounds, desktop, focusedAt, now } = {}) 
     // сигнал «человек это увидел», который вообще есть: Windows по нему же
     // гасит подсветку кнопки на таскбаре.
     focusedAt: focusedAt ?? base.focusedAt ?? 0,
+    // Когда сессию явно вернули в непросмотренное («Mark unread» пикера,
+    // `claude-wt session unread` агента), epoch-секунды, как `focusedAt`.
+    // Едет в файл трекера: у читателя своя отметка взгляда (seen.json
+    // пикера), и откат одного `focusedAt` её не перебивает — а `unreadAt`
+    // новее обеих перебивает. Снимается новым фокусом сам (focusedAt >
+    // unreadAt) и явным «просмотрено» (ноль).
+    unreadAt: unreadAt ?? base.unreadAt ?? 0,
     lastSeen: now ?? base.lastSeen,
   };
 }
@@ -48,6 +55,7 @@ function normalizeState(raw) {
       // Файлы, записанные до появления поля, просто не знают о фокусе — это
       // «не смотрели», ровно то, что означает ноль.
       focusedAt: Number.isFinite(slot.focusedAt) ? slot.focusedAt : 0,
+      unreadAt: Number.isFinite(slot.unreadAt) ? slot.unreadAt : 0,
       lastSeen: Number.isFinite(slot.lastSeen) ? slot.lastSeen : 0,
     };
   }

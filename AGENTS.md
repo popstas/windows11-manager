@@ -262,7 +262,7 @@ type, added, changed}` либо `200 {ok:false, reason}`, как у focus/place;
 нет — restore (пикер, панель, доска шлют `{id}` без него). Неизвестная сессия
 и пустой id — `{ok:false, reason}`. `POST /claude-wt/place` —
 `{ok:true, placed}` либо `{ok:false, reason}` (`bad payload`, отказ раскладки,
-текст исключения). Отброшенное ограничителем частоты по-прежнему `429` — пикер
+текст исключения); у `mode: "zone"` в успехе ещё `zone`. Отброшенное ограничителем частоты по-прежнему `429` — пикер
 его показывает, — но тело у всех отброшенных `{ok:false, reason:'throttled',
 error:'throttled'}`: CLI читает тело и на не-2xx.
 
@@ -271,12 +271,32 @@ error:'throttled'}`: CLI читает тело и на не-2xx.
 процесс. Правка state-файла из службы не доживала: демон его не перечитывает,
 переписывает раз в секунду (растёт `lastSeen`) и публикует в файл окон прежний
 `focusedAt`, а пикер берёт максимум отметок — строка оставалась прочитанной.
-Поэтому `markSessionUnread` вне процесса демона (`intervalId === null`) читает
-состояние с диска заново и дописывает просьбу `{at, ids, unreadAt}` в
-`unread-requests.json` рядом с состоянием; демон на каждом тике читает его по
-mtime (`takeUnreadRequests`, как `window-icons.json`) и кладёт отметку тем же
-путём, что своя пометка: `pendingUnread` и подавление возвратного фокуса.
+Поэтому `markSessionUnread`/`markSessionSeen` вне процесса демона
+(`intervalId === null`) читают состояние с диска заново и дописывают просьбу
+`{at, ids, focusedAt, unreadAt}` в `unread-requests.json` рядом с состоянием;
+демон на каждом тике читает его по mtime (`takeUnreadRequests`, как
+`window-icons.json`) и кладёт отметку тем же путём, что своя пометка:
+`pendingUnread` и (только у «непросмотрено») подавление возвратного фокуса.
 Свежий демон просьбы старше своего старта не применяет.
+
+**`unreadAt` — вторая отметка в слоте, и она едет в файл трекера** (решение
+Стаса 22.11). Одного отката `focusedAt` пикеру мало: у него своя отметка взгляда
+(`seen.json`), складывается она с `focusedAt` по максимуму, и сессия, которую
+пикер сам отметил просмотренной, после отката оставалась просмотренной — агент
+вернуть её в непросмотренное не мог. Поэтому `claude-session-unread` кроме
+отката `focusedAt` (по нему гаснут HA, панель задач и пикер прежней версии)
+ставит `unreadAt` «сейчас» — epoch-секунды, как `focusedAt`, — а пикер считает
+сессию непросмотренной, пока `unreadAt` новее и своей отметки, и `focusedAt`.
+Новый фокус окна снимает её сам (`focusedAt` > `unreadAt`). Обратный ход —
+`claude-session-seen`: кроме кнопки панели задач он ставит `focusedAt`
+«сейчас» и снимает `unreadAt`, только отметки, окно не поднимается (решение
+head 22.11; до него seen состояние демона не трогал вовсе). Значения считает
+`sessionMark` в `daemon-helpers.js`. Оба обработчика отвечают результатом
+демона (`{ok, ids, focusedAt, unreadAt, requested?}` или `{ok:false, reason}`)
+— его читает `claude-wt session unread|seen`; прежде unread отвечал `{ok:true}`
+и на отказ. Отказ seen человеку тостом не показывается: «Mark seen» пикера шлёт
+его и про сессии без слота на этой машине. `unreadAt` входит в
+`windowsFingerprint` и не входит в `signalPrint` — как `focusedAt`.
 
 **Переподключение после обрыва ssh (WezTerm).** У WezTerm нет перезапуска
 завершившейся панели, поэтому у терминала с `reconnect: true` в реестре
@@ -298,6 +318,43 @@ mtime (`takeUnreadRequests`, как `window-icons.json`) и кладёт отм�
 аргументом base64(JSON argv), правила — `nextStep()` в `reconnect-helpers.js`.
 Пикеру (`publishedTerminal`) обёртка не отдаётся: его местные запуски — откат.
 
+## Местные сессии: `claudeWt.features.localSource`
+
+Трекер по умолчанию ведёт только сессии ssh-хоста: индекс заголовков — из
+`claudeWt.sessionsFile` (дамп pc-virt на V:), файл окон — в
+`claudeWt.windowsFile` там же. Claude, запущенный на самой этой машине, окна
+не получал никогда: его заголовка нет в удалённом дампе, а файл окон уезжал
+туда, где он неизвестен. `features.localSource: true` (умолчание `false`)
+добавляет обе половины, как `features.localSource` у macos-windows-manager:
+
+- индекс читается ещё и из местного дампа `~/.ccfzf.sessions.json` (его
+  переписывает ccfzf пикера этой машины) — `sessionDumps` /
+  `loadSessionIndexFor` в `sessions.js`; все читатели индекса (демон, view,
+  restore, project) идут через них. Кэш дампов — по пути, два дампа друг
+  друга не вытесняют. Местный читается без `progressDir` (хуков на Windows
+  нет, а проба `activityAt` была бы сетевым stat впустую); его отсутствие —
+  не ошибка, в журнал не пишется;
+- тёзку выигрывает удалённая сессия (`mergeIndexes`): так трекер вёл себя до
+  второго источника; местная тёзка окна не получит;
+- файл окон пишется ещё и в `~/.ccfzf/windows/<hostname>.json` — со своим
+  отпечатком и сердцебиением, чтобы отвалившийся V: не глушил местную запись;
+  на остановке демона убирается вместе с удалённым. Сторож демона смотрит
+  по-прежнему только в `windowsFile`;
+- местные сессии не восстанавливаются: `claudeWt.launch.args` — запуск по ssh
+  на pc-virt, где их нет. Местной считается сессия с каталогом-путём Windows
+  (`isLocalCwd` в `restore-helpers.js`, по слоту, а не по дампу): restore на
+  старте и снимок их пропускают строкой `local session … skipped`, а
+  `resumeClaudeSession` отвечает отказом `action: 'local'`;
+- местные сессии получают слоты, а значит попадают туда же, куда остальные:
+  строки панели openHASP и сущности HA, раскладки tile/cascade, иконки окон и
+  мигание кнопки. Состояния (точка, деньги, контекст) у них нет — хуки
+  живут только на pc-virt.
+
+Дедуп окон в слиянии пикера (`merge_states`, целая запись) этим не задет:
+строки сессий сливаются по id, а id двух дампов не пересекаются (22.11 на
+nb — 0 общих из 91 местной и 501 удалённой), так что одно окно двумя
+карточками не приезжает.
+
 ## claude-wt polling budget
 
 Three rules keep the once-a-second daemon off the CPU graph; each was paid for once already and must not be re-learned:
@@ -310,7 +367,7 @@ Window titles are compared in decoration-stripped form (`title-helpers.js`): Cla
 
 **There is a second poller now, and it is fine.** `placeWindowOnOpen` (`src/mqtt/autoplacer.js`, gated by `config.placeWindowOnOpen`) runs inside the `mqtt` process, not the daemon, and it polls too -- `getVisibleWindowIds()` every 1500ms, same call the daemon uses, same rule respected: `getWindows()` (~21-31ms) only fires once a new hwnd shows up among the visible ones, never in the loop, and the desktop number is never read in the loop either. So two processes now each poll `getVisibleWindowIds()` on their own timer (daemon at 1000ms, MQTT service at 1500ms) -- a few ms/s per process, not the pattern this rule exists to forbid.
 
-**A third one: taskbar buttons of WezTerm windows.** `src/mqtt/taskbar.js` (also in the `mqtt` process) polls `getVisibleWindowIds()` every 2500ms and resolves each new hwnd's exe once via `getWindowById()`; `getWindows()` and the desktop number are never touched. Only when WezTerm windows are on screen does it read the session index and the `state.json` of their sessions (`claudeWtWindowAgents()` in `view.js`, both loaders cached), and only on a state change does it call the vendored addon (`setTaskbarProgress`, `flashWindow` in `vendor/node-window-manager/lib/windows.cc`). Mapping mirrors `~/.claude/hooks/wt-progress.sh`: active → green bar at 100, question → paused (yellow) at 22 plus an orange light until the window is focused, review not yet seen (`agentSeen`: the window came to the front after the hook's last write, `seenSinceUpdate`) → no bar but an orange light until focused — what wt did on Claude Code's end-of-turn bell (`preferredNotifChannel: terminal_bell` + `bellStyle: taskbar`; WezTerm does not flash on a bell), idle → no bar and the flash left as it was (the hook turns review into idle a minute later via the "waiting for your input" notification, with nobody having looked), everything else → reset. A finished turn with a background command still running (`shell: true` on the session in the ccfzf dump — Claude Code's own `"status": "shell"` in `~/.claude/sessions/<pid>.json`, read by `loadShellSessions()` from the same cached dump as the index) turns review and idle into a green bar at 2 (Stas, 2026-11-16: «зелёная 2%»), the light following the same review/seen/unread rules as without it; active and question are not affected. Its lag is the dump's: ccfzf rewrites it only when `--state` is polled and the dump is over 30 s old, so ≤30 s while the picker is shown, 60 s–8 min while it is hidden (its backoff), 60 s when the machine is idle — plus the 15 s index cache here. A ccfzf without the field reads as no such session. A flash starts once per change of the button's look, never per tick: a repeated FlashWindowEx would light a window the human has just looked at, before `focusedAt` arrives. The light is steady, not blinking (Stas, 2026-11-16): `flashWindow(hwnd, true)` is FlashWindowEx with FLASHW_TRAY and uCount 1, no FLASHW_TIMER* — after one cycle Windows 11 leaves the button orange until the window is activated. A bare FLASHW_STOP does not clear that leftover highlight (it only stops a flash in progress), so `flashWindow(hwnd, false)` starts a timer flash and stops it back to back — that restores the button without activation (nb, 2026-11-16). Because a steady light would also stick on the window the human is looking at, it is not lit when that hwnd is the foreground window (`getActiveWindowId()`, read only on a switch-on). Human marks from ccfzf-picker override all of this except the bar, in any state (Stas, 2026-11-16: «синхронизация на оба состояния»): `claude-session-seen` (`POST /claude-wt/session-seen`, MQTT `<base>/claude-session-seen`, body `{id}`; Shift+click «Mark seen») calls `taskbar.dismiss(id)` and puts the light out — review, idle or question; `claude-session-unread` (Mark unread) calls `taskbar.markUnread(id)` and lights it — review or idle, even if seen. A mark is `{kind, at}` kept in the service's memory (it owns the light; the daemon's state is not touched), takes effect at once (the call ticks), and holds until the hook writes something newer (`markHolds`/`pruneMarks`); a new finished turn lights as usual. It used to be a plain «dismissed» flag compared against `seen`, and idle's `flash: null` swallowed it: Shift+click a minute after the turn did nothing. Marks are lost on a service restart. Windows Terminal windows are skipped: wt draws the same from OSC 9;4 itself. Reset happens on start (the tray kills the service, so `stop()` may never run) and on `stop()`.
+**A third one: taskbar buttons of WezTerm windows.** `src/mqtt/taskbar.js` (also in the `mqtt` process) polls `getVisibleWindowIds()` every 2500ms and resolves each new hwnd's exe once via `getWindowById()`; `getWindows()` and the desktop number are never touched. Only when WezTerm windows are on screen does it read the session index and the `state.json` of their sessions (`claudeWtWindowAgents()` in `view.js`, both loaders cached), and only on a state change does it call the vendored addon (`setTaskbarProgress`, `flashWindow` in `vendor/node-window-manager/lib/windows.cc`). Mapping mirrors `~/.claude/hooks/wt-progress.sh`: active → green bar at 100, question → paused (yellow) at 22 plus an orange light until the window is focused, review not yet seen (`agentSeen`: the window came to the front after the hook's last write, `seenSinceUpdate`) → no bar but an orange light until focused — what wt did on Claude Code's end-of-turn bell (`preferredNotifChannel: terminal_bell` + `bellStyle: taskbar`; WezTerm does not flash on a bell), idle → no bar and the flash left as it was (the hook turns review into idle a minute later via the "waiting for your input" notification, with nobody having looked), everything else → reset. A finished turn with a background command still running (`shell: true` on the session in the ccfzf dump — Claude Code's own `"status": "shell"` in `~/.claude/sessions/<pid>.json`, read by `loadShellSessions()` from the same cached dump as the index) turns review and idle into a green bar at 2 (Stas, 2026-11-16: «зелёная 2%»), the light following the same review/seen/unread rules as without it; active and question are not affected. Its lag is the dump's: ccfzf rewrites it only when `--state` is polled and the dump is over 30 s old, so ≤30 s while the picker is shown, 60 s–8 min while it is hidden (its backoff), 60 s when the machine is idle — plus the 15 s index cache here. A ccfzf without the field reads as no such session. A flash starts once per change of the button's look, never per tick: a repeated FlashWindowEx would light a window the human has just looked at, before `focusedAt` arrives. The light is steady, not blinking (Stas, 2026-11-16): `flashWindow(hwnd, true)` is FlashWindowEx with FLASHW_TRAY and uCount 1, no FLASHW_TIMER* — after one cycle Windows 11 leaves the button orange until the window is activated. A bare FLASHW_STOP does not clear that leftover highlight (it only stops a flash in progress), so `flashWindow(hwnd, false)` starts a timer flash and stops it back to back — that restores the button without activation (nb, 2026-11-16). Because a steady light would also stick on the window the human is looking at, it is not lit when that hwnd is the foreground window (`getActiveWindowId()`, read only on a switch-on). Human marks from ccfzf-picker override all of this except the bar, in any state (Stas, 2026-11-16: «синхронизация на оба состояния»): `claude-session-seen` (`POST /claude-wt/session-seen`, MQTT `<base>/claude-session-seen`, body `{id}`; Shift+click «Mark seen», `claude-wt session seen`) calls `taskbar.dismiss(id)` and puts the light out — review, idle or question; `claude-session-unread` (Mark unread, `claude-wt session unread`) calls `taskbar.markUnread(id)` and lights it — review or idle, even if seen. A mark is `{kind, at}` kept in the service's memory (it owns the light; the daemon's `focusedAt`/`unreadAt` are set separately, see «`unreadAt` — вторая отметка в слоте»), takes effect at once (the call ticks), and holds until the hook writes something newer (`markHolds`/`pruneMarks`); a new finished turn lights as usual. It used to be a plain «dismissed» flag compared against `seen`, and idle's `flash: null` swallowed it: Shift+click a minute after the turn did nothing. Marks are lost on a service restart. Windows Terminal windows are skipped: wt draws the same from OSC 9;4 itself. Reset happens on start (the tray kills the service, so `stop()` may never run) and on `stop()`.
 
 **A fourth one: window icons.** `src/mqtt/window-icons.js` (the `mqtt` process too) sets `WM_SETICON` on claude terminal windows of both wt and WezTerm: every session gets its project's `projects[].icon`, else the icon of the project's wt profile from `claudeWt.windowIcons.profiles` (no built-in map: project icons are private pictures and third-party logos, so the live config names them by absolute path; only `icons/head-badge.ico` ships in the repo). A head session (mark file `<sessionId>.json` in the heads dir, by default `.ccfzf/heads` next to `claudeWt.sessionsFile`) gets the same project icon plus `claudeWt.windowIcons.head` (empty — `icons/head-badge.ico`, an org chart in a blue circle, Stas's decision 2026-11-17, replaced the crown) as a badge in the bottom right corner of its taskbar button — `ITaskbarList3::SetOverlayIcon` via `setOverlayIcon(hwnd, path, description)` in the vendored addon, loaded at the small icon size (`SM_CXSMICON`) — when `windowIcons.headMode` is `badge` (default, Stas's decision 2026-11-16); `icon` puts the head icon in place of the window icon as before. The badge shows only on the taskbar button (not in the title bar or Alt+Tab) and only with Windows' "Show badges on taskbar apps" on. An addon built without `setOverlayIcon` falls back to `icon` with one warning. Explorer keeps its own copy of the badge, so it outlives a killed service: the first full pass after start clears the badge on every terminal window that should not have one. Explorer drops badges when it restarts: the service watches the taskbar hwnd (`getTaskbarWindow()`, one `FindWindow(Shell_TrayWnd)` per tick) and sets badges again at once and on the next full pass; the addon recreates its cached `ITaskbarList3` for a new taskbar too. A failed set is not recorded, so the next full pass retries it. It polls `getVisibleWindowIds()` every 3000ms with the same once-per-hwnd exe check, and touches the network (session index, heads dir listing) only when the set of terminal windows, their titles, the icon settings or the taskbar change, plus every 15s to notice a new head mark. The HICONs belong to the service process (`setWindowIcon` in the vendored addon caches them for its lifetime): after a service restart every window gets its icon again, and `stop()` removes icons and badges. The settings window (Claude tab) edits `windowIcons.enabled`, `windowIcons.head`, `windowIcons.headMode` and `projects[].icon` (write key `projectIcons`, patched by index in the YAML list); the service picks the change up by config mtime. The decision (sessionId → absolute path of the window icon — never the badge, so a head in `badge` mode carries its project icon and the picker shows that; `''` for none, `{}` when disabled) is also written, only on change, to `window-icons.json` next to `claudeWt.statePath` (local disk); the claude-wt daemon reads it by mtime each tick and publishes it as `windows[id].icon` in `claudeWt.windowsFile` for ccfzf-picker. The daemon does not read the heads dir itself: that would be a network poll in its 1 Hz loop. Rows without a window — ccfzf-picker's history and project rows — get their icon from the same file another way: the daemon itself resolves `iconFor` without the head branch per `claudeWt.projects` entry (`projectIcons` in `window-icons-helpers.js`, absolute path, `REPO_ROOT` shared with the service) and publishes it as `projects[].icon`; every entry is published, a project without a hotkey without a `hotkey` key (an older ccfzf drops entries without a hotkey or icon silently). The head icon goes top-level as `headIcon` (absent when there is none) for a closed head session — only in `icon` mode; in `badge` mode it is absent and ccfzf-picker falls back to the project icon by cwd. Both are empty when `windowIcons.enabled` is false, and both are part of `windowsFingerprint`.
 
@@ -457,6 +514,25 @@ Head-сессия открывает детей через `POST /claude-wt/sess
   слово `group` (панель, CLI) — отказ «группы не переданы» с уведомлением.
   Отладка без пикера — `POST /claude-wt/place` с тем же телом или
   `node src/index.js claude-wt place '<json>'`.
+- **`claude-place zone` — одно уже открытое окно в зону FancyZones**
+  (`src/claude-wt/zone-place.js`, развилка там же). Тело `{"mode": "zone",
+  "id": "<sessionId>", "zone": {"monitor": 3, "position": 1}}`, номера — целые
+  от 1, монитор в нумерации FancyZones (та же, что у `headZones`). Просит его
+  CLI агента `claude-wt window place <session> --zone m:p` (ccfzf). Зона **не
+  обязана быть в `headZones`**: хватает того, что она есть в раскладке
+  FancyZones подключённого сейчас монитора (`resolveZone` в `head-zones.js`,
+  без отката через `positionsMap`). Плата: поля `monitor/zone/slot` трекера
+  считаются по основным зонам, и окно в зоне вне `headZones` трекер покажет
+  основной зоной, в которую оно попало (`1:3` внутри `1:2` на nb — `zone: 2,
+  slot: 2`), либо `zone: null`, если ни в какую. Братья, стол, подъём и фокус не трогаются; окно получает пометку
+  `no-autoplace`. Ответ `{ok:true, placed, zone}`, `placed: 0` — «уже там»;
+  свёрнутое, слишком узкое окно, чужая зона — `{ok:false, reason}`, сессия без
+  окна — дословно `no window` (CLI даёт код 2). Отказы — только в журнал, без
+  уведомления: просит агент, и ответ он читает сам. Ограничитель частоты общий
+  с остальными `claude-place` — сразу за `window layout` перенос получит
+  `throttled`. На маке режима нет (FancyZones — только Windows), и http-менеджера
+  у mwm тоже нет: CLI откажет кодом 1 `no http manager for <host>`, не дойдя
+  до запроса.
 - **Режим `deck` (`childPlacement`, Стас 12.11).** Ребёнок занимает вторую
   основную зону монитора head целиком (та же зона, что у `stack`, а с явной
   `zone` — она), братья не двигаются, `slot` в трекере — 1. В раскладке группы

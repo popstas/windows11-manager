@@ -7,11 +7,11 @@ import { virtualDesktop } from '../virtual-desktop.js';
 import { getWindowsMonitors } from '../monitors.js';
 import { clampBoundsToMonitors } from '../geometry.js';
 import { readState } from './state.js';
-import { loadSessionIndex } from './sessions.js';
+import { loadSessionIndexFor } from './sessions.js';
 import { resolveSession } from './tracker-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
-import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFocusTarget, restoreFollowDesktop } from './restore-helpers.js';
+import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFocusTarget, restoreFollowDesktop, splitLocalPlan } from './restore-helpers.js';
 import { planSnapshotRestore, findSnapshot } from './snapshot-helpers.js';
 import { listSnapshots } from './snapshotter.js';
 import { profileForTerminal } from './project-helpers.js';
@@ -33,7 +33,7 @@ function terminalWindows() {
  * there, this restore would duplicate them".
  */
 function openSessionIds(cfg, state) {
-  const sessionIndex = loadSessionIndex(cfg.sessionsFile, cfg.progressDir);
+  const sessionIndex = loadSessionIndexFor(cfg);
   const ids = new Set();
   for (const w of terminalWindows()) {
     const resolved = resolveSession(stripTitleDecoration(w.getTitle()), sessionIndex, state.slots);
@@ -121,7 +121,15 @@ async function restoreClaudeSessions({ force = false, sessionIds, terminal, curs
  * устоялся. `restored` и `skipped` заполняются на месте, потому что вызывающий
  * печатает по ним итог.
  */
-async function launchPlan({ plan, cfg, restored, skipped, cursor = null }) {
+async function launchPlan({ plan: fullPlan, cfg, restored, skipped, cursor = null }) {
+  // Местные сессии (`features.localSource`) запуском по ssh не поднять — см.
+  // isLocalCwd. Пропуск громкий: молча пропавшее из восстановления окно
+  // выглядело бы поломкой.
+  const { launchable: plan, local } = splitLocalPlan(fullPlan);
+  for (const item of local) {
+    console.error(`[claude-wt] ${item.title} (${item.sessionId}): local session (${item.cwd}) — restore launches over ssh, skipped`);
+    skipped.push(item.sessionId);
+  }
   const monitors = getWindowsMonitors();
   const placed = [];
   let first = true;

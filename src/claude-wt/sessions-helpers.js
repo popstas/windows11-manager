@@ -193,7 +193,15 @@ function indexShellSessions(dump) {
   return new Set(sessions.filter(s => s?.id && s.live === true && s.shell === true).map(s => s.id));
 }
 
+/**
+ * Слить индексы двух источников: сначала местные, поверх — удалённые, то есть
+ * на совпадающем ключе выигрывает удалённый (см. `loadSessionIndexFor`).
+ */
+function mergeIndexes(local = [], remote = []) {
+  return Object.assign({}, ...local, ...remote);
+}
+
 export {
   compareSessions, byActivityThen, stampOf, hasHookStamp, indexSessions, indexBackgroundAgents,
-  indexShellSessions,
+  indexShellSessions, mergeIndexes,
 };
