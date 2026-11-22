@@ -48,6 +48,7 @@ import { snapshotTick, resetSnapshotter, currentSnapshots } from './snapshotter.
 import { resolveHeadLayout } from './head-zones.js';
 import { REPO_ROOT, iconsSidecarPath, projectIcons, headIcon } from './window-icons-helpers.js';
 import { unreadSidecarPath, appendUnreadRequest, freshUnreadRequests } from './unread-requests-helpers.js';
+import { renameWithRetry } from '../rename-retry.js';
 
 function getClaudeWtConfig() {
   return mergeClaudeWtConfig(getConfig().claudeWt);
@@ -114,6 +115,9 @@ let lastWritten = '';
 // Отпечаток и время последней записи опубликованного файла окон. Отдельно от
 // lastWritten: тот сторожит расклад целиком (координаты, вернувшиеся сессии), а
 // этот — только то, что видно чужому читателю.
+// Причина последнего отказа записи состояния — чтобы серия отказов давала одну
+// строку в журнале, а не строку на тик (saveState).
+let stateWriteError = '';
 let lastWindowsFingerprint = '';
 let lastWindowsWrite = 0;
 // Отпечаток последнего сигнала пикеру (см. signalPrint) — своя, узкая копия
@@ -356,11 +360,35 @@ async function claudeWtTick(tickGen = null) {
   pendingUnread = {};
   liveState = nextState;
   const fingerprint = layoutFingerprint(nextState);
-  if (fingerprint !== lastWritten) {
-    writeState(cfg.statePath, nextState);
-    lastWritten = fingerprint;
-  }
+  if (fingerprint !== lastWritten && saveState(cfg.statePath, nextState)) lastWritten = fingerprint;
   publishWindows(cfg, nextWindows, nextState.slots);
+}
+
+/**
+ * Записать состояние, не роняя тик.
+ *
+ * Отказ записи (файл держит антивирус дольше, чем ждёт `renameWithRetry`;
+ * отвалился диск) раньше бросал из тика: тик падал целиком, файл окон в нём
+ * не публиковался, а в журнал шла строка `tick failed` на каждый такой тик.
+ * Теперь отказ — `false`: `lastWritten` не сдвигается, и следующий тик
+ * повторит запись сам. В журнале — одна строка на серию отказов с одной
+ * причиной и одна строка о восстановлении.
+ */
+function saveState(filePath, state) {
+  try {
+    writeState(filePath, state);
+  } catch (e) {
+    if (stateWriteError !== e.message) {
+      console.error(`[claude-wt] state write failed, next tick retries: ${e.message}`);
+      stateWriteError = e.message;
+    }
+    return false;
+  }
+  if (stateWriteError) {
+    console.log('[claude-wt] state write recovered');
+    stateWriteError = '';
+  }
+  return true;
 }
 
 /**
@@ -645,8 +673,9 @@ function markSessionUnread(id) {
     pendingUnread[sid] = unreadAt;
   }
   focusMarks = suppressFocus(focusMarks, ids, Date.now());
-  writeState(cfg.statePath, liveState);
-  lastWritten = layoutFingerprint(liveState);
+  // Не записалось — пометка уже в liveState, а `lastWritten` прежний: тик
+  // увидит разницу отпечатков и запишет сам.
+  if (saveState(cfg.statePath, liveState)) lastWritten = layoutFingerprint(liveState);
   return { ok: true, ids };
 }
 
@@ -677,7 +706,7 @@ function requestUnread(cfg, id) {
   const next = appendUnreadRequest(prev, { at: Date.now(), ids, unreadAt: unreadFocusedAt(updated) });
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(next));
-  fs.renameSync(tmp, file);
+  renameWithRetry(tmp, file);
   return { ok: true, ids, requested: true };
 }
 
@@ -701,5 +730,7 @@ export {
   // Экспортирован ради test/http-port-agreement.test.js: тест зовёт запись
   // файла напрямую, минуя claudeWtTick — тому нужен живой перебор окон.
   publishWindows,
+  // Ради index.test.js: отказ записи состояния не должен ронять тик.
+  saveState,
 };
 export { removeWindowsFile } from './windows-file.js';

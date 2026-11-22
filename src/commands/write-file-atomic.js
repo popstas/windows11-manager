@@ -23,6 +23,7 @@
  * разошлась бы с первой.
  */
 import fs from 'node:fs';
+import { renameWithRetry } from '../rename-retry.js';
 
 function writeFileAtomic(filePath, text) {
   const mode = fs.existsSync(filePath) ? fs.statSync(filePath).mode & 0o777 : 0o644;
@@ -36,7 +37,7 @@ function writeFileAtomic(filePath, text) {
     } finally {
       fs.closeSync(fd);
     }
-    fs.renameSync(tmpPath, filePath);
+    renameWithRetry(tmpPath, filePath);
   } catch (e) {
     try { fs.unlinkSync(tmpPath); } catch { /* временного файла и не появилось, или уже убран */ }
     throw e;
