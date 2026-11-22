@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 
 const arrangeGroup = vi.fn(async () => ({ ok: true, placed: 2 }));
 vi.mock('./claude-wt/group-layout.js', () => ({ arrangeGroup: (...a) => arrangeGroup(...a) }));
+const placeSessionInZone = vi.fn(async () => ({ ok: true, placed: 1, zone: '3:1' }));
+vi.mock('./claude-wt/zone-place.js', () => ({ placeSessionInZone: (...a) => placeSessionInZone(...a) }));
 vi.mock('./windows.js', () => ({ focusWindowById: vi.fn(), getActiveWindowId: vi.fn(), getWindowById: vi.fn() }));
 vi.mock('./placement.js', () => ({ placeWindow: vi.fn() }));
 vi.mock('./claude-wt/view.js', () => ({ claudeWtSessions: vi.fn() }));
@@ -19,5 +21,12 @@ describe('arrangeClaudeWindows', () => {
     const res = await arrangeClaudeWindows({ mode: 'group', groups: [['h', 'c']], selected: 'c', log });
     expect(res).toEqual({ ok: true, placed: 2 });
     expect(arrangeGroup).toHaveBeenCalledWith({ groups: [['h', 'c']], selected: 'c', log });
+  });
+
+  it('mode zone уходит в placeSessionInZone с id и зоной', async () => {
+    const log = vi.fn();
+    const res = await arrangeClaudeWindows({ mode: 'zone', id: 's1', zone: { monitor: 3, position: 1 }, log });
+    expect(res).toEqual({ ok: true, placed: 1, zone: '3:1' });
+    expect(placeSessionInZone).toHaveBeenCalledWith({ id: 's1', zone: { monitor: 3, position: 1 }, log });
   });
 });
