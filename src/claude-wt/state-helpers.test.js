@@ -25,7 +25,7 @@ describe('upsertSlot', () => {
 
   it('creates a slot from scratch', () => {
     const slot = upsertSlot(undefined, { title: 'ccfzf', cwd: '/p', bounds, now: 1000 });
-    expect(slot).toEqual({ titles: ['ccfzf'], cwd: '/p', bounds, desktop: null, focusedAt: 0, lastSeen: 1000 });
+    expect(slot).toEqual({ titles: ['ccfzf'], cwd: '/p', bounds, desktop: null, focusedAt: 0, unreadAt: 0, lastSeen: 1000 });
   });
 
   it('updates bounds without touching the desktop number', () => {
@@ -63,5 +63,22 @@ describe('normalizeState', () => {
     expect(Object.keys(state.slots)).toEqual(['good']);
     expect(state.lastLayout).toEqual(['good']);
     expect(state.updated).toBe(7);
+  });
+
+  // Без переноса отметка «непросмотрено» не пережила бы перезапуск демона, а
+  // деплой его перезапускает.
+  it('carries unreadAt, zero for files written before the field and for junk', () => {
+    const bounds = { x: 0, y: 0, width: 10, height: 10 };
+    const state = normalizeState({
+      version: 1,
+      slots: {
+        marked: { titles: ['a'], bounds, unreadAt: 1234 },
+        old: { titles: ['b'], bounds },
+        junk: { titles: ['c'], bounds, unreadAt: 'вчера' },
+      },
+    });
+    expect(state.slots.marked.unreadAt).toBe(1234);
+    expect(state.slots.old.unreadAt).toBe(0);
+    expect(state.slots.junk.unreadAt).toBe(0);
   });
 });

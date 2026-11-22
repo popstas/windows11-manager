@@ -119,17 +119,18 @@ function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = 
       if (id) taskbar?.markUnread(id);
       return result;
     }),
-    // Shift+клик «Mark seen» в ccfzf-picker: человек отпустил сессию, не
-    // открывая окна. Пикер ставит свою отметку сам; здесь гаснет кнопка окна
-    // на панели задач (её держит служба, src/mqtt/taskbar.js). Состояние
-    // демона не трогается: focusedAt — про переход на окно, а его не было.
-    async 'claude-session-seen'(payload) {
+    // «Mark seen» / Shift+клик в ccfzf-picker и `claude-wt session seen`
+    // агента: сессию отпустили, не открывая окна. Гаснет кнопка окна на
+    // панели задач (её держит служба, src/mqtt/taskbar.js) — всегда, даже если
+    // слота здесь нет, — а демон ставит focusedAt «сейчас» и снимает unreadAt
+    // (решение head 22.11): иначе отметка агента «непросмотрено» в пикере
+    // ничем, кроме фокуса окна, не снималась бы. Окно не поднимается.
+    'claude-session-seen': withRefresh(async (payload) => {
       const { id } = parseIdPayload(payload);
       if (!id) return { ok: false, reason: 'no id' };
       taskbar?.dismiss(id);
-      log(`claude-wt marked seen: ${id}`);
-      return { ok: true };
-    },
+      return claude['claude-session-seen'](payload);
+    }),
     // Набор сессий от ccfzf-picker для мигания жёлтым перед остыванием кеша
     // промпта: `{warnMin, sessions: [{id, cacheAt}]}`. Мигает служба панели
     // задач (src/mqtt/taskbar.js), она же отсчитывает сроки. В журнал — только
