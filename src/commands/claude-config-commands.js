@@ -28,7 +28,7 @@ import { writeFileAtomic } from './write-file-atomic.js';
 import { fileURLToPath } from 'node:url';
 import { mergeClaudeWtConfig } from '../claude-wt/daemon-helpers.js';
 import { normalizeTerminals } from '../claude-wt/terminal-helpers.js';
-import { profileForTerminal } from '../claude-wt/project-helpers.js';
+import { profileForTerminal, normalizeProjectType } from '../claude-wt/project-helpers.js';
 import { BUILTIN_HEAD_ICON } from '../claude-wt/window-icons-helpers.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url)).replace(/[\\/]+$/, '');
@@ -52,7 +52,8 @@ function readClaudeConfig() {
  * принимаются, форма только читает.
  *
  * `_projects` — проекты из конфига как есть, по порядку (индекс — адрес
- * записи в YAML) со своей иконкой и иконкой профиля для плейсхолдера.
+ * записи в YAML) со своей иконкой, иконкой профиля для плейсхолдера и типом
+ * (только показ: тип ставит `claude-project-type`, а не форма).
  * `_terminalChoices` — имена реестра терминалов: встроенные и свои.
  */
 function formExtras(config) {
@@ -67,6 +68,7 @@ function formExtras(config) {
       cwd,
       profile,
       icon: typeof p?.icon === 'string' ? p.icon : '',
+      type: normalizeProjectType(p?.type),
       profileIcon: (profile && cfg.windowIcons.profiles[profile]) || '',
     };
   });

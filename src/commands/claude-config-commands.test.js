@@ -118,3 +118,16 @@ describe('patchProjectIcons', () => {
     expect(() => patchProjectIcons(raw, { '/p/none': 'x.ico' })).toThrow(/проекта с cwd/);
   });
 });
+
+describe('readClaudeConfig — _projects несёт тип', () => {
+  afterEach(() => { config = {}; });
+
+  it('тип записи — нормализованный, без типа — пустая строка', () => {
+    config = { claudeWt: { projects: [
+      { name: 'site', cwd: '/p/site', type: ' Work ' },
+      { name: 'home', cwd: '/p/home' },
+    ] } };
+    const got = readClaudeConfig()._projects;
+    expect(got.map((p) => [p.cwd, p.type])).toEqual([['/p/site', 'work'], ['/p/home', '']]);
+  });
+});

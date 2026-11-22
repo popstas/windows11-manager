@@ -214,6 +214,10 @@ claudeWt:
   #     # Иконка окон сессий проекта (claudeWt.windowIcons ниже). Пусто — иконка
   #     # профиля wt проекта из windowIcons.profiles. Правится в окне настроек.
   #     icon: 'D:\\images\\site.png'
+  #     # Тип проекта: группы активных сессий в ccfzf-picker (work, home, свой).
+  #     # Ставится из ^K пикера командой claude-project-type; untyped и none
+  #     # зарезервированы.
+  #     type: work
   # Иконки окон claude (wt и WezTerm), ставит служба снаружи (WM_SETICON):
   # окно сессии — projects[].icon, иначе иконка профиля wt проекта из
   # `profiles` (встроенной карты профилей нет: пути к своим картинкам задаются

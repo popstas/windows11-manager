@@ -409,6 +409,45 @@ describe('windowsFingerprint — projects', () => {
   });
 });
 
+describe('buildWindowsFile — тип проекта', () => {
+  it('едет полем type, и проект с одним типом (без хоткея и иконки) тоже едет', () => {
+    const out = buildWindowsFile({
+      windows: [], slots: {}, host: 'pc', pid: 42, nowMs: 0,
+      projects: [
+        { name: 'home', cwd: '/p/home', hotkey: 'Ctrl+F11', type: 'home' },
+        { name: 'site', cwd: '/p/site', type: 'work' },
+        { name: 'none', cwd: '/p/none' },
+      ],
+    });
+    expect(out.projects).toEqual([
+      { cwd: '/p/home', name: 'home', hotkey: 'Ctrl+F11', type: 'home' },
+      { cwd: '/p/site', name: 'site', type: 'work' },
+    ]);
+  });
+
+  it('тип нормализуется и здесь: запись из обхода normalizeProjects не везёт мусор', () => {
+    const out = buildWindowsFile({
+      windows: [], slots: {}, host: 'pc', pid: 42, nowMs: 0,
+      projects: [{ name: 'a', cwd: '/p/a', type: ' Work ' }, { name: 'b', cwd: '/p/b', type: '  ' }],
+    });
+    expect(out.projects).toEqual([{ cwd: '/p/a', name: 'a', type: 'work' }]);
+  });
+});
+
+describe('windowsFingerprint — тип проекта', () => {
+  // Смена типа из ^K пикера видна читателю только по файлу трекера — ждать
+  // сердцебиения (до 30 с) ответ на просьбу не должен.
+  it('замечает сменённый, появившийся и снятый тип', () => {
+    const win = { one: { desktop: 1, title: 'x', focusedAt: 0 } };
+    const work = [{ cwd: '/p/a', name: 'a', type: 'work' }];
+    const home = [{ cwd: '/p/a', name: 'a', type: 'home' }];
+    const bare = [{ cwd: '/p/a', name: 'a', hotkey: 'Ctrl+F11' }];
+    const typed = [{ cwd: '/p/a', name: 'a', hotkey: 'Ctrl+F11', type: 'work' }];
+    expect(windowsFingerprint(win, [], work)).not.toBe(windowsFingerprint(win, [], home));
+    expect(windowsFingerprint(win, [], bare)).not.toBe(windowsFingerprint(win, [], typed));
+  });
+});
+
 const payload = (windows, projects = []) => ({ windows, projects });
 
 describe('signalPrint', () => {

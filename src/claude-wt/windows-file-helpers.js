@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { isMinimized } from './tracker-helpers.js';
 import { locateWindow } from './head-zones-helpers.js';
+import { normalizeProjectType } from './project-helpers.js';
 
 // Как часто файл переписывается, когда расклад не менялся. Свежесть читатель
 // судит по полю `generated` и только по нему: mtime не отличает «демон умер» от
@@ -114,8 +115,9 @@ function buildWindowsFile({
     snapshots: (snapshots ?? []).map(trimSnapshot),
     // Хоткеи проектов. Единственный их источник — claudeWt.projects здесь;
     // регистрирует клавиши читатель (ccfzf-picker) на своей стороне, и знать
-    // про них ему больше неоткуда. Записи без хоткея не едут: список проектов
-    // читатель собирает сам, а сказать ему нечего.
+    // про них ему больше неоткуда. Запись едет, когда ей есть что сказать —
+    // хоткей, иконка или тип; остальные не едут: список проектов читатель
+    // собирает сам.
     //
     // `profile` не едет намеренно: это знание про Windows Terminal на этой
     // машине, читателю бесполезное.
@@ -125,18 +127,23 @@ function buildWindowsFile({
     // Проект с иконкой, но без хоткея, тоже едет — без ключа `hotkey`, а не с
     // пустым: агрегатор прежней версии такую запись выбрасывает молча, то есть
     // новое поле старому читателю ничего не ломает.
+    //
+    // Тип проекта (`type`, группировка активных сессий в ccfzf-picker) — по
+    // тому же правилу: проект с одним типом едет без `hotkey` и `icon`.
     projects: (projects ?? [])
       .map(p => ({
         p,
         hotkey: typeof p?.hotkey === 'string' ? p.hotkey.trim() : '',
         icon: typeof p?.cwd === 'string' && typeof projectIcons?.[p.cwd] === 'string' ? projectIcons[p.cwd] : '',
+        type: normalizeProjectType(p?.type),
       }))
-      .filter(({ hotkey, icon }) => hotkey || icon)
-      .map(({ p, hotkey, icon }) => ({
+      .filter(({ hotkey, icon, type }) => hotkey || icon || type)
+      .map(({ p, hotkey, icon, type }) => ({
         cwd: typeof p.cwd === 'string' ? p.cwd : '',
         name: typeof p.name === 'string' ? p.name : '',
         ...(hotkey ? { hotkey } : {}),
         ...(icon ? { icon } : {}),
+        ...(type ? { type } : {}),
       })),
     // Значок head абсолютным путём — для закрытой head-сессии в истории
     // читателя. Ключа нет, когда пути нет: то же правило, что у `http`.
@@ -212,8 +219,9 @@ function windowsFingerprint(windows, snapshots, projects, headIcon = '') {
   // Хоткеи входят по содержимому целиком: их мало, а смена клавиши в конфиге
   // обязана доехать до читателя тем же тиком, а не сердцебиением.
   // Иконки — так же: правка иконки в настройках не должна ждать сердцебиения.
+  // Тип — тоже: запись из ^K пикера видна ему только по этому файлу.
   const keys = (projects ?? [])
-    .map(p => `${p?.cwd}\u0000${p?.hotkey}\u0000${p?.icon ?? ''}`)
+    .map(p => `${p?.cwd}\u0000${p?.hotkey}\u0000${p?.icon ?? ''}\u0000${p?.type ?? ''}`)
     .join('\u0001');
   const tail = `${snaps}${keys ? `\u0002${keys}` : ''}${headIcon ? `\u0003${headIcon}` : ''}`;
   return tail ? `${win}${tail}` : win;
