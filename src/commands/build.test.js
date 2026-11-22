@@ -18,6 +18,7 @@ function winManStub() {
     // GetForegroundWindow: окно доски (hwnd 7) после подъёма — переднее.
     getActiveWindowId: vi.fn().mockReturnValue(7),
     markSessionUnread: vi.fn(),
+    markSessionSeen: vi.fn().mockReturnValue({ ok: true, ids: ['abc'], focusedAt: 100, unreadAt: 0 }),
     restoreSnapshot: vi.fn(),
     restoreClaudeSessions: vi.fn(),
     arrangeClaudeWindows: vi.fn().mockResolvedValue({ ok: true, placed: 0 }),
@@ -53,11 +54,38 @@ describe('buildCommandMap', () => {
 
   it('claude-session-seen гасит кнопку окна через taskbar.dismiss', async () => {
     const taskbar = { dismiss: vi.fn(), markUnread: vi.fn() };
-    const m = makeMap({ taskbar });
-    expect(await m['claude-session-seen']('{"id":"abc"}')).toEqual({ ok: true });
+    const winMan = winManStub();
+    const m = makeMap({ taskbar, winMan });
+    expect(await m['claude-session-seen']('{"id":"abc"}'))
+      .toEqual({ ok: true, ids: ['abc'], focusedAt: 100, unreadAt: 0 });
     expect(taskbar.dismiss).toHaveBeenCalledWith('abc');
+    expect(winMan.markSessionSeen).toHaveBeenCalledWith('abc');
     expect(await m['claude-session-seen']('')).toEqual({ ok: false, reason: 'no id' });
     expect(taskbar.dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  // Кнопку панели задач держит служба, а слота сессии на этой машине может не
+  // быть (окно на другой машине): гаснуть она обязана и тогда.
+  it('claude-session-seen гасит кнопку и тогда, когда демон отказал', async () => {
+    const taskbar = { dismiss: vi.fn(), markUnread: vi.fn() };
+    const winMan = winManStub();
+    winMan.markSessionSeen.mockReturnValue({ ok: false, reason: 'unknown session abc' });
+    const notify = vi.fn();
+    const m = makeMap({ taskbar, winMan, notify });
+    expect(await m['claude-session-seen']('abc')).toEqual({ ok: false, reason: 'unknown session abc' });
+    expect(taskbar.dismiss).toHaveBeenCalledWith('abc');
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('claude-session-unread отдаёт ответ демона наружу', async () => {
+    const winMan = winManStub();
+    winMan.markSessionUnread.mockReturnValue({ ok: true, ids: ['abc'], focusedAt: 9, unreadAt: 20, requested: true });
+    const m = makeMap({ winMan });
+    expect(await m['claude-session-unread']('abc'))
+      .toEqual({ ok: true, ids: ['abc'], focusedAt: 9, unreadAt: 20, requested: true });
+    winMan.markSessionUnread.mockReturnValue({ ok: false, reason: 'no agent record yet' });
+    expect(await m['claude-session-unread']('abc')).toEqual({ ok: false, reason: 'no agent record yet' });
+    expect(await m['claude-session-unread']('')).toEqual({ ok: false, reason: 'no id' });
   });
 
   it('claude-session-unread зажигает кнопку окна через taskbar.markUnread', async () => {
@@ -87,8 +115,8 @@ describe('buildCommandMap', () => {
     const winMan = winManStub();
     winMan.markSessionUnread.mockReturnValue({ ok: true, ids: ['abc'] });
     const m = makeMap({ winMan });
-    expect(await m['claude-session-seen']('abc')).toEqual({ ok: true });
-    await expect(m['claude-session-unread']('abc')).resolves.toBeUndefined();
+    expect((await m['claude-session-seen']('abc')).ok).toBe(true);
+    expect((await m['claude-session-unread']('abc')).ok).toBe(true);
   });
 
   // До файла конфига эта просьба не доходит: кривой cwd отсекается раньше.

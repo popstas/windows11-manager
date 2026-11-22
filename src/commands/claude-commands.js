@@ -392,23 +392,56 @@ function claudeCommands({
       return res;
     },
 
+    /**
+     * Вернуть сессию в непросмотренное: `{id}`. Ответ — результат демона
+     * (`{ok, ids, focusedAt, unreadAt, requested?}`) или `{ok:false, reason}`:
+     * по http его читает `claude-wt session unread`, и «успех» без проверки
+     * выдавал бы ему за сделанное и отказ. `unreadAt` в ответе — признак
+     * менеджера, ставящего отметку в файл трекера.
+     */
     async 'claude-session-unread'(payload) {
       const { id } = parseIdPayload(payload);
-      if (!id) return;
+      if (!id) return { ok: false, reason: 'no id' };
       let res;
       try {
         res = winMan.markSessionUnread(id);
       } catch (e) {
         log(`claude-wt mark unread failed: ${e.message}`, 'error');
         notify(`claude-wt: ${e.message}`);
-        return;
+        return { ok: false, reason: e.message };
       }
       if (!res.ok) {
         log(`claude-wt mark unread: ${res.reason}`, 'warn');
         notify(`claude-wt: ${res.reason}`);
-        return;
+        return res;
       }
       log(`claude-wt marked unread: ${res.ids.join(', ')}`);
+      return res;
+    },
+
+    /**
+     * Явное «просмотрено» без перехода на окно: `{id}`. Демон ставит
+     * `focusedAt` «сейчас» и снимает `unreadAt` — только отметки, окно не
+     * поднимается (решение head 22.11). Отказ человеку не показывается:
+     * «Mark seen» пикера шлёт эту просьбу и про сессии без слота на этой
+     * машине, и тост на каждое такое нажатие был бы шумом.
+     */
+    'claude-session-seen'(payload) {
+      const { id } = parseIdPayload(payload);
+      if (!id) return { ok: false, reason: 'no id' };
+      let res;
+      try {
+        res = winMan.markSessionSeen(id);
+      } catch (e) {
+        log(`claude-wt mark seen failed: ${e.message}`, 'error');
+        return { ok: false, reason: e.message };
+      }
+      if (!res.ok) {
+        log(`claude-wt mark seen: ${res.reason}`, 'warn');
+        return res;
+      }
+      log(`claude-wt marked seen: ${res.ids.join(', ')}`);
+      return res;
     },
 
     // Хвостом, а не до ответа. launchPlan (restore.js) ждёт каждое окно до
