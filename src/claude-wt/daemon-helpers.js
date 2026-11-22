@@ -102,6 +102,14 @@ const CLAUDE_WT_DEFAULTS = {
   // Встроенная карта профилей пуста: иконки проектов — чужие логотипы и
   // личные картинки, в публичный репозиторий они не кладутся; пути к ним
   // задаёт живой конфиг машины.
+  // Выключатели поведения. `localSource` — трекер ведёт ещё и сессии,
+  // запущенные на этой машине: индекс читается и из местного дампа ccfzf
+  // (`~/.ccfzf.sessions.json`, его пишет пикер этой машины), а файл окон
+  // кладётся ещё и в местный `~/.ccfzf/windows/<имя windowsFile>`, откуда
+  // его читает местный агрегатор. Половинки по отдельности бессмысленны,
+  // поэтому выключатель один. Умолчание — выключено: включение меняет живую
+  // картину машины (местные сессии получают слоты).
+  features: { localSource: false },
   windowIcons: {
     enabled: true,
     headsDir: '',
@@ -111,7 +119,7 @@ const CLAUDE_WT_DEFAULTS = {
   },
 };
 
-/** Deep-ish merge: launch / launchNew / launchPrompt / launchInbox / launchSession / telegramInbox / restore / snapshots / windowIcons merged key by key. */
+/** Deep-ish merge: launch / launchNew / launchPrompt / launchInbox / launchSession / telegramInbox / restore / snapshots / features / windowIcons merged key by key. */
 function mergeClaudeWtConfig(raw) {
   const cfg = raw ?? {};
   return {
@@ -143,6 +151,7 @@ function mergeClaudeWtConfig(raw) {
     telegramInbox: { ...CLAUDE_WT_DEFAULTS.telegramInbox, ...(cfg.telegramInbox ?? {}) },
     restore: { ...CLAUDE_WT_DEFAULTS.restore, ...(cfg.restore ?? {}) },
     snapshots: { ...CLAUDE_WT_DEFAULTS.snapshots, ...(cfg.snapshots ?? {}) },
+    features: { localSource: cfg.features?.localSource === true },
     windowIcons: {
       ...CLAUDE_WT_DEFAULTS.windowIcons,
       ...(cfg.windowIcons ?? {}),

@@ -18,7 +18,7 @@
  * пока набор причин не сменится: трекер зовёт это раз в секунду, и лог
  * popstas-pc уже вырос до 316 МБ на одном повторяющемся отказе.
  */
-import { fancyZonesToPos } from '../fancyzones.js';
+import { fancyZonesToPos, getFancyZoneInfo } from '../fancyzones.js';
 import { getSortedMonitors, getWindowsMonitors } from '../monitors.js';
 import { toWindowSpace } from '../claude-layout-helpers.js';
 import { editorMonitorRect, zoneKey } from './head-zones-helpers.js';
@@ -117,4 +117,47 @@ function resolveHeadLayout({ headZones, problems: configProblems = [], log, nowM
   return layout;
 }
 
-export { HEAD_LAYOUT_TTL_MS, resolveHeadLayout, resetHeadLayoutCache };
+/**
+ * Одна зона FancyZones `{monitor, position}` в прямоугольник пространства окон
+ * — для переноса уже открытого окна (`claude-place` с `mode: "zone"`).
+ *
+ * В отличие от `resolveHeadLayout`, зона не обязана быть в `claudeWt.headZones`:
+ * перенос окна — просьба про раскладку FancyZones монитора, а не про основные
+ * зоны head. Два правила оттуда же остаются, и по тем же причинам: монитор
+ * должен быть подключён сейчас (`editor-parameters.json` помнит отключённые до
+ * перезагрузки) и никакого отката через `positionsMap` — зона отключённого
+ * монитора иначе тихо легла бы на другой экран.
+ *
+ * Без кэша: просьба редкая (агент, по одной), а свежий ответ важнее.
+ * Причины — по-английски: их читает агент в stderr CLI.
+ *
+ * @param {{monitor: number, position: number}} zone
+ * @returns {{ rect: {x:number,y:number,width:number,height:number} } | { error: string }}
+ */
+function resolveZone({ monitor, position }) {
+  const problems = [];
+  const monitors = connectedMonitors(problems);
+  if (!monitors) return { error: `FancyZones monitors could not be read: ${problems.join('; ')}` };
+  if (!monitors.some(m => m.monitor === monitor)) {
+    const known = monitors.map(m => m.monitor).join(', ') || 'none';
+    return { error: `monitor ${monitor} is not connected or unknown to FancyZones (connected: ${known})` };
+  }
+  const opts = { positionsFallback: false, quiet: true };
+  let info;
+  let rect;
+  try {
+    info = getFancyZoneInfo({ monitor, position }, opts);
+    if (info?.zone) rect = fancyZonesToPos({ monitor, position }, opts);
+  } catch (e) {
+    return { error: `zone ${zoneKey(monitor, position)}: FancyZones files could not be read (${e.message})` };
+  }
+  if (!info || !info.layout) return { error: `monitor ${monitor} has no custom FancyZones layout applied` };
+  if (!info.zone) {
+    const n = info.layout.info?.zones?.length ?? 0;
+    return { error: `zone ${zoneKey(monitor, position)} is not in the FancyZones layout of monitor ${monitor} (zones 1..${n})` };
+  }
+  if (!rect) return { error: `zone ${zoneKey(monitor, position)} did not resolve` };
+  return { rect };
+}
+
+export { HEAD_LAYOUT_TTL_MS, resolveHeadLayout, resetHeadLayoutCache, resolveZone };

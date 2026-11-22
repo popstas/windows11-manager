@@ -18,15 +18,18 @@ const ZONES = {
   '3:4': { x: 2752, y: 0, width: 1096, height: 1168 },
 };
 
-const fancy = { fancyZonesToPos: vi.fn() };
+const fancy = { fancyZonesToPos: vi.fn(), getFancyZoneInfo: vi.fn() };
 const mons = { getSortedMonitors: vi.fn(), getWindowsMonitors: vi.fn() };
-vi.mock('../fancyzones.js', () => ({ fancyZonesToPos: (...a) => fancy.fancyZonesToPos(...a) }));
+vi.mock('../fancyzones.js', () => ({
+  fancyZonesToPos: (...a) => fancy.fancyZonesToPos(...a),
+  getFancyZoneInfo: (...a) => fancy.getFancyZoneInfo(...a),
+}));
 vi.mock('../monitors.js', () => ({
   getSortedMonitors: (...a) => mons.getSortedMonitors(...a),
   getWindowsMonitors: (...a) => mons.getWindowsMonitors(...a),
 }));
 
-const { resolveHeadLayout, resetHeadLayoutCache, HEAD_LAYOUT_TTL_MS } = await import('./head-zones.js');
+const { resolveHeadLayout, resetHeadLayoutCache, resolveZone, HEAD_LAYOUT_TTL_MS } = await import('./head-zones.js');
 
 const HZ = { 1: [3, 4], 2: [1, 2], 3: [1, 4] };
 
@@ -35,6 +38,12 @@ beforeEach(() => {
   fancy.fancyZonesToPos.mockReset().mockImplementation(({ monitor, position }) => ZONES[`${monitor}:${position}`]);
   mons.getSortedMonitors.mockReset().mockReturnValue(EDITOR);
   mons.getWindowsMonitors.mockReset().mockReturnValue(LIVE_ALL);
+  // Раскладка монитора — четыре зоны; есть ли зона, решает ZONES.
+  fancy.getFancyZoneInfo.mockReset().mockImplementation(({ monitor, position }) => ({
+    monitor: EDITOR[monitor - 1],
+    layout: { info: { zones: [{}, {}, {}, {}] } },
+    zone: ZONES[`${monitor}:${position}`] ? {} : undefined,
+  }));
 });
 
 describe('resolveHeadLayout', () => {
@@ -134,5 +143,44 @@ describe('resolveHeadLayout', () => {
     mons.getWindowsMonitors.mockReturnValue([LIVE_ALL[0], LIVE_ALL[2]]);
     resolveHeadLayout({ headZones: HZ, log, nowMs: 5 * HEAD_LAYOUT_TTL_MS });
     expect(log).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('resolveZone', () => {
+  it('зона раскладки монитора — прямоугольник, даже если её нет в headZones', () => {
+    // 2:2 в headZones нет нигде у вызывающего: resolveZone о них не знает вовсе.
+    expect(resolveZone({ monitor: 2, position: 2 })).toEqual({ rect: ZONES['2:2'] });
+    expect(fancy.fancyZonesToPos).toHaveBeenCalledWith({ monitor: 2, position: 2 }, { positionsFallback: false, quiet: true });
+    expect(fancy.getFancyZoneInfo).toHaveBeenCalledWith({ monitor: 2, position: 2 }, { positionsFallback: false, quiet: true });
+  });
+
+  it('монитор не подключён — отказ без чтения раскладки', () => {
+    mons.getWindowsMonitors.mockReturnValue([LIVE_ALL[0], LIVE_ALL[2]]);
+    const r = resolveZone({ monitor: 2, position: 1 });
+    expect(r.error).toMatch(/monitor 2 is not connected/);
+    expect(r.error).toContain('connected: 1, 3');
+    expect(fancy.getFancyZoneInfo).not.toHaveBeenCalled();
+  });
+
+  it('монитора нет в FancyZones — тот же отказ', () => {
+    expect(resolveZone({ monitor: 5, position: 1 }).error).toMatch(/monitor 5 is not connected or unknown/);
+  });
+
+  it('зоны нет в раскладке — отказ с числом зон', () => {
+    expect(resolveZone({ monitor: 1, position: 7 }).error)
+      .toBe('zone 1:7 is not in the FancyZones layout of monitor 1 (zones 1..4)');
+    expect(fancy.fancyZonesToPos).not.toHaveBeenCalled();
+  });
+
+  it('у монитора нет своей раскладки — отказ', () => {
+    fancy.getFancyZoneInfo.mockReturnValue(false);
+    expect(resolveZone({ monitor: 1, position: 3 }).error).toMatch(/no custom FancyZones layout/);
+  });
+
+  it('файлы FancyZones не читаются — отказ, а не исключение', () => {
+    fancy.getFancyZoneInfo.mockImplementation(() => { throw new Error('ENOENT'); });
+    expect(resolveZone({ monitor: 1, position: 3 }).error).toMatch(/ENOENT/);
+    mons.getSortedMonitors.mockImplementation(() => { throw new Error('editor-parameters'); });
+    expect(resolveZone({ monitor: 1, position: 3 }).error).toMatch(/monitors could not be read/);
   });
 });

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { getWindows } from '../windows.js';
 import { getMons } from '../monitors.js';
 import { readState } from './state.js';
-import { loadSessionIndex, loadBackgroundAgents, loadShellSessions } from './sessions.js';
+import { loadSessionIndexFor, loadBackgroundAgentsFor, loadShellSessionsFor } from './sessions.js';
 import { resolveSession } from './tracker-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
@@ -20,7 +20,7 @@ import { noTiming } from './timing.js';
  * the picker cannot focus a window it has no handle for.
  */
 function openSessionMap(cfg, state) {
-  const sessionIndex = loadSessionIndex(cfg.sessionsFile, cfg.progressDir);
+  const sessionIndex = loadSessionIndexFor(cfg);
   const map = new Map();
   for (const w of getWindows().filter(isTerminalWindow)) {
     const resolved = resolveSession(stripTitleDecoration(w.getTitle()), sessionIndex, state.slots);
@@ -69,7 +69,7 @@ function claudeWtSessions({ mark = noTiming, brief = false, openOnly = false } =
   // Фоновый агент пишет состояние под своим id, а слота у него нет: без этого
   // его файл никто бы не прочитал, и работающая сессия выглядела бы замершей
   // на том, что сказала перед уходом в фон.
-  const agents = loadBackgroundAgents(cfg.sessionsFile, cfg.progressDir);
+  const agents = loadBackgroundAgentsFor(cfg);
   // `openOnly` — состояние и мета только у открытых: закрытые строки в списке
   // остаются, но без полей агента. Окна уже сопоставлены (`openMap`), и это
   // ничего не стоит, а слотов на машине копятся сотни — на ноутбуке 458 давали
@@ -104,7 +104,7 @@ function claudeWtWindowSessions(windows) {
   const cfg = getClaudeWtConfig();
   if (!cfg.enabled || !cfg.statePath || !windows?.length) return [];
   const state = readState(cfg.statePath);
-  const index = loadSessionIndex(cfg.sessionsFile, cfg.progressDir);
+  const index = loadSessionIndexFor(cfg);
   const out = [];
   for (const w of windows) {
     const hit = resolveSession(stripTitleDecoration(w.title), index, state.slots);
@@ -127,7 +127,7 @@ function claudeWtWindowAgents(windows) {
   if (!resolved.length) return [];
   const cfg = getClaudeWtConfig();
   const progress = loadProgress(cfg.progressDir, resolved.map(r => r.sessionId));
-  const shells = loadShellSessions(cfg.sessionsFile, cfg.progressDir);
+  const shells = loadShellSessionsFor(cfg);
   return resolved.map(r => ({
     ...r,
     agentState: progress[r.sessionId]?.state ?? null,

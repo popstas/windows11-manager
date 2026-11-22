@@ -8,8 +8,7 @@ import {
   shouldWriteWindowsFile,
   signalPrint,
   shouldWriteSignal,
-  signalPath,
-} from './windows-file-helpers.js';
+  signalPath, localWindowsFileName } from './windows-file-helpers.js';
 
 const WINDOWS = [
   { id: 11, title: 'ccfzf-picker', sessionId: 'aaa', app: 'WindowsTerminal.exe' },
@@ -645,5 +644,13 @@ describe('buildWindowsFile — зоны head', () => {
     const a = build([HEAD], { layout: LAYOUT });
     const b = build([{ ...HEAD, bounds: { x: 892, y: 0, width: 838, height: 1208 } }], { layout: LAYOUT });
     expect(signalPrint(a)).toBe(signalPrint(b));
+  });
+});
+
+describe('localWindowsFileName', () => {
+  it('имя по машине, чужие знаки — подчёркивание', () => {
+    expect(localWindowsFileName('popstas-nb')).toBe('popstas-nb.json');
+    expect(localWindowsFileName('my host/1')).toBe('my_host_1.json');
+    expect(localWindowsFileName('')).toBe('unknown.json');
   });
 });
