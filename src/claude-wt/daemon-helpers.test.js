@@ -20,6 +20,7 @@ import {
   suppressFocus,
   applyFocusSuppression,
   applyPendingUnread,
+  sessionMark,
   desktopRelearnTarget,
   desktopFollowTarget,
   relearnedDesktop,
@@ -679,12 +680,20 @@ describe('applyPendingUnread', () => {
   };
 
   it('stamps focusedAt on a slot that made it into the map the tick carries out', () => {
-    const next = applyPendingUnread(slots, { alpha: 42 });
+    const next = applyPendingUnread(slots, { alpha: { focusedAt: 42, unreadAt: 50 } });
     expect(next.alpha.focusedAt).toBe(42);
+    expect(next.alpha.unreadAt).toBe(50);
+  });
+
+  it('«просмотрено» снимает unreadAt нулём, а не оставляет прежний', () => {
+    const marked = { ...slots, alpha: { ...slots.alpha, unreadAt: 77 } };
+    const next = applyPendingUnread(marked, { alpha: { focusedAt: 300, unreadAt: 0 } });
+    expect(next.alpha.focusedAt).toBe(300);
+    expect(next.alpha.unreadAt).toBe(0);
   });
 
   it('ignores an id that fell out of the slots the tick is about to keep', () => {
-    const next = applyPendingUnread(slots, { gamma: 1 });
+    const next = applyPendingUnread(slots, { gamma: { focusedAt: 1, unreadAt: 2 } });
     expect(next).toEqual(slots);
   });
 
@@ -693,8 +702,23 @@ describe('applyPendingUnread', () => {
   });
 
   it('leaves the rest of the slot and neighbouring slots untouched', () => {
-    const next = applyPendingUnread(slots, { alpha: 42 });
-    expect(next.alpha).toEqual({ ...slots.alpha, focusedAt: 42 });
+    const next = applyPendingUnread(slots, { alpha: { focusedAt: 42, unreadAt: 50 } });
+    expect(next.alpha).toEqual({ ...slots.alpha, focusedAt: 42, unreadAt: 50 });
     expect(next.beta).toBe(slots.beta);
+  });
+});
+
+describe('sessionMark', () => {
+  it('unread: focusedAt на секунду до записи агента, unreadAt — сейчас', () => {
+    expect(sessionMark('unread', { updated: 1000, nowSec: 2000 })).toEqual({ focusedAt: 999, unreadAt: 2000 });
+  });
+  it('unread без записи агента — гасить нечего', () => {
+    expect(sessionMark('unread', { updated: 0, nowSec: 2000 })).toBeNull();
+  });
+  it('seen: focusedAt сейчас, unreadAt снят — записи агента не нужно', () => {
+    expect(sessionMark('seen', { updated: 0, nowSec: 2000 })).toEqual({ focusedAt: 2000, unreadAt: 0 });
+  });
+  it('чужой вид — null', () => {
+    expect(sessionMark('bogus', { updated: 5, nowSec: 6 })).toBeNull();
   });
 });

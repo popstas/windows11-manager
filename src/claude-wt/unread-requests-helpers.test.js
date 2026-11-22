@@ -13,15 +13,19 @@ describe('unreadSidecarPath', () => {
 
 describe('appendUnreadRequest', () => {
   it('дописывает к пустому, битому и прежнему', () => {
-    const r = { at: 5, ids: ['a'], unreadAt: 9 };
+    const r = { at: 5, ids: ['a'], focusedAt: 8, unreadAt: 9 };
+    const prev = { at: 1, ids: ['b'], focusedAt: 1, unreadAt: 2 };
     expect(appendUnreadRequest(null, r)).toEqual({ requests: [r] });
     expect(appendUnreadRequest({ requests: 'мусор' }, r)).toEqual({ requests: [r] });
-    expect(appendUnreadRequest({ requests: [{ at: 1, ids: ['b'], unreadAt: 2 }, { bad: 1 }] }, r))
-      .toEqual({ requests: [{ at: 1, ids: ['b'], unreadAt: 2 }, r] });
+    expect(appendUnreadRequest({ requests: [prev, { bad: 1 }] }, r)).toEqual({ requests: [prev, r] });
+  });
+  it('запись прежнего вида (unreadAt без focusedAt) отбрасывается', () => {
+    const r = { at: 5, ids: ['a'], focusedAt: 8, unreadAt: 9 };
+    expect(appendUnreadRequest({ requests: [{ at: 1, ids: ['b'], unreadAt: 2 }] }, r)).toEqual({ requests: [r] });
   });
   it('держит только хвост', () => {
     let raw = null;
-    for (let i = 1; i <= MAX_REQUESTS + 5; i += 1) raw = appendUnreadRequest(raw, { at: i, ids: ['a'], unreadAt: i });
+    for (let i = 1; i <= MAX_REQUESTS + 5; i += 1) raw = appendUnreadRequest(raw, { at: i, ids: ['a'], focusedAt: i, unreadAt: i });
     expect(raw.requests).toHaveLength(MAX_REQUESTS);
     expect(raw.requests[0].at).toBe(6);
   });
@@ -29,13 +33,21 @@ describe('appendUnreadRequest', () => {
 
 describe('freshUnreadRequests', () => {
   const raw = { requests: [
-    { at: 10, ids: ['a', 'b'], unreadAt: 100 },
-    { at: 30, ids: ['a'], unreadAt: 300 },
-    { at: 20, ids: ['c'], unreadAt: 200 },
+    { at: 10, ids: ['a', 'b'], focusedAt: 99, unreadAt: 100 },
+    { at: 30, ids: ['a'], focusedAt: 300, unreadAt: 0 },
+    { at: 20, ids: ['c'], focusedAt: 199, unreadAt: 200 },
   ] };
-  it('только новее отметки, по сессии — последняя просьба', () => {
-    expect(freshUnreadRequests(raw, 10)).toEqual({ marks: { c: 200, a: 300 }, ids: ['c', 'a'], lastAt: 30 });
-    expect(freshUnreadRequests(raw, 0).marks).toEqual({ a: 300, b: 100, c: 200 });
+  it('только новее отметки, по сессии — последняя просьба целиком', () => {
+    expect(freshUnreadRequests(raw, 10)).toEqual({
+      marks: { c: { focusedAt: 199, unreadAt: 200 }, a: { focusedAt: 300, unreadAt: 0 } },
+      ids: ['c', 'a'],
+      lastAt: 30,
+    });
+    expect(freshUnreadRequests(raw, 0).marks).toEqual({
+      a: { focusedAt: 300, unreadAt: 0 },
+      b: { focusedAt: 99, unreadAt: 100 },
+      c: { focusedAt: 199, unreadAt: 200 },
+    });
   });
   it('нечего применять — отметка не двигается', () => {
     expect(freshUnreadRequests(raw, 30)).toEqual({ marks: {}, ids: [], lastAt: 30 });

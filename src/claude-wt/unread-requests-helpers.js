@@ -10,8 +10,14 @@
  * Поэтому служба кладёт просьбу в файл рядом с состоянием, а демон читает его по
  * mtime на каждом тике — тот же приём, что у `window-icons.json`.
  *
- * Файл: `{ requests: [{ at, ids, unreadAt }] }`, `at` — миллисекунды просьбы,
- * по нему демон отличает новые от уже применённых. Хранится хвост последних
+ * Файл: `{ requests: [{ at, ids, focusedAt, unreadAt }] }`, `at` — миллисекунды
+ * просьбы, по нему демон отличает новые от уже применённых; `focusedAt` и
+ * `unreadAt` — секунды, что положить в слот (sessionMark в daemon-helpers.js):
+ * «непросмотрено» несёт откатанный `focusedAt` и `unreadAt` «сейчас»,
+ * «просмотрено» — `focusedAt` «сейчас» и `unreadAt: 0`. Запись прежнего вида
+ * (`unreadAt` без `focusedAt`, где `unreadAt` и был откатанным `focusedAt`)
+ * отбрасывается: прочитанная по-новому, она поставила бы непросмотренность в
+ * прошлое, а свежий демон старых просьб и так не применяет. Хранится хвост последних
  * `MAX_REQUESTS`: демон читает файл каждую секунду, и старые просьбы ему не
  * нужны, а расти файлу незачем.
  */
@@ -28,7 +34,8 @@ function unreadSidecarPath(statePath) {
 function normalizeRequests(raw) {
   const list = Array.isArray(raw?.requests) ? raw.requests : [];
   return list.filter(r => r && Number.isFinite(r.at) && Array.isArray(r.ids)
-    && r.ids.every(id => typeof id === 'string') && Number.isFinite(r.unreadAt));
+    && r.ids.every(id => typeof id === 'string')
+    && Number.isFinite(r.focusedAt) && Number.isFinite(r.unreadAt));
 }
 
 /** Дописать просьбу к прочитанному содержимому файла (или к `null`). */
@@ -41,12 +48,12 @@ function appendUnreadRequest(raw, request, max = MAX_REQUESTS) {
  * Что применить из файла: просьбы новее `sinceMs`. Отметки по одной сессии
  * складываются последней по времени просьбы — так же, как легли бы подряд.
  *
- * @returns {{ marks: Record<string, number>, ids: string[], lastAt: number }}
+ * @returns {{ marks: Record<string, {focusedAt: number, unreadAt: number}>, ids: string[], lastAt: number }}
  */
 function freshUnreadRequests(raw, sinceMs) {
   const fresh = normalizeRequests(raw).filter(r => r.at > sinceMs).sort((a, b) => a.at - b.at);
   const marks = {};
-  for (const r of fresh) for (const id of r.ids) marks[id] = r.unreadAt;
+  for (const r of fresh) for (const id of r.ids) marks[id] = { focusedAt: r.focusedAt, unreadAt: r.unreadAt };
   return { marks, ids: Object.keys(marks), lastAt: fresh.length ? fresh.at(-1).at : sinceMs };
 }
 
