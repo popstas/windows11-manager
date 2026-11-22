@@ -149,14 +149,24 @@ function claudeCommands({ winMan, log, notify, slots, now = () => Date.now() }) 
    * аргумент. То же и с точкой курсора: подъём уже открытого окна её не
    * спрашивает вовсе — ставить нечего, окно стоит там, куда его поставили.
    */
-  async function focusOrRestore(id, session, terminal, mark = noTiming, cursor = null) {
+  async function focusOrRestore(id, session, terminal, mark = noTiming, cursor = null, { raiseOnly = false } = {}) {
     if (chooseAction(session, (windowId) => !!winMan.getWindowById(windowId)) === 'restore') {
+      // «Только поднять» (CLI claude-wt агента): окна нет — отказ, а не новое
+      // окно. Агент, открывший терминал, думая, что переключает фокус, — ровно
+      // то, чего этот режим и стережёт; открыть сессию — отдельная просьба.
+      if (raiseOnly) {
+        log(`claude-wt: ${id} has no window — raise only, nothing opened`);
+        return { ok: false, reason: 'no window' };
+      }
       return guardOpen(id, async () => ({ action: 'restore', ...(await restoreOne(id, terminal, cursor)) }));
     }
-    if (!(await winMan.focusTerminalWindow(session.windowId, mark))) log(`claude-wt: ${id} is not on screen`, 'warn');
+    const foreground = Boolean(await winMan.focusTerminalWindow(session.windowId, mark));
+    if (!foreground) log(`claude-wt: ${id} is not on screen`, 'warn');
     // Окно не вышло вперёд — не отказ: оно есть, и стол или фокус ему мог не
-    // отдать Windows. Второе окно той же сессии тут хуже, чем журнал.
-    return { action: 'focus', ok: true };
+    // отдать Windows. Второе окно той же сессии тут хуже, чем журнал. Исход
+    // уходит в `foreground`: пикер тело не читает, CLI агента считает `false`
+    // отказом сам.
+    return { action: 'focus', ok: true, foreground };
   }
 
   /**
@@ -243,17 +253,23 @@ function claudeCommands({ winMan, log, notify, slots, now = () => Date.now() }) 
     return { ok: true, action: res.action };
   }
 
+  /**
+   * Поднять окно сессии. Ответ — для http: `{ok, action, foreground}` или
+   * `{ok:false, reason}` с кодом 200 (пикер читает только код, и новые отказы
+   * не должны появиться у него в статуслайне). `raiseOnly: true` — только
+   * настоящий булев: строка `"false"` иначе молча включила бы режим.
+   */
   async function focus(payload) {
-    const { id } = parseIdPayload(payload);
-    if (!id) return;
+    const { id, raiseOnly } = parseIdPayload(payload);
+    if (!id) return { ok: false, reason: 'no id' };
     const mark = startTiming(`focus ${id}`);
     const found = findSession(id, mark);
     if (found.error) {
       log(`claude-wt: ${found.error}`, 'warn');
       notify(`claude-wt: ${found.error}`);
-      return;
+      return { ok: false, reason: found.error };
     }
-    await focusOrRestore(id, found.session, undefined, mark);
+    return focusOrRestore(id, found.session, undefined, mark, null, { raiseOnly: raiseOnly === true });
   }
 
   return {

@@ -99,6 +99,82 @@ describe('claude-focus', () => {
   });
 });
 
+// Ответ по существу — его читает CLI claude-wt агента: `200 {"ok":true}` без
+// проверки был бы молчаливым успехом. Пикер тело 2xx не читает, ему всё равно.
+describe('claude-focus: ответ и режим «только поднять»', () => {
+  it('focus raiseOnly без окна — отказ no window и restore не зовётся', async () => {
+    const d = deps({ winMan: { getWindowById: vi.fn().mockReturnValue(null) } });
+    const res = await claudeCommands(d)['claude-focus']({ id: 'abc', raiseOnly: true });
+    expect(res).toEqual({ ok: false, reason: 'no window' });
+    expect(d.winMan.restoreClaudeSessions).not.toHaveBeenCalled();
+    expect(d.winMan.resumeClaudeSession).not.toHaveBeenCalled();
+    expect(d.winMan.focusTerminalWindow).not.toHaveBeenCalled();
+  });
+
+  it('focus raiseOnly у закрытой сессии — тоже no window', async () => {
+    // Слот есть, окна у него нет: chooseAction смотрит и на open.
+    const closed = { ...SESSION, open: false };
+    const d = deps({ winMan: { claudeWtSessions: vi.fn().mockReturnValue({ ok: true, sessions: [closed] }) } });
+    const res = await claudeCommands(d)['claude-focus']({ id: 'abc', raiseOnly: true });
+    expect(res).toEqual({ ok: false, reason: 'no window' });
+    expect(d.winMan.restoreClaudeSessions).not.toHaveBeenCalled();
+  });
+
+  it('focus с окном отдаёт foreground', async () => {
+    const d = deps();
+    expect(await claudeCommands(d)['claude-focus']({ id: 'abc', raiseOnly: true }))
+      .toEqual({ ok: true, action: 'focus', foreground: true });
+    const late = deps({ winMan: { focusTerminalWindow: vi.fn().mockResolvedValue(false) } });
+    expect(await claudeCommands(late)['claude-focus']({ id: 'abc', raiseOnly: true }))
+      .toEqual({ ok: true, action: 'focus', foreground: false });
+  });
+
+  it('focus без raiseOnly с окном тоже отдаёт foreground', async () => {
+    const d = deps();
+    expect(await claudeCommands(d)['claude-focus']({ id: 'abc' }))
+      .toEqual({ ok: true, action: 'focus', foreground: true });
+  });
+
+  it('focus неизвестной сессии — ok:false с причиной', async () => {
+    const d = deps();
+    const res = await claudeCommands(d)['claude-focus']({ id: 'zzz', raiseOnly: true });
+    expect(res).toEqual({ ok: false, reason: 'unknown session zzz' });
+    expect(d.winMan.focusTerminalWindow).not.toHaveBeenCalled();
+  });
+
+  it('focus с нечитаемым списком сессий — ok:false с причиной', async () => {
+    const d = deps({ winMan: { claudeWtSessions: vi.fn().mockReturnValue({ ok: false, reason: 'disabled' }) } });
+    expect(await claudeCommands(d)['claude-focus']({ id: 'abc' })).toEqual({ ok: false, reason: 'disabled' });
+  });
+
+  it('focus без id — ok:false, а не молчаливый успех', async () => {
+    const d = deps();
+    expect(await claudeCommands(d)['claude-focus']({})).toEqual({ ok: false, reason: 'no id' });
+    expect(d.winMan.claudeWtSessions).not.toHaveBeenCalled();
+  });
+
+  it('raiseOnly строкой не считается — только настоящий true', async () => {
+    // Иначе {"raiseOnly":"false"} молча включил бы режим; без режима — прежний restore.
+    const d = deps({ winMan: { getWindowById: vi.fn().mockReturnValue(null) } });
+    await claudeCommands(d)['claude-focus']({ id: 'abc', raiseOnly: 'false' });
+    expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledWith({ sessionIds: ['abc'] });
+  });
+
+  it('focus без raiseOnly без окна — прежний restore', async () => {
+    // Сторож обратной совместимости: пикер, панель и доска шлют {id} без поля.
+    const d = deps({ winMan: { getWindowById: vi.fn().mockReturnValue(null) } });
+    const res = await claudeCommands(d)['claude-focus']({ id: 'abc' });
+    expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledWith({ sessionIds: ['abc'] });
+    expect(res).toEqual({ ok: true, action: 'restore' });
+  });
+
+  it('claude-focus-slot по-прежнему восстанавливает закрытое окно', async () => {
+    const d = deps({ winMan: { getWindowById: vi.fn().mockReturnValue(null) } });
+    await claudeCommands(d)['claude-focus-slot']({ slot: 1 });
+    expect(d.winMan.restoreClaudeSessions).toHaveBeenCalledWith({ sessionIds: ['abc'] });
+  });
+});
+
 describe('claude-focus-slot', () => {
   it('переводит номер строки в id по последней раскладке', async () => {
     const d = deps();
