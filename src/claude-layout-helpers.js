@@ -15,7 +15,7 @@
 function layoutFromName(name) {
   if (typeof name !== 'string') return null;
   const n = name.trim().toLowerCase();
-  return n === 'tile' || n === 'cascade' || n === 'group' ? n : null;
+  return n === 'tile' || n === 'cascade' || n === 'group' || n === 'zone' ? n : null;
 }
 
 /** Список сессий из тела: только непустые строки, обрезанные по краям. */
@@ -64,6 +64,7 @@ function parseArrangePayload(payload) {
   }
   const mode = layoutFromName(name);
   if (mode === 'group') return { mode, ids: [], ...groupFields(body) };
+  if (mode === 'zone') return { mode, ids: [], ...zoneFields(body) };
   return mode ? { mode, ids } : null;
 }
 
@@ -81,6 +82,23 @@ function groupFields(body) {
     : [];
   const selected = typeof body?.selected === 'string' && body.selected.trim() ? body.selected.trim() : null;
   return { groups, selected };
+}
+
+/**
+ * Поля режима `zone`: сессия и зона FancyZones, куда перенести её окно.
+ *
+ * Как у `group`, разбор не отказывает: голое слово `zone` (панель) даёт
+ * `id: null, zone: null`, и причину называет перенос — иначе ответ был бы
+ * «тело не разобрано», и агент не узнал бы, чего не хватило. Номера — только
+ * целые от 1: строку `"2"` шлёт не человек, а сломанный клиент.
+ */
+function zoneFields(body) {
+  const id = typeof body?.id === 'string' && body.id.trim() ? body.id.trim() : null;
+  const z = body?.zone;
+  const ok = z && typeof z === 'object' && !Array.isArray(z)
+    && Number.isInteger(z.monitor) && z.monitor >= 1
+    && Number.isInteger(z.position) && z.position >= 1;
+  return { id, zone: ok ? { monitor: z.monitor, position: z.position } : null };
 }
 
 /**

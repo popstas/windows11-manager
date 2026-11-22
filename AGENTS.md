@@ -262,7 +262,7 @@ type, added, changed}` либо `200 {ok:false, reason}`, как у focus/place;
 нет — restore (пикер, панель, доска шлют `{id}` без него). Неизвестная сессия
 и пустой id — `{ok:false, reason}`. `POST /claude-wt/place` —
 `{ok:true, placed}` либо `{ok:false, reason}` (`bad payload`, отказ раскладки,
-текст исключения). Отброшенное ограничителем частоты по-прежнему `429` — пикер
+текст исключения); у `mode: "zone"` в успехе ещё `zone`. Отброшенное ограничителем частоты по-прежнему `429` — пикер
 его показывает, — но тело у всех отброшенных `{ok:false, reason:'throttled',
 error:'throttled'}`: CLI читает тело и на не-2xx.
 
@@ -457,6 +457,23 @@ Head-сессия открывает детей через `POST /claude-wt/sess
   слово `group` (панель, CLI) — отказ «группы не переданы» с уведомлением.
   Отладка без пикера — `POST /claude-wt/place` с тем же телом или
   `node src/index.js claude-wt place '<json>'`.
+- **`claude-place zone` — одно уже открытое окно в зону FancyZones**
+  (`src/claude-wt/zone-place.js`, развилка там же). Тело `{"mode": "zone",
+  "id": "<sessionId>", "zone": {"monitor": 3, "position": 1}}`, номера — целые
+  от 1, монитор в нумерации FancyZones (та же, что у `headZones`). Просит его
+  CLI агента `claude-wt window place <session> --zone m:p` (ccfzf). Зона **не
+  обязана быть в `headZones`**: хватает того, что она есть в раскладке
+  FancyZones подключённого сейчас монитора (`resolveZone` в `head-zones.js`,
+  без отката через `positionsMap`). Плата: окно в зоне вне `headZones` трекер
+  покажет с `zone: null` — поля `monitor/zone/slot` считаются по основным
+  зонам. Братья, стол, подъём и фокус не трогаются; окно получает пометку
+  `no-autoplace`. Ответ `{ok:true, placed, zone}`, `placed: 0` — «уже там»;
+  свёрнутое, слишком узкое окно, чужая зона — `{ok:false, reason}`, сессия без
+  окна — дословно `no window` (CLI даёт код 2). Отказы — только в журнал, без
+  уведомления: просит агент, и ответ он читает сам. Ограничитель частоты общий
+  с остальными `claude-place` — сразу за `window layout` перенос получит
+  `throttled`. На маке режима нет (FancyZones — только Windows): mwm ответит
+  `bad payload`, CLI — код 1.
 - **Режим `deck` (`childPlacement`, Стас 12.11).** Ребёнок занимает вторую
   основную зону монитора head целиком (та же зона, что у `stack`, а с явной
   `zone` — она), братья не двигаются, `slot` в трекере — 1. В раскладке группы

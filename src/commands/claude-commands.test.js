@@ -986,6 +986,24 @@ describe('claude-place', () => {
     expect(await claudeCommands(d)['claude-place']('tile')).toEqual({ ok: false, reason: 'boom' });
   });
 
+  it('zone доезжает с id и зоной, ответ несёт zone', async () => {
+    const d = deps({ winMan: { arrangeClaudeWindows: vi.fn().mockResolvedValue({ ok: true, placed: 1, zone: '3:1' }) } });
+    const res = await claudeCommands(d)['claude-place']({ mode: 'zone', id: 's1', zone: { monitor: 3, position: 1 } });
+    expect(d.winMan.arrangeClaudeWindows).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'zone', id: 's1', zone: { monitor: 3, position: 1 } }),
+    );
+    expect(res).toEqual({ ok: true, placed: 1, zone: '3:1' });
+  });
+
+  // Перенос просит агент и читает ответ сам — человека его отказы не будят.
+  it('отказ zone — в журнал и в ответ, без уведомления', async () => {
+    const d = deps({ winMan: { arrangeClaudeWindows: vi.fn().mockResolvedValue({ ok: false, reason: 'no window' }) } });
+    expect(await claudeCommands(d)['claude-place']({ mode: 'zone', id: 's1', zone: { monitor: 3, position: 1 } }))
+      .toEqual({ ok: false, reason: 'no window' });
+    expect(d.notify).not.toHaveBeenCalled();
+    expect(d.log).toHaveBeenCalledWith(expect.stringContaining('no window'), 'warn');
+  });
+
   it('placed без числа от раскладки — 0, а не undefined', async () => {
     const d = deps({ winMan: { arrangeClaudeWindows: vi.fn().mockResolvedValue({ ok: true }) } });
     expect(await claudeCommands(d)['claude-place']('tile')).toEqual({ ok: true, placed: 0 });
