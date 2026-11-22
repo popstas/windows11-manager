@@ -93,6 +93,14 @@ describe('buildCommandMap', () => {
     expect(typeof map['claude-place']).toBe('function');
   });
 
+  it('place дважды за секунду — второй throttled (DROPPED), первый отвечает результатом', async () => {
+    // По http DROPPED превращается в 429 с телом {ok:false, reason:'throttled'}
+    // (http-server.js): код 429 пикер уже показывает в статуслайне, менять его нельзя.
+    const local = makeMap();
+    expect(await local['claude-place']({ mode: 'tile', ids: [] })).toEqual({ ok: true, placed: 0 });
+    expect(local['claude-place']({ mode: 'tile', ids: [] })).toBe(DROPPED);
+  });
+
   it('заводит по обработчику на каждый командный топик слота', () => {
     expect(Object.keys(map).filter((k) => k.startsWith('claude-slot-command:')).length).toBeGreaterThan(0);
   });

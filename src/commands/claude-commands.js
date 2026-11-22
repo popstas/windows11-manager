@@ -283,12 +283,15 @@ function claudeCommands({ winMan, log, notify, slots, now = () => Date.now() }) 
      * arrangeClaudeWindows — он один знает, сколько окон нашлось; сюда доходят
      * только отказы, и они идут ещё и человеком, потому что у публикации в
      * MQTT ответа нет и молчание неотличимо от успеха.
+     *
+     * По http отвечает `{ok:true, placed}` или `{ok:false, reason}` (код 200):
+     * тело читает CLI claude-wt агента, пикер — только код ответа.
      */
     async 'claude-place'(payload) {
       const parsed = parseArrangePayload(payload);
       if (!parsed) {
         log(`claude-place: тело не разобрано — ${JSON.stringify(payload)}`, 'warn');
-        return;
+        return { ok: false, reason: 'bad payload' };
       }
       let res;
       try {
@@ -298,13 +301,15 @@ function claudeCommands({ winMan, log, notify, slots, now = () => Date.now() }) 
       } catch (e) {
         log(`claude-place ${parsed.mode}: ${e.message}`, 'error');
         notify(`claude-wt: ошибка раскладки — ${e.message}`);
-        return;
+        return { ok: false, reason: e.message };
       }
       if (!res?.ok) {
         const reason = res?.reason ?? 'не удалось разложить';
         log(`claude-place ${parsed.mode}: ${reason}`, 'warn');
         notify(`claude-wt: ${reason}`);
+        return { ok: false, reason };
       }
+      return { ok: true, placed: Number.isInteger(res.placed) ? res.placed : 0 };
     },
 
     /**

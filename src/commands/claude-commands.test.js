@@ -916,6 +916,40 @@ describe('claude-place', () => {
     expect(d.log).toHaveBeenCalledWith(expect.stringContaining('boom'), 'error');
     expect(d.notify).toHaveBeenCalled();
   });
+
+  // Ответ читает CLI claude-wt агента (window layout); пикер тело 2xx не читает.
+  it('place group отдаёт placed', async () => {
+    const d = deps();
+    const res = await claudeCommands(d)['claude-place']({ mode: 'group', groups: [['h', 'c']], selected: 'h' });
+    expect(res).toEqual({ ok: true, placed: 2 });
+  });
+
+  it('place с отказом раскладки — ok:false и reason', async () => {
+    const d = deps({
+      winMan: { arrangeClaudeWindows: vi.fn().mockResolvedValue({ ok: false, reason: 'открытых сессий claude нет' }) },
+    });
+    expect(await claudeCommands(d)['claude-place']('tile')).toEqual({ ok: false, reason: 'открытых сессий claude нет' });
+  });
+
+  it('place с отказом без причины — всё равно ok:false с текстом', async () => {
+    const d = deps({ winMan: { arrangeClaudeWindows: vi.fn().mockResolvedValue(undefined) } });
+    expect(await claudeCommands(d)['claude-place']('tile')).toEqual({ ok: false, reason: 'не удалось разложить' });
+  });
+
+  it('place с неразобранным телом — bad payload', async () => {
+    const d = deps();
+    expect(await claudeCommands(d)['claude-place']('mosaic')).toEqual({ ok: false, reason: 'bad payload' });
+  });
+
+  it('place с исключением — ok:false и текст исключения', async () => {
+    const d = deps({ winMan: { arrangeClaudeWindows: vi.fn().mockRejectedValue(new Error('boom')) } });
+    expect(await claudeCommands(d)['claude-place']('tile')).toEqual({ ok: false, reason: 'boom' });
+  });
+
+  it('placed без числа от раскладки — 0, а не undefined', async () => {
+    const d = deps({ winMan: { arrangeClaudeWindows: vi.fn().mockResolvedValue({ ok: true }) } });
+    expect(await claudeCommands(d)['claude-place']('tile')).toEqual({ ok: true, placed: 0 });
+  });
 });
 
 describe('claude-session-new', () => {
