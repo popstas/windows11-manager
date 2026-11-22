@@ -38,8 +38,9 @@ describe('placeSessionInZone', () => {
     expect(log).toHaveBeenCalledWith(expect.stringContaining('3:1'));
   });
 
+  // Так отвечает placeWindow() окну, уже стоящему в зоне (снято на nb 22.11).
   it('окно уже в зоне — placed 0, это успех', async () => {
-    const { d } = harness({ place: async () => ({ changes: [], skipped: [] }) });
+    const { d } = harness({ place: async () => ({ changes: [], skipped: [{ name: 'bounds' }] }) });
     expect(await placeSessionInZone({ id: 's1', zone: Z }, d)).toEqual({ ok: true, placed: 0, zone: '3:1' });
   });
 
@@ -76,11 +77,9 @@ describe('placeSessionInZone', () => {
     expect(d.markNoAutoplace).not.toHaveBeenCalled();
   });
 
-  it('placeWindow отказал (узкое окно), пропустил или бросил — отказ с причиной', async () => {
+  it('placeWindow отказал (узкое окно) или бросил — отказ с причиной', async () => {
     const narrow = harness({ place: async () => false });
     expect((await placeSessionInZone({ id: 's1', zone: Z }, narrow.d)).reason).toMatch(/narrow/);
-    const skipped = harness({ place: async () => ({ changes: [], skipped: [{ name: 'bounds' }] }) });
-    expect((await placeSessionInZone({ id: 's1', zone: Z }, skipped.d)).reason).toBe('window is minimized');
     const threw = harness({ place: async () => { throw new Error('boom'); } });
     expect(await placeSessionInZone({ id: 's1', zone: Z }, threw.d)).toEqual({ ok: false, reason: 'window was not moved: boom' });
   });

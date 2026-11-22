@@ -72,7 +72,8 @@ async function placeSessionInZone({ id, zone, log = () => {} }, deps = {}) {
   }
   // placeWindow() отвечает false окну шириной меньше 250 px и не двигает его.
   if (!r) return { ok: false, reason: 'window is too narrow to place' };
-  if (r.skipped?.some(c => c.name === 'bounds')) return { ok: false, reason: 'window is minimized' };
+  // `skipped: bounds` значит и «уже на месте», и «свёрнуто» — placeWindow()
+  // их не различает. Свёрнутое отсеяно выше, значит здесь это «уже там».
   const placed = r.changes?.some(c => c.name === 'bounds') ? 1 : 0;
   log(`${TAG}: ${s.title ?? id} → зона ${key}${placed ? '' : ' (уже там)'}`);
   return { ok: true, placed, zone: key };
