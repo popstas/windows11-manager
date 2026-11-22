@@ -15,6 +15,8 @@ function winManStub() {
     claudeWtSessions: vi.fn().mockReturnValue({ ok: true, sessions: [] }),
     getWindowById: vi.fn(),
     focusWindowById: vi.fn(),
+    // GetForegroundWindow: окно доски (hwnd 7) после подъёма — переднее.
+    getActiveWindowId: vi.fn().mockReturnValue(7),
     markSessionUnread: vi.fn(),
     restoreSnapshot: vi.fn(),
     restoreClaudeSessions: vi.fn(),

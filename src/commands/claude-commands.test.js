@@ -13,6 +13,8 @@ function deps(overrides = {}) {
       // удалась, переход держит focusTerminalWindow — там же, где живёт
       // бесплатная проверка «окно уже переднее».
       focusTerminalWindow: vi.fn().mockResolvedValue(true),
+      // GetForegroundWindow: по умолчанию окно сессии и правда переднее.
+      getActiveWindowId: vi.fn().mockReturnValue(42),
       markSessionUnread: vi.fn().mockReturnValue({ ok: true, ids: ['abc'] }),
       restoreSnapshot: vi.fn().mockResolvedValue({ restored: ['abc'], skipped: [] }),
       restoreClaudeSessions: vi.fn().mockResolvedValue({ restored: ['abc'], skipped: [] }),
@@ -29,6 +31,7 @@ function deps(overrides = {}) {
     log: overrides.log ?? vi.fn(),
     notify: overrides.notify ?? vi.fn(),
     slots: overrides.slots ?? (() => [{ slot: 1, id: 'abc' }]),
+    sleep: overrides.sleep ?? (async () => {}),
   };
 }
 
@@ -127,6 +130,24 @@ describe('claude-focus: ответ и режим «только поднять»
     const late = deps({ winMan: { focusTerminalWindow: vi.fn().mockResolvedValue(false) } });
     expect(await claudeCommands(late)['claude-focus']({ id: 'abc', raiseOnly: true }))
       .toEqual({ ok: true, action: 'focus', foreground: false });
+  });
+
+  it('foreground — по переднему окну, а не по ответу focusTerminalWindow', async () => {
+    // Медленная ветка focusTerminalWindow (переход стола, отказ Windows в фокусе)
+    // отвечает true, едва окно существует. Переднее окно проверяется здесь.
+    const d = deps({ winMan: { getActiveWindowId: vi.fn().mockReturnValue(7) } });
+    expect(await claudeCommands(d)['claude-focus']({ id: 'abc', raiseOnly: true }))
+      .toEqual({ ok: true, action: 'focus', foreground: false });
+    expect(d.log).toHaveBeenCalledWith(expect.stringContaining('is not on screen'), 'warn');
+  });
+
+  it('после перехода стола окно получает время выйти вперёд', async () => {
+    const active = vi.fn().mockReturnValueOnce(7).mockReturnValue(42);
+    const sleep = vi.fn(async () => {});
+    const d = deps({ winMan: { getActiveWindowId: active }, sleep });
+    expect(await claudeCommands(d)['claude-focus']({ id: 'abc', raiseOnly: true }))
+      .toEqual({ ok: true, action: 'focus', foreground: true });
+    expect(sleep).toHaveBeenCalled();
   });
 
   it('focus без raiseOnly с окном тоже отдаёт foreground', async () => {

@@ -228,7 +228,10 @@ ccfzf) семью позиционными аргументами, пустые 
 статуслайне появиться не должны. `POST /claude-wt/focus {id, raiseOnly:true}` —
 «только поднять»: окна нет — `{ok:false, reason:'no window'}`, restore не
 зовётся и нового окна нет; с окном — `{ok:true, action:'focus', foreground}`,
-где `foreground` — ответ `focusTerminalWindow` (вышло ли окно вперёд).
+где `foreground` — `GetForegroundWindow` после подъёма, до трёх вопросов по
+100 мс (после перехода стола фокус приходит не сразу). Ответу самого
+`focusTerminalWindow` тут верить нельзя: его медленная ветка говорит `true`,
+едва окно существует, даже если Windows фокус не отдала.
 `raiseOnly` включается только булевым `true`. Без поля всё по-прежнему: окна
 нет — restore (пикер, панель, доска шлют `{id}` без него). Неизвестная сессия
 и пустой id — `{ok:false, reason}`. `POST /claude-wt/place` —

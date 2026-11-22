@@ -48,7 +48,17 @@ function slotFromPayload(payload) {
  */
 const OPEN_GUARD_MS = 10_000;
 
-function claudeCommands({ winMan, log, notify, slots, now = () => Date.now() }) {
+/**
+ * Сколько раз и с каким шагом спрашивать переднее окно после подъёма. После
+ * перехода на другой стол Windows отдаёт фокус не мгновенно; три вопроса по
+ * 100 мс — потолок, который CLI агента ждёт, а человек не заметит.
+ */
+const FOREGROUND_CHECKS = 3;
+const FOREGROUND_STEP_MS = 100;
+
+const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function claudeCommands({ winMan, log, notify, slots, now = () => Date.now(), sleep = defaultSleep }) {
   // id сессии → до какого момента новое открытие её не запускает. Infinity —
   // открытие ещё идёт. Ключ — настоящий id после поиска по имени, чтобы имя и
   // uuid одной сессии делили одну защиту.
@@ -160,13 +170,27 @@ function claudeCommands({ winMan, log, notify, slots, now = () => Date.now() }) 
       }
       return guardOpen(id, async () => ({ action: 'restore', ...(await restoreOne(id, terminal, cursor)) }));
     }
-    const foreground = Boolean(await winMan.focusTerminalWindow(session.windowId, mark));
+    const focused = Boolean(await winMan.focusTerminalWindow(session.windowId, mark));
+    const foreground = focused && (await isForeground(session.windowId));
     if (!foreground) log(`claude-wt: ${id} is not on screen`, 'warn');
     // Окно не вышло вперёд — не отказ: оно есть, и стол или фокус ему мог не
     // отдать Windows. Второе окно той же сессии тут хуже, чем журнал. Исход
     // уходит в `foreground`: пикер тело не читает, CLI агента считает `false`
     // отказом сам.
     return { action: 'focus', ok: true, foreground };
+  }
+
+  /**
+   * Вышло ли окно вперёд — по `GetForegroundWindow`, а не по ответу
+   * `focusTerminalWindow`: его медленная ветка (переход стола) отвечает `true`,
+   * едва окно существует, даже если Windows фокус ему не отдала.
+   */
+  async function isForeground(windowId) {
+    for (let i = 0; i < FOREGROUND_CHECKS; i += 1) {
+      if (i > 0) await sleep(FOREGROUND_STEP_MS);
+      if (winMan.getActiveWindowId() === windowId) return true;
+    }
+    return false;
   }
 
   /**
