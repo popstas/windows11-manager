@@ -1,6 +1,23 @@
 # Changelog
 
 
+## v4.12.0 - 2026-11-22
+
+### Features
+
+- inbox: Список claudeWt.inboxes вместо одного telegramInbox
+- taskbar: Мигание жёлтым перед остыванием кеша, команда claude-cache-warn
+- taskbar: Правила мигания перед остыванием кеша
+- claude-wt: Terminal-prompt — новая сессия проекта с первым промптом
+- claude-wt: Session-open принимает имя сессии вместо id
+- icons: Значок head — оргсхема в синем круге вместо короны
+
+### Bug Fixes
+
+- http,mqtt: Промпт terminal-prompt в журнале — длиной и началом, не целиком
+- taskbar: Новый ход помнится до новой метки кеша, Mark seen снимает только идущее мигание
+- claude-wt: Повторный session-open не запускает вторую сессию
+
 ## v4.11.0 - 2026-11-16
 
 ### Features
