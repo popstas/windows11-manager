@@ -213,9 +213,10 @@ describe('setProjectType — claude-project-type', () => {
   });
 
   it.each([
-    [{ cwd: '/p/a;rm', type: 'work' }, /unsafe/],
-    [{ cwd: 'p/rel', type: 'work' }, /absolute/],
-    [{ cwd: '/p/a\u0007', type: 'work' }, /unsafe/],
+    [{ cwd: '/p/a;rm', type: 'work' }, /absolute POSIX path without/],
+    [{ cwd: 'C:\\p\\win', type: 'work' }, /absolute POSIX path without/],
+    [{ cwd: 'p/rel', type: 'work' }, /absolute POSIX path/],
+    [{ cwd: '/p/a\u0007', type: 'work' }, /control characters/],
     [{ cwd: '/p/../etc', type: 'work' }, /segments/],
     [{ cwd: '/', type: 'work' }, /absolute|directory name/],
     [{ cwd: '/p/x', type: 'untyped' }, /reserved/],

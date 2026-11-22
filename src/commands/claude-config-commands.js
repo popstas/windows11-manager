@@ -109,6 +109,8 @@ function patchProjectIcons(text, icons) {
  */
 const RESERVED_TYPES = ['untyped', 'none'];
 
+const CWD_RULE = 'cwd must be an absolute POSIX path without ; " \' ` $ \\ { }';
+
 const stripTrailingSlash = (v) => v.replace(/\/+$/, '');
 
 /**
@@ -134,8 +136,10 @@ function parseProjectTypeRequest(payload) {
 
   if (typeof body.cwd !== 'string') return { error: 'cwd is required' };
   const cwd = stripTrailingSlash(body.cwd.trim());
-  if (!cwd.startsWith('/')) return { error: 'cwd must be an absolute path' };
-  if (UNSAFE.test(cwd) || hasControlChar(cwd)) return { error: 'cwd contains unsafe characters' };
+  // Одна причина на оба отказа: путь Windows (`C:\…`) не проходит ни по
+  // первому `/`, ни по `\` из UNSAFE, и обещать ему «absolute» было бы неправдой.
+  if (!cwd.startsWith('/') || UNSAFE.test(cwd)) return { error: CWD_RULE };
+  if (hasControlChar(cwd)) return { error: 'cwd contains control characters' };
   if (cwd.split('/').some((seg) => seg === '.' || seg === '..')) return { error: 'cwd must not contain . or .. segments' };
 
   if (body.type !== null && body.type !== undefined && typeof body.type !== 'string') {

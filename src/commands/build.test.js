@@ -96,7 +96,7 @@ describe('buildCommandMap', () => {
   it('claude-project-type проведён до setProjectType: отказ приходит причиной', async () => {
     const m = makeMap();
     expect(await m['claude-project-type']('{"cwd":"rel/path","type":"work"}'))
-      .toEqual({ ok: false, reason: 'cwd must be an absolute path' });
+      .toEqual({ ok: false, reason: 'cwd must be an absolute POSIX path without ; " \' ` $ \\ { }' });
   });
 
   it('содержит claude-place', () => {
