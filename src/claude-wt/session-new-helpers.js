@@ -209,4 +209,4 @@ function parseSessionNewRequest(raw, {
   };
 }
 
-export { parseSessionNewRequest, PERMISSION_MODES, normalizeChildCwdRoot, childCwdUnderRoot };
+export { parseSessionNewRequest, PERMISSION_MODES, normalizeChildCwdRoot, childCwdUnderRoot, UNSAFE, hasControlChar };

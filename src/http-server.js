@@ -35,6 +35,7 @@ const ROUTES = {
   '/claude-wt/snapshot-restore': 'claude-snapshot-restore',
   '/claude-wt/place': 'claude-place',
   '/claude-wt/terminal': 'claude-terminal',
+  '/claude-wt/project-type': 'claude-project-type',
 };
 
 function routeToCommand(url) {

@@ -28,7 +28,9 @@ import { writeFileAtomic } from './write-file-atomic.js';
 import { fileURLToPath } from 'node:url';
 import { mergeClaudeWtConfig } from '../claude-wt/daemon-helpers.js';
 import { normalizeTerminals } from '../claude-wt/terminal-helpers.js';
-import { profileForTerminal, normalizeProjectType } from '../claude-wt/project-helpers.js';
+import { profileForTerminal, normalizeProjectType, basenameOfCwd } from '../claude-wt/project-helpers.js';
+import { UNSAFE, hasControlChar } from '../claude-wt/session-new-helpers.js';
+import { appendSeqItem } from './config-list-append.js';
 import { BUILTIN_HEAD_ICON } from '../claude-wt/window-icons-helpers.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url)).replace(/[\\/]+$/, '');
@@ -102,6 +104,117 @@ function patchProjectIcons(text, icons) {
 }
 
 /**
+ * Типы, которые записать нельзя: `untyped` — подпись секции пикера для
+ * проектов без типа, `none` — пункт меню «снять тип» (`type: null`).
+ */
+const RESERVED_TYPES = ['untyped', 'none'];
+
+const stripTrailingSlash = (v) => v.replace(/\/+$/, '');
+
+/**
+ * Разбор просьбы `claude-project-type`: `{ cwd, type }`, тело объектом или
+ * JSON-строкой (MQTT). `type: null` или пустое — снять тип.
+ *
+ * `claudeWt.projects` — ещё и белый список `session-new` без авторизации, а
+ * неизвестный cwd эта команда в него дописывает (решение Стаса, вариант C,
+ * 22.11). Поэтому cwd проверяется теми же правилами, что у `session-new`:
+ * абсолютный путь удалённой стороны (`/…`, не `path.isAbsolute` — код живёт на
+ * Windows), без `UNSAFE` и управляющих символов, без `.`/`..` сегментов.
+ */
+function parseProjectTypeRequest(payload) {
+  let body = payload;
+  if (typeof body === 'string' || Buffer.isBuffer(body)) {
+    try {
+      body = JSON.parse(String(body));
+    } catch {
+      return { error: 'bad payload: expected JSON {cwd, type}' };
+    }
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: 'bad payload: expected {cwd, type}' };
+
+  if (typeof body.cwd !== 'string') return { error: 'cwd is required' };
+  const cwd = stripTrailingSlash(body.cwd.trim());
+  if (!cwd.startsWith('/')) return { error: 'cwd must be an absolute path' };
+  if (UNSAFE.test(cwd) || hasControlChar(cwd)) return { error: 'cwd contains unsafe characters' };
+  if (cwd.split('/').some((seg) => seg === '.' || seg === '..')) return { error: 'cwd must not contain . or .. segments' };
+
+  if (body.type !== null && body.type !== undefined && typeof body.type !== 'string') {
+    return { error: 'type must be a string or null' };
+  }
+  const type = normalizeProjectType(body.type) || null;
+  if (type !== null) {
+    if (RESERVED_TYPES.includes(type)) return { error: `type ${type} is reserved` };
+    if (UNSAFE.test(type) || hasControlChar(type)) return { error: 'type contains unsafe characters' };
+  }
+  return { cwd, type };
+}
+
+/**
+ * Поставить или снять тип проекта `cwd` в тексте конфига. Чистая: возвращает
+ * `{ text, added }`, кидает ошибку с причиной — текст тогда не тронут.
+ *
+ * Запись с этим cwd есть — правится одно поле `type` (`patchConfigScalar`, как
+ * у иконок). Нет — дописывается элемент `{ name: <basename>, cwd, type }` в
+ * конец списка. Снятие типа у неизвестного cwd — тишина: дописывать пустую
+ * запись незачем.
+ *
+ * Последняя страховка — сверка разобранного до и после: изменилось ровно это
+ * поле или добавился ровно этот элемент. `patchConfigScalar` проверяет только
+ * свой адрес; вырезая строку `- type: …`, он унёс бы и дефис элемента.
+ */
+function patchProjectType(raw, cwd, type) {
+  const before = parse(raw, { merge: true });
+  const projects = before?.claudeWt?.projects;
+  if (!Array.isArray(projects)) throw new Error('claudeWt.projects is missing in the config; add it by hand');
+  const index = projects.findIndex((p) => p && typeof p === 'object' && typeof p.cwd === 'string'
+    && stripTrailingSlash(p.cwd.trim()) === cwd);
+
+  const expected = structuredClone(before);
+  let text;
+  let added = false;
+  if (index >= 0) {
+    const entry = projects[index];
+    if (type === null ? !('type' in entry) : entry.type === type) return { text: raw, added: false };
+    text = patchConfigScalar(raw, `claudeWt.projects.${index}`, 'type', type ?? undefined);
+    if (type === null) delete expected.claudeWt.projects[index].type;
+    else expected.claudeWt.projects[index].type = type;
+  } else {
+    if (type === null) return { text: raw, added: false };
+    const name = basenameOfCwd(cwd);
+    if (!name) throw new Error('cwd has no directory name');
+    text = appendSeqItem(raw, ['claudeWt', 'projects'], [['name', name], ['cwd', cwd], ['type', type]]);
+    expected.claudeWt.projects.push({ name, cwd, type });
+    added = true;
+  }
+  if (JSON.stringify(parse(text, { merge: true })) !== JSON.stringify(expected)) {
+    throw new Error('internal check failed: the edit would change more than the project type; config left untouched');
+  }
+  return { text, added };
+}
+
+/**
+ * Команда `claude-project-type`: `{ ok: true, added, changed }` либо
+ * `{ ok: false, reason }`. Никогда не кидает — отказ любого рода (кривое тело,
+ * нет секции, flow-запись, сбой записи) приходит причиной, а файл остаётся
+ * побайтно прежним. Неизменённый текст не пишется: mtime не двигается, и
+ * демон не перечитывает конфиг зря.
+ */
+function setProjectType(payload, { filePath = resolveConfigPath() } = {}) {
+  const req = parseProjectTypeRequest(payload);
+  if (req.error) return { ok: false, reason: req.error };
+  if (!filePath) return { ok: false, reason: 'config not found' };
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8');
+    const { text, added } = patchProjectType(raw, req.cwd, req.type);
+    const changed = text !== raw;
+    if (changed) writeFileAtomic(filePath, text);
+    return { ok: true, cwd: req.cwd, type: req.type, added, changed };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+/**
  * Записать пришедшие поля в YAML-конфиг, не трогая остального его содержимого —
  * байт в байт за пределами самих правящихся значений.
  *
@@ -141,4 +254,7 @@ function writeClaudeConfig(patch) {
   return names;
 }
 
-export { readClaudeConfig, writeClaudeConfig, patchProjectIcons };
+export {
+  readClaudeConfig, writeClaudeConfig, patchProjectIcons,
+  parseProjectTypeRequest, patchProjectType, setProjectType,
+};

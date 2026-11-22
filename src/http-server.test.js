@@ -33,6 +33,10 @@ describe('routeToCommand', () => {
     expect(routeToCommand('/claude-wt/terminal')).toBe('claude-terminal');
   });
 
+  it('тип проекта из ^K пикера — claude-project-type', () => {
+    expect(routeToCommand('/claude-wt/project-type')).toBe('claude-project-type');
+  });
+
   it('чужой путь — null', () => {
     expect(routeToCommand('/nope')).toBe(null);
     expect(routeToCommand('/')).toBe(null);
@@ -80,6 +84,22 @@ describe('startHttpServer', () => {
     // отказов ({ok:false, reason}) — его читает CLI claude-wt, `error` — пикер.
     expect(await res.json()).toEqual({ ok: false, reason: 'throttled', error: 'throttled' });
 
+    server.close();
+  });
+
+  it('POST /claude-wt/project-type доходит до команды, отказ — 200 с {ok:false, reason}', async () => {
+    let got;
+    const router = { dispatch: async (command, body) => { got = { command, body }; return { ok: true, result: { ok: false, reason: 'type untyped is reserved' } }; } };
+    const server = startHttpServer({ router, port: 0, log: () => {} });
+    await new Promise((resolve) => server.once('listening', resolve));
+    const port = server.address().port;
+
+    const res = await fetch(`http://127.0.0.1:${port}/claude-wt/project-type`, {
+      method: 'POST', body: JSON.stringify({ cwd: '/p/a', type: 'untyped' }),
+    });
+    expect(got).toEqual({ command: 'claude-project-type', body: { cwd: '/p/a', type: 'untyped' } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: false, reason: 'type untyped is reserved' });
     server.close();
   });
 

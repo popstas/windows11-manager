@@ -231,6 +231,25 @@ describe('claude-session-unread', () => {
   });
 });
 
+describe('claude-project-type', () => {
+  it('отдаёт тело setProjectType и возвращает его ответ', () => {
+    const setProjectType = vi.fn().mockReturnValue({ ok: true, cwd: '/p/a', type: 'work', added: true, changed: true });
+    const d = { ...deps(), setProjectType };
+    expect(claudeCommands(d)['claude-project-type']('{"cwd":"/p/a","type":"work"}'))
+      .toEqual({ ok: true, cwd: '/p/a', type: 'work', added: true, changed: true });
+    expect(setProjectType).toHaveBeenCalledWith('{"cwd":"/p/a","type":"work"}');
+    expect(d.log).toHaveBeenCalledWith(expect.stringContaining('added to claudeWt.projects'));
+  });
+
+  it('отказ — в журнал и человеку, ответ {ok:false, reason}', () => {
+    const setProjectType = vi.fn().mockReturnValue({ ok: false, reason: 'type none is reserved' });
+    const d = { ...deps(), setProjectType };
+    expect(claudeCommands(d)['claude-project-type']({ cwd: '/p/a', type: 'none' })).toEqual({ ok: false, reason: 'type none is reserved' });
+    expect(d.log).toHaveBeenCalledWith(expect.stringContaining('type none is reserved'), 'warn');
+    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('type none is reserved'));
+  });
+});
+
 describe('claude-snapshot-restore', () => {
   it('по умолчанию берёт последний снимок', async () => {
     const d = deps();
