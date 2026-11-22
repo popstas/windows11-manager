@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
 import { getConfig } from '../config.js';
 import { getVisibleWindowIds, getWindowById, getActiveWindowId, focusWindowById } from '../windows.js';
 import { placeWindowByConfig } from '../placement.js';
@@ -7,7 +8,7 @@ import { movedDesktop } from '../placement-helpers.js';
 import { noAutoplaceIds } from '../no-autoplace.js';
 import { getWindowsMonitors } from '../monitors.js';
 import { virtualDesktop } from '../virtual-desktop.js';
-import { loadSessionIndex, loadBackgroundAgents } from './sessions.js';
+import { loadSessionIndexFor, loadBackgroundAgentsFor } from './sessions.js';
 import { readState, writeState, upsertSlot } from './state.js';
 import {
   buildWindowsFile,
@@ -18,6 +19,7 @@ import {
   signalPrint,
   shouldWriteSignal,
   signalPath,
+  localWindowsFileName,
 } from './windows-file.js';
 import { step } from './tracker-helpers.js';
 import {
@@ -116,6 +118,16 @@ let lastWritten = '';
 // этот — только то, что видно чужому читателю.
 let lastWindowsFingerprint = '';
 let lastWindowsWrite = 0;
+// Местная копия файла окон (`features.localSource`) — свой отпечаток и своё
+// сердцебиение: отвалившийся V: (частая беда nb) не должен глушить местную
+// запись, а удачная местная — притворяться, что удалённая дошла.
+let lastLocalFingerprint = '';
+let lastLocalWrite = 0;
+
+/** `~/.ccfzf/windows/<host>.json` — умолчание `CCFZF_WINDOWS_DIR` у ccfzf. */
+function localWindowsFile(host) {
+  return path.join(os.homedir(), '.ccfzf', 'windows', localWindowsFileName(host));
+}
 // Отпечаток последнего сигнала пикеру (см. signalPrint) — своя, узкая копия
 // расклада без сердцебиения: строка пишется на смену отпечатка и только на неё.
 let lastSignalPrint = null;
@@ -193,7 +205,7 @@ async function claudeWtTick(tickGen = null) {
   if (!liveState) liveState = readState(cfg.statePath);
   takeUnreadRequests(cfg.statePath);
   const windows = snapshot();
-  const sessionIndex = loadSessionIndex(cfg.sessionsFile, cfg.progressDir, Date.now(), wantedIndex);
+  const sessionIndex = loadSessionIndexFor(cfg, Date.now(), wantedIndex);
   wantedIndex = false;
   // monitors нужны ДО actions: step() зажимает координаты сам, иначе запрошенная
   // и фактически применённая позиция расходятся и guard собственного хода
@@ -479,6 +491,23 @@ function publishWindows(cfg, windows, slots) {
   const due = shouldWriteWindowsFile({
     fingerprint, lastFingerprint: lastWindowsFingerprint, lastWriteMs: lastWindowsWrite, nowMs,
   });
+  // Второй адрес — свой же каталог: там файл читает агрегатор этой машины, и
+  // только оттуда окно доедет до сессии, которая работает здесь. Отказ одной
+  // записи не отменяет другую: адреса и читатели разные.
+  if (cfg.features?.localSource) {
+    const localDue = shouldWriteWindowsFile({
+      fingerprint, lastFingerprint: lastLocalFingerprint, lastWriteMs: lastLocalWrite, nowMs,
+    });
+    if (localDue) {
+      try {
+        writeWindowsFile(localWindowsFile(os.hostname()), payload);
+        lastLocalFingerprint = fingerprint;
+        lastLocalWrite = nowMs;
+      } catch (e) {
+        console.error(`[claude-wt] local windows file write failed: ${e.message}`);
+      }
+    }
+  }
   if (!due) return;
   try {
     writeWindowsFile(cfg.windowsFile, payload);
@@ -517,6 +546,8 @@ function startClaudeWt({ skipCrashCheck = false } = {}) {
   // а по старому сторож демона снял бы мёртвый процесс — то есть ничей.
   lastWindowsFingerprint = '';
   lastWindowsWrite = 0;
+  lastLocalFingerprint = '';
+  lastLocalWrite = 0;
   prevActiveWindowId = 0;
   focusMarks = {};
   pendingUnread = {};
@@ -578,8 +609,18 @@ function stopClaudeWt() {
     } catch (e) {
       console.error(`[claude-wt] windows file remove failed: ${e.message}`);
     }
+    // Местную копию — тоже, и независимо от выключателя: его могли снять,
+    // пока демон работал, а оставленный файл местный агрегатор читал бы
+    // до WINDOWS_TTL как живой.
+    try {
+      removeWindowsFile(localWindowsFile(os.hostname()));
+    } catch (e) {
+      console.error(`[claude-wt] local windows file remove failed: ${e.message}`);
+    }
     lastWindowsFingerprint = '';
     lastWindowsWrite = 0;
+    lastLocalFingerprint = '';
+    lastLocalWrite = 0;
   }
 }
 
@@ -627,7 +668,7 @@ function markSessionUnread(id) {
   if (!liveState) liveState = readState(cfg.statePath);
   if (!liveState.slots[id]) return { ok: false, reason: `unknown session ${id}` };
 
-  const agents = loadBackgroundAgents(cfg.sessionsFile, cfg.progressDir);
+  const agents = loadBackgroundAgentsFor(cfg);
   const childIds = (agents[id] ?? []).map(child => child.id);
   const progress = loadProgress(cfg.progressDir, [id, ...childIds]);
   const updated = activeAgent(id, progress, agents).agent?.updated ?? 0;
@@ -652,7 +693,7 @@ function markSessionUnread(id) {
 
 /** Запись хука, относительно которой отматывается «просмотрено». */
 function agentUpdatedFor(cfg, id) {
-  const agents = loadBackgroundAgents(cfg.sessionsFile, cfg.progressDir);
+  const agents = loadBackgroundAgentsFor(cfg);
   const childIds = (agents[id] ?? []).map(child => child.id);
   const progress = loadProgress(cfg.progressDir, [id, ...childIds]);
   return activeAgent(id, progress, agents).agent?.updated ?? 0;

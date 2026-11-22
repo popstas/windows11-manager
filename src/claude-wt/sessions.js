@@ -1,10 +1,14 @@
 import fs from 'node:fs';
-import { indexSessions, indexBackgroundAgents, indexShellSessions, hasHookStamp } from './sessions-helpers.js';
+import os from 'node:os';
+import path from 'node:path';
+import { indexSessions, indexBackgroundAgents, indexShellSessions, hasHookStamp, mergeIndexes } from './sessions-helpers.js';
 import { progressStamp, activityAt } from './progress.js';
 
-let cache = {
-  path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {}, agents: {}, shells: new Set(), usesHookStamps: true,
-};
+// Кэш — по пути: дампов теперь бывает два (удалённый на V: и местный при
+// `features.localSource`), и общий слот на двоих вытеснял бы один другим —
+// каждый тик перечитывался бы дамп в двести килобайт по сетевому диску.
+const caches = new Map();
+const EMPTY = Object.freeze({ index: {}, agents: {}, shells: new Set() });
 let lastWarnedAt = 0;
 const WARN_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -103,14 +107,17 @@ function dumpNeedsHookStamps(dump) {
  *   keep serving data the file no longer contains.
  * Either way the tracker degrades to its own title history rather than throwing.
  */
-function loadDump(filePath, progressDir = '', nowMs = Date.now(), wanted = false) {
-  if (!filePath) return { index: {}, agents: {}, shells: new Set() };
+function loadDump(filePath, progressDir = '', nowMs = Date.now(), wanted = false, { quietMissing = false } = {}) {
+  if (!filePath) return EMPTY;
+  const cache = caches.get(filePath) ?? null;
   let stat;
   try {
     stat = fs.statSync(filePath);
   } catch (e) {
-    warnThrottled(`session dump unreachable (${filePath}): ${e.message}`);
-    return cache.path === filePath ? cache : { index: {}, agents: {}, shells: new Set() };
+    // Местного дампа нет — пикер на этой машине не запускали: норма, а не
+    // поломка, и жалоба шла бы в журнал каждые пять минут.
+    if (!(quietMissing && e.code === 'ENOENT')) warnThrottled(`session dump unreachable (${filePath}): ${e.message}`);
+    return cache ?? EMPTY;
   }
   // Индекс зависит не только от дампа: у спорных заголовков победителя выбирают
   // отметки хуков, а они меняются независимо. Каталог состояний меняет mtime
@@ -120,35 +127,37 @@ function loadDump(filePath, progressDir = '', nowMs = Date.now(), wanted = false
   // дампа, и сетевой stat каталога состояний в ключе кэша ничего не решает.
   // Пока не известно, какой дамп придёт, — спрашиваем. Первое чтение после
   // старта процесса платит один stat, дальше ноль.
-  const needStamp = cache.path !== filePath || cache.usesHookStamps !== false;
+  const needStamp = !cache || cache.usesHookStamps !== false;
   const stamp = needStamp ? progressStamp(progressDir) : 0;
   // `wanted` — тику попалось окно, чьего заголовка в индексе нет. Ждать срока
   // годности тогда незачем: сессию за этим окном завели секунды назад, и
   // пятнадцать секунд здесь — это пятнадцать секунд, которые окно простоит
   // непривязанным. Вхолостую спрос не возникает вовсе: окна не меняются часами.
-  if (!wanted && cache.path === filePath && cache.mtimeMs === stat.mtimeMs
+  if (!wanted && cache && cache.mtimeMs === stat.mtimeMs
       && cache.stamp === stamp && nowMs - cache.readAt < MAX_AGE_MS) {
     return cache;
   }
+  let next;
   try {
     const dump = readDump(filePath);
     const index = indexSessions(
       dump,
       progressDir ? id => activityAt(progressDir, id) : undefined,
     );
-    cache = {
+    next = {
       path: filePath, mtimeMs: stat.mtimeMs, stamp, readAt: nowMs,
       index, agents: indexBackgroundAgents(dump), shells: indexShellSessions(dump),
       usesHookStamps: dumpNeedsHookStamps(dump),
     };
   } catch (e) {
     warnThrottled(`session dump unreadable (${filePath}): ${e.message}`);
-    cache = {
+    next = {
       path: filePath, mtimeMs: stat.mtimeMs, stamp, readAt: nowMs, index: {}, agents: {},
       shells: new Set(), usesHookStamps: true,
     };
   }
-  return cache;
+  caches.set(filePath, next);
+  return next;
 }
 
 /** Title -> session, for binding a window to the session running in it. */
@@ -173,12 +182,69 @@ function loadShellSessions(filePath, progressDir = '', nowMs = Date.now()) {
   return loadDump(filePath, progressDir, nowMs).shells;
 }
 
-/** Drop the cached dump so the next loadSessionIndex re-reads from disk. */
+/** Drop the cached dumps so the next loadSessionIndex re-reads from disk. */
 function invalidateSessionIndex() {
-  cache = {
-    path: '', mtimeMs: 0, stamp: 0, readAt: 0, index: {}, agents: {}, shells: new Set(), usesHookStamps: true,
-  };
+  caches.clear();
+}
+
+/**
+ * Местный дамп ccfzf этой машины — его пишет агрегатор пикера, запущенный
+ * здесь же (`~/.ccfzf.sessions.json`, то же умолчание, что у ccfzf и у
+ * macos-windows-manager).
+ */
+function localDumpPath(home = os.homedir()) {
+  return path.join(home, '.ccfzf.sessions.json');
+}
+
+/**
+ * Источники индекса сессий по конфигу claudeWt: удалённый дамп
+ * (`sessionsFile`, машина sshHost) и, при `features.localSource`, местный.
+ *
+ * Местный читается без `progressDir`: каталог состояний хуков — на V:, местных
+ * сессий в нём не бывает, и проба `activityAt` была бы сетевым stat на каждую
+ * сборку впустую.
+ */
+function sessionDumps(cfg, home = os.homedir()) {
+  const out = [];
+  if (cfg?.sessionsFile) out.push({ path: cfg.sessionsFile, progressDir: cfg.progressDir ?? '', local: false });
+  if (cfg?.features?.localSource) out.push({ path: localDumpPath(home), progressDir: '', local: true });
+  return out;
+}
+
+function loadAll(cfg, nowMs, wanted, home) {
+  return sessionDumps(cfg, home).map(src => ({
+    ...src,
+    dump: loadDump(src.path, src.progressDir, nowMs, wanted, { quietMissing: src.local }),
+  }));
+}
+
+/**
+ * Индекс «заголовок → сессия» из всех источников конфига. Удалённый перебивает
+ * местный на совпадении заголовка — правило macos-windows-manager: так трекер
+ * вёл себя до второго источника, и окно ssh-сессии привязывается как раньше.
+ * Цена — местная тёзка окна не получит.
+ */
+function loadSessionIndexFor(cfg, nowMs = Date.now(), wanted = false, home = os.homedir()) {
+  const all = loadAll(cfg, nowMs, wanted, home);
+  return mergeIndexes(all.filter(a => a.local).map(a => a.dump.index), all.filter(a => !a.local).map(a => a.dump.index));
+}
+
+/** Фоновые агенты из всех источников; удалённый перебивает на том же родителе. */
+function loadBackgroundAgentsFor(cfg, nowMs = Date.now(), home = os.homedir()) {
+  const all = loadAll(cfg, nowMs, false, home);
+  return mergeIndexes(all.filter(a => a.local).map(a => a.dump.agents), all.filter(a => !a.local).map(a => a.dump.agents));
+}
+
+/** Сессии с фоновой командой из всех источников. */
+function loadShellSessionsFor(cfg, nowMs = Date.now(), home = os.homedir()) {
+  const out = new Set();
+  for (const a of loadAll(cfg, nowMs, false, home)) for (const id of a.dump.shells) out.add(id);
+  return out;
 }
 
 export { indexSessions, indexBackgroundAgents, indexShellSessions, compareSessions } from './sessions-helpers.js';
-export { loadSessionIndex, loadBackgroundAgents, loadShellSessions, invalidateSessionIndex };
+export { mergeIndexes } from './sessions-helpers.js';
+export {
+  loadSessionIndex, loadBackgroundAgents, loadShellSessions, invalidateSessionIndex,
+  localDumpPath, sessionDumps, loadSessionIndexFor, loadBackgroundAgentsFor, loadShellSessionsFor,
+};

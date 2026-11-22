@@ -37,6 +37,29 @@ function resolveRestoreIds({ state, sessionIds }) {
   };
 }
 
+/**
+ * Сессия этой машины, а не ssh-хоста: её каталог — путь Windows (`C:\…`,
+ * `\\server\share`). Сессии на pc-virt живут в путях POSIX. Слоты таких
+ * сессий появляются с `features.localSource`.
+ *
+ * Восстанавливать их нечем: шаблон `claudeWt.launch.args` — это
+ * `ssh … ccfzf --session {id}` на ssh-хосте, а там такой сессии нет; запуск
+ * открыл бы окно с ошибкой или чужую сессию. Поэтому restore, снимок и
+ * session-open их пропускают — по каталогу, без чтения местного дампа: слот
+ * помнит каталог и после того, как сессия выпала из дампа.
+ */
+function isLocalCwd(cwd) {
+  return typeof cwd === 'string' && /^(?:[A-Za-z]:[\\/]|\\\\)/.test(cwd);
+}
+
+/** План → то, что можно запустить, и местные сессии (см. `isLocalCwd`). */
+function splitLocalPlan(plan) {
+  const launchable = [];
+  const local = [];
+  for (const item of plan ?? []) (isLocalCwd(item.cwd) ? local : launchable).push(item);
+  return { launchable, local };
+}
+
 function planRestore({ state, launch, sessionIds, resolveProfile, terminal }) {
   const resolve = typeof resolveProfile === 'function' ? resolveProfile : () => '';
   return (resolveRestoreIds({ state, sessionIds }).ids)
@@ -54,6 +77,7 @@ function planRestore({ state, launch, sessionIds, resolveProfile, terminal }) {
       return {
         sessionId,
         title: slot.titles[0],
+        cwd: slot.cwd ?? '',
         command: planned.command,
         args: planned.args,
         bounds: slot.bounds,
@@ -130,4 +154,4 @@ function restoreFocusTarget({ planned = 0, placed = [] } = {}) {
   return Number.isFinite(windowId) ? windowId : null;
 }
 
-export { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFocusTarget, restoreFollowDesktop };
+export { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFocusTarget, restoreFollowDesktop, isLocalCwd, splitLocalPlan };

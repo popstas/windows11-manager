@@ -126,6 +126,16 @@ function resumeHarness({ cfg = {}, deps = {} } = {}) {
 }
 
 describe('resumeClaudeSession', () => {
+  // features.localSource: у местной сессии каталог — путь Windows, а шаблон
+  // запуска ведёт по ssh на pc-virt, где её нет.
+  it('местную сессию не запускает по ssh — отказ с причиной', async () => {
+    const h = resumeHarness();
+    const res = await resumeClaudeSession({ id: '12719dec', cwd: 'C:\\projects\\python\\talks-reducer' }, h.deps);
+    expect(res).toMatchObject({ ok: false, action: 'local' });
+    expect(res.reason).toMatch(/local session/);
+    expect(h.spawned).toEqual([]);
+  });
+
   it('собирает команду возобновления из launch и профиля каталога', async () => {
     const h = resumeHarness();
     const res = await resumeClaudeSession(
