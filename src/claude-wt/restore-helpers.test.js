@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFocusTarget, restoreFollowDesktop } from './restore-helpers.js';
+import { bootTimeSec, detectCrash, planRestore, partitionPlan, resolveRestoreIds, restoreFocusTarget, restoreFollowDesktop, isLocalCwd, splitLocalPlan } from './restore-helpers.js';
 
 const bounds = { x: 10, y: 20, width: 800, height: 600 };
 const slot = (over = {}) => ({ titles: ['ccfzf'], cwd: '/p', bounds, desktop: 2, lastSeen: 500, ...over });
@@ -55,6 +55,7 @@ describe('planRestore', () => {
     expect(planRestore({ state: state(), launch })).toEqual([{
       sessionId: 'a1',
       title: 'ccfzf',
+      cwd: '/p',
       command: 'wt.exe',
       args: ['-w', '-1', '-t', 'ccfzf --session a1 --kiosk'],
       bounds,
@@ -229,5 +230,23 @@ describe('restoreFocusTarget', () => {
     expect(restoreFocusTarget({ planned: 1, placed: [{}] })).toBeNull();
     expect(restoreFocusTarget({ planned: 1, placed: [] })).toBeNull();
     expect(restoreFocusTarget({})).toBeNull();
+  });
+});
+
+describe('isLocalCwd / splitLocalPlan', () => {
+  it('путь Windows — местная сессия, POSIX — сессия ssh-хоста', () => {
+    expect(isLocalCwd('C:\\projects\\python\\talks-reducer')).toBe(true);
+    expect(isLocalCwd('d:/projects')).toBe(true);
+    expect(isLocalCwd('\\\\server\\share')).toBe(true);
+    expect(isLocalCwd('/home/popstas/projects')).toBe(false);
+    expect(isLocalCwd('')).toBe(false);
+    expect(isLocalCwd(undefined)).toBe(false);
+  });
+
+  it('местные уходят отдельно, порядок остальных сохраняется', () => {
+    const plan = [{ sessionId: 'a', cwd: '/p' }, { sessionId: 'l', cwd: 'C:\\x' }, { sessionId: 'b', cwd: '' }];
+    const { launchable, local } = splitLocalPlan(plan);
+    expect(launchable.map(i => i.sessionId)).toEqual(['a', 'b']);
+    expect(local.map(i => i.sessionId)).toEqual(['l']);
   });
 });

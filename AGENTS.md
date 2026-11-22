@@ -298,6 +298,43 @@ mtime (`takeUnreadRequests`, как `window-icons.json`) и кладёт отм�
 аргументом base64(JSON argv), правила — `nextStep()` в `reconnect-helpers.js`.
 Пикеру (`publishedTerminal`) обёртка не отдаётся: его местные запуски — откат.
 
+## Местные сессии: `claudeWt.features.localSource`
+
+Трекер по умолчанию ведёт только сессии ssh-хоста: индекс заголовков — из
+`claudeWt.sessionsFile` (дамп pc-virt на V:), файл окон — в
+`claudeWt.windowsFile` там же. Claude, запущенный на самой этой машине, окна
+не получал никогда: его заголовка нет в удалённом дампе, а файл окон уезжал
+туда, где он неизвестен. `features.localSource: true` (умолчание `false`)
+добавляет обе половины, как `features.localSource` у macos-windows-manager:
+
+- индекс читается ещё и из местного дампа `~/.ccfzf.sessions.json` (его
+  переписывает ccfzf пикера этой машины) — `sessionDumps` /
+  `loadSessionIndexFor` в `sessions.js`; все читатели индекса (демон, view,
+  restore, project) идут через них. Кэш дампов — по пути, два дампа друг
+  друга не вытесняют. Местный читается без `progressDir` (хуков на Windows
+  нет, а проба `activityAt` была бы сетевым stat впустую); его отсутствие —
+  не ошибка, в журнал не пишется;
+- тёзку выигрывает удалённая сессия (`mergeIndexes`): так трекер вёл себя до
+  второго источника; местная тёзка окна не получит;
+- файл окон пишется ещё и в `~/.ccfzf/windows/<hostname>.json` — со своим
+  отпечатком и сердцебиением, чтобы отвалившийся V: не глушил местную запись;
+  на остановке демона убирается вместе с удалённым. Сторож демона смотрит
+  по-прежнему только в `windowsFile`;
+- местные сессии не восстанавливаются: `claudeWt.launch.args` — запуск по ssh
+  на pc-virt, где их нет. Местной считается сессия с каталогом-путём Windows
+  (`isLocalCwd` в `restore-helpers.js`, по слоту, а не по дампу): restore на
+  старте и снимок их пропускают строкой `local session … skipped`, а
+  `resumeClaudeSession` отвечает отказом `action: 'local'`;
+- местные сессии получают слоты, а значит попадают туда же, куда остальные:
+  строки панели openHASP и сущности HA, раскладки tile/cascade, иконки окон и
+  мигание кнопки. Состояния (точка, деньги, контекст) у них нет — хуки
+  живут только на pc-virt.
+
+Дедуп окон в слиянии пикера (`merge_states`, целая запись) этим не задет:
+строки сессий сливаются по id, а id двух дампов не пересекаются (22.11 на
+nb — 0 общих из 91 местной и 501 удалённой), так что одно окно двумя
+карточками не приезжает.
+
 ## claude-wt polling budget
 
 Three rules keep the once-a-second daemon off the CPU graph; each was paid for once already and must not be re-learned:

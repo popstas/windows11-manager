@@ -41,7 +41,7 @@ vi.mock('../no-autoplace.js', () => ({ markNoAutoplace: (...a) => markNoAutoplac
 vi.mock('node:child_process', () => ({ spawn: (...a) => spawn(...a) }));
 vi.mock('./index.js', () => ({ getClaudeWtConfig: vi.fn(), isTerminalWindow: () => true }));
 vi.mock('./state.js', () => ({ readState: vi.fn() }));
-vi.mock('./sessions.js', () => ({ loadSessionIndex: vi.fn() }));
+vi.mock('./sessions.js', () => ({ loadSessionIndexFor: vi.fn() }));
 vi.mock('./snapshotter.js', () => ({ listSnapshots: vi.fn() }));
 
 const { launchPlan } = await import('./restore.js');
@@ -78,6 +78,18 @@ beforeEach(() => {
 });
 
 describe('launchPlan', () => {
+  // features.localSource: слот местной сессии помнит каталог Windows, а запуск
+  // идёт по ssh, где её нет.
+  it('местную сессию не запускает — пропуск со строкой в журнале', async () => {
+    windowsAfterSpawn();
+    const restored = [];
+    const skipped = [];
+    await launchPlan({ plan: [item({ sessionId: 'l1', cwd: 'C:\\projects\\x' }), item({ cwd: '/home/p' })], cfg, restored, skipped });
+    expect(skipped).toEqual(['l1']);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('local session'));
+  });
+
   it('поднятой сессии отдаёт фокус — со столом, который сам же ей и назначил', async () => {
     windowsAfterSpawn(42);
     placeWindowByConfig.mockResolvedValue(placement(true));
