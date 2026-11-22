@@ -201,6 +201,17 @@ claudeWt:
   # to. Goes on the share, because the reader lives on the other machine.
   # Empty (the default) — do not write it at all.
   windowsFile: 'V:\.ccfzf.sessions.claude-wt.json'
+  # features:
+  #   # Also track Claude sessions running on this very machine: read the local
+  #   # ccfzf dump (~/.ccfzf.sessions.json, written by the picker here) next to
+  #   # sessionsFile, and write the window file into ~/.ccfzf/windows/<name of
+  #   # windowsFile> as well, where the local aggregator reads it. Without it a
+  #   # local session never gets a window: its title is not in the remote dump,
+  #   # and the window file goes only where that session is unknown. On a title
+  #   # clash the remote session wins. Local sessions are not restored (crash,
+  #   # snapshot, session-open): restore launches over ssh, where they are
+  #   # unknown. Off by default.
+  #   localSource: false
   desktop: true  # return the window to its virtual desktop too
   debug: false   # log terminal titles that could not be matched to a session
   # profile: your_wt_profile  # optional; omit → no -p

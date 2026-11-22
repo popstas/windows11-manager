@@ -176,6 +176,7 @@ function planSnapshotRestore({ snapshot, openSessionIds, sessionIds, launch, res
       return {
         sessionId: s.id,
         title: s.title,
+        cwd: s.cwd ?? '',
         command: planned.command,
         args: planned.args,
         bounds: s.bounds,

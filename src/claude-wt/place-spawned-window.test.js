@@ -25,7 +25,7 @@ vi.mock('./index.js', () => ({
 vi.mock('./state.js', () => ({
   readState: () => ({ slots: { s1: { bounds: { x: 10, y: 20, width: 800, height: 600 }, desktop: 3 } } }),
 }));
-vi.mock('./sessions.js', () => ({ loadSessionIndex: () => ({}) }));
+vi.mock('./sessions.js', () => ({ loadSessionIndexFor: () => ({}), loadBackgroundAgentsFor: () => ({}) }));
 vi.mock('./tracker-helpers.js', () => ({ resolveSession: () => ({ id: 's1' }) }));
 vi.mock('./view.js', () => ({ claudeWtSessions: vi.fn() }));
 vi.mock('./focus-terminal.js', () => ({ focusTerminalWindow: vi.fn() }));

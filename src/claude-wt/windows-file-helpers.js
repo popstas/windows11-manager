@@ -288,4 +288,16 @@ export {
   signalPrint,
   shouldWriteSignal,
   signalPath,
+  localWindowsFileName,
 };
+
+/**
+ * Имя местной копии файла окон (`features.localSource`) в
+ * `~/.ccfzf/windows/` — по машине, как у macos-windows-manager, а не по
+ * `windowsFile`: там путь удалённого читателя, и имя у него могло быть любым
+ * (старый `.ccfzf.sessions.claude-wt.json`). Знаки вне `[A-Za-z0-9._-]` —
+ * подчёркивание.
+ */
+function localWindowsFileName(host) {
+  return `${String(host || 'unknown').replace(/[^A-Za-z0-9._-]/g, '_')}.json`;
+}
