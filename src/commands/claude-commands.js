@@ -48,7 +48,17 @@ function slotFromPayload(payload) {
  */
 const OPEN_GUARD_MS = 10_000;
 
-function claudeCommands({ winMan, log, notify, slots, now = () => Date.now() }) {
+/**
+ * Сколько раз и с каким шагом спрашивать переднее окно после подъёма. После
+ * перехода на другой стол Windows отдаёт фокус не мгновенно; три вопроса по
+ * 100 мс — потолок, который CLI агента ждёт, а человек не заметит.
+ */
+const FOREGROUND_CHECKS = 3;
+const FOREGROUND_STEP_MS = 100;
+
+const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function claudeCommands({ winMan, log, notify, slots, now = () => Date.now(), sleep = defaultSleep }) {
   // id сессии → до какого момента новое открытие её не запускает. Infinity —
   // открытие ещё идёт. Ключ — настоящий id после поиска по имени, чтобы имя и
   // uuid одной сессии делили одну защиту.
@@ -149,14 +159,38 @@ function claudeCommands({ winMan, log, notify, slots, now = () => Date.now() }) 
    * аргумент. То же и с точкой курсора: подъём уже открытого окна её не
    * спрашивает вовсе — ставить нечего, окно стоит там, куда его поставили.
    */
-  async function focusOrRestore(id, session, terminal, mark = noTiming, cursor = null) {
+  async function focusOrRestore(id, session, terminal, mark = noTiming, cursor = null, { raiseOnly = false } = {}) {
     if (chooseAction(session, (windowId) => !!winMan.getWindowById(windowId)) === 'restore') {
+      // «Только поднять» (CLI claude-wt агента): окна нет — отказ, а не новое
+      // окно. Агент, открывший терминал, думая, что переключает фокус, — ровно
+      // то, чего этот режим и стережёт; открыть сессию — отдельная просьба.
+      if (raiseOnly) {
+        log(`claude-wt: ${id} has no window — raise only, nothing opened`);
+        return { ok: false, reason: 'no window' };
+      }
       return guardOpen(id, async () => ({ action: 'restore', ...(await restoreOne(id, terminal, cursor)) }));
     }
-    if (!(await winMan.focusTerminalWindow(session.windowId, mark))) log(`claude-wt: ${id} is not on screen`, 'warn');
+    const focused = Boolean(await winMan.focusTerminalWindow(session.windowId, mark));
+    const foreground = focused && (await isForeground(session.windowId));
+    if (!foreground) log(`claude-wt: ${id} is not on screen`, 'warn');
     // Окно не вышло вперёд — не отказ: оно есть, и стол или фокус ему мог не
-    // отдать Windows. Второе окно той же сессии тут хуже, чем журнал.
-    return { action: 'focus', ok: true };
+    // отдать Windows. Второе окно той же сессии тут хуже, чем журнал. Исход
+    // уходит в `foreground`: пикер тело не читает, CLI агента считает `false`
+    // отказом сам.
+    return { action: 'focus', ok: true, foreground };
+  }
+
+  /**
+   * Вышло ли окно вперёд — по `GetForegroundWindow`, а не по ответу
+   * `focusTerminalWindow`: его медленная ветка (переход стола) отвечает `true`,
+   * едва окно существует, даже если Windows фокус ему не отдала.
+   */
+  async function isForeground(windowId) {
+    for (let i = 0; i < FOREGROUND_CHECKS; i += 1) {
+      if (i > 0) await sleep(FOREGROUND_STEP_MS);
+      if (winMan.getActiveWindowId() === windowId) return true;
+    }
+    return false;
   }
 
   /**
@@ -243,17 +277,23 @@ function claudeCommands({ winMan, log, notify, slots, now = () => Date.now() }) 
     return { ok: true, action: res.action };
   }
 
+  /**
+   * Поднять окно сессии. Ответ — для http: `{ok, action, foreground}` или
+   * `{ok:false, reason}` с кодом 200 (пикер читает только код, и новые отказы
+   * не должны появиться у него в статуслайне). `raiseOnly: true` — только
+   * настоящий булев: строка `"false"` иначе молча включила бы режим.
+   */
   async function focus(payload) {
-    const { id } = parseIdPayload(payload);
-    if (!id) return;
+    const { id, raiseOnly } = parseIdPayload(payload);
+    if (!id) return { ok: false, reason: 'no id' };
     const mark = startTiming(`focus ${id}`);
     const found = findSession(id, mark);
     if (found.error) {
       log(`claude-wt: ${found.error}`, 'warn');
       notify(`claude-wt: ${found.error}`);
-      return;
+      return { ok: false, reason: found.error };
     }
-    await focusOrRestore(id, found.session, undefined, mark);
+    return focusOrRestore(id, found.session, undefined, mark, null, { raiseOnly: raiseOnly === true });
   }
 
   return {
@@ -267,12 +307,15 @@ function claudeCommands({ winMan, log, notify, slots, now = () => Date.now() }) 
      * arrangeClaudeWindows — он один знает, сколько окон нашлось; сюда доходят
      * только отказы, и они идут ещё и человеком, потому что у публикации в
      * MQTT ответа нет и молчание неотличимо от успеха.
+     *
+     * По http отвечает `{ok:true, placed}` или `{ok:false, reason}` (код 200):
+     * тело читает CLI claude-wt агента, пикер — только код ответа.
      */
     async 'claude-place'(payload) {
       const parsed = parseArrangePayload(payload);
       if (!parsed) {
         log(`claude-place: тело не разобрано — ${JSON.stringify(payload)}`, 'warn');
-        return;
+        return { ok: false, reason: 'bad payload' };
       }
       let res;
       try {
@@ -282,13 +325,15 @@ function claudeCommands({ winMan, log, notify, slots, now = () => Date.now() }) 
       } catch (e) {
         log(`claude-place ${parsed.mode}: ${e.message}`, 'error');
         notify(`claude-wt: ошибка раскладки — ${e.message}`);
-        return;
+        return { ok: false, reason: e.message };
       }
       if (!res?.ok) {
         const reason = res?.reason ?? 'не удалось разложить';
         log(`claude-place ${parsed.mode}: ${reason}`, 'warn');
         notify(`claude-wt: ${reason}`);
+        return { ok: false, reason };
       }
+      return { ok: true, placed: Number.isInteger(res.placed) ? res.placed : 0 };
     },
 
     /**

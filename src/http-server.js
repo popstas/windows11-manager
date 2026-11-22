@@ -82,11 +82,13 @@ function replyResult(res, log, url, result) {
   // Дребезг платы: `claude-place`/`claude-snapshot-restore`/`claude-dock-press`,
   // отброшенные press-throttle.js, доходят сюда как `ok: true, result: DROPPED`
   // — по MQTT это была просто тишина, а `200 {"ok":true}` был бы подтверждённым
-  // успехом несделанного.
+  // успехом несделанного. Код 429 остаётся (пикер показывает его в статуслайне
+  // по `error`), а тело несёт и общий для отказов вид `{ok:false, reason}` —
+  // его читает CLI claude-wt агента.
   if (result.result === DROPPED) {
     log(`POST ${url}: отброшено ограничителем частоты`, 'warn');
     res.writeHead(429, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'throttled' }));
+    res.end(JSON.stringify({ ok: false, reason: 'throttled', error: 'throttled' }));
     return;
   }
   // Отказ со своим кодом (400/403 у session-new): голове надо отличить

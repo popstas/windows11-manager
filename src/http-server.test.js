@@ -76,6 +76,9 @@ describe('startHttpServer', () => {
 
     const res = await fetch(`http://127.0.0.1:${port}/claude-wt/place`, { method: 'POST', body: '{}' });
     expect(res.status).toBe(429);
+    // Код прежний — пикер показывает его в статуслайне; тело по контракту
+    // отказов ({ok:false, reason}) — его читает CLI claude-wt, `error` — пикер.
+    expect(await res.json()).toEqual({ ok: false, reason: 'throttled', error: 'throttled' });
 
     server.close();
   });
