@@ -321,9 +321,10 @@ describe('windowsFingerprint — снимки', () => {
 
 describe('buildWindowsFile — projects', () => {
   // Хоткеи едут читателю на другую машину: единственный их источник — конфиг
-  // здесь, а регистрирует клавиши ccfzf-picker там. Записи без хоткея не едут
-  // вовсе — читателю они не говорят ничего, а список проектов он и так знает.
-  it('publishes only projects that carry a hotkey', () => {
+  // здесь, а регистрирует клавиши ccfzf-picker там. Записи без хоткея едут
+  // тоже, без ключа hotkey: по ним агрегатор находит проект-владельца сессии
+  // из подкаталога, и тип из ^K ложится на эту запись, а не новой рядом.
+  it('publishes every project, the hotkey only where there is one', () => {
     const out = buildWindowsFile({
       windows: [], slots: {}, host: 'pc', pid: 42, nowMs: 0,
       projects: [
@@ -331,7 +332,10 @@ describe('buildWindowsFile — projects', () => {
         { name: 'plain', cwd: '/p/plain', profile: 'work' },
       ],
     });
-    expect(out.projects).toEqual([{ cwd: '/p/home', name: 'home', hotkey: 'Ctrl+F11' }]);
+    expect(out.projects).toEqual([
+      { cwd: '/p/home', name: 'home', hotkey: 'Ctrl+F11' },
+      { cwd: '/p/plain', name: 'plain' },
+    ]);
   });
 
   // profile — знание про Windows Terminal на этой машине; читателю оно
@@ -346,6 +350,12 @@ describe('buildWindowsFile — projects', () => {
 
   // Ключ на месте всегда — читателю дешевле пустой массив, чем проверка на
   // отсутствие ключа при каждом использовании. То же правило, что у snapshots.
+  it('запись без cwd не едет', () => {
+    const out = buildWindowsFile({ windows: [], slots: {}, host: 'pc', pid: 1, nowMs: 0,
+      projects: [{ name: 'x' }, { name: 'y', cwd: '' }, null] });
+    expect(out.projects).toEqual([]);
+  });
+
   it('keeps the key even with nothing to publish', () => {
     expect(buildWindowsFile({ host: 'pc', pid: 1, nowMs: 0 }).projects).toEqual([]);
   });
@@ -354,7 +364,7 @@ describe('buildWindowsFile — projects', () => {
 describe('buildWindowsFile — иконки проектов', () => {
   // Строкам без окна (история и проекты пикера) иконку брать больше неоткуда:
   // в записи окна она есть только у открытого.
-  it('едет полем icon, и проект без хоткея, но с иконкой, тоже едет', () => {
+  it('едет полем icon, проект без хоткея — без ключа hotkey', () => {
     const out = buildWindowsFile({
       windows: [], slots: {}, host: 'pc', pid: 42, nowMs: 0,
       projects: [
@@ -369,6 +379,7 @@ describe('buildWindowsFile — иконки проектов', () => {
       // Без ключа hotkey, а не с пустым: агрегатор прежней версии выбрасывает
       // запись без хоткея — то есть новое поле старому читателю ничего не ломает.
       { cwd: '/p/plain', name: 'plain', icon: 'C:\\ico\\plain.ico' },
+      { cwd: '/p/none', name: 'none' },
     ]);
   });
 
@@ -406,6 +417,46 @@ describe('windowsFingerprint — projects', () => {
     const win = { one: { desktop: 1, title: 'x', focusedAt: 0 } };
     const one = [{ cwd: '/p/home', name: 'home', hotkey: 'Ctrl+F11' }];
     expect(windowsFingerprint(win, [], [])).not.toBe(windowsFingerprint(win, [], one));
+  });
+});
+
+describe('buildWindowsFile — тип проекта', () => {
+  it('едет полем type, у проекта без типа ключа нет', () => {
+    const out = buildWindowsFile({
+      windows: [], slots: {}, host: 'pc', pid: 42, nowMs: 0,
+      projects: [
+        { name: 'home', cwd: '/p/home', hotkey: 'Ctrl+F11', type: 'home' },
+        { name: 'site', cwd: '/p/site', type: 'work' },
+        { name: 'none', cwd: '/p/none' },
+      ],
+    });
+    expect(out.projects).toEqual([
+      { cwd: '/p/home', name: 'home', hotkey: 'Ctrl+F11', type: 'home' },
+      { cwd: '/p/site', name: 'site', type: 'work' },
+      { cwd: '/p/none', name: 'none' },
+    ]);
+  });
+
+  it('тип нормализуется и здесь: запись из обхода normalizeProjects не везёт мусор', () => {
+    const out = buildWindowsFile({
+      windows: [], slots: {}, host: 'pc', pid: 42, nowMs: 0,
+      projects: [{ name: 'a', cwd: '/p/a', type: ' Work ' }, { name: 'b', cwd: '/p/b', type: '  ' }],
+    });
+    expect(out.projects).toEqual([{ cwd: '/p/a', name: 'a', type: 'work' }, { cwd: '/p/b', name: 'b' }]);
+  });
+});
+
+describe('windowsFingerprint — тип проекта', () => {
+  // Смена типа из ^K пикера видна читателю только по файлу трекера — ждать
+  // сердцебиения (до 30 с) ответ на просьбу не должен.
+  it('замечает сменённый, появившийся и снятый тип', () => {
+    const win = { one: { desktop: 1, title: 'x', focusedAt: 0 } };
+    const work = [{ cwd: '/p/a', name: 'a', type: 'work' }];
+    const home = [{ cwd: '/p/a', name: 'a', type: 'home' }];
+    const bare = [{ cwd: '/p/a', name: 'a', hotkey: 'Ctrl+F11' }];
+    const typed = [{ cwd: '/p/a', name: 'a', hotkey: 'Ctrl+F11', type: 'work' }];
+    expect(windowsFingerprint(win, [], work)).not.toBe(windowsFingerprint(win, [], home));
+    expect(windowsFingerprint(win, [], bare)).not.toBe(windowsFingerprint(win, [], typed));
   });
 });
 

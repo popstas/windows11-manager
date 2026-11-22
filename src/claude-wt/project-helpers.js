@@ -56,6 +56,16 @@ function escapeForSingleQuoted(value) {
   return String(value).replace(/'/g, `'\\''`);
 }
 
+/**
+ * Тип проекта (`work`, `home`, свой): строка, обрезанная, в нижнем регистре;
+ * пусто — типа нет. Один разбор на все звенья — запись проекта, файл трекера,
+ * форму трея и команду `claude-project-type`: иначе ` Work ` из конфига в одном
+ * месте было бы `work`, а в другом — новым, третьим типом.
+ */
+function normalizeProjectType(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
 function normalizeProjects(raw) {
   if (!Array.isArray(raw)) return [];
   const out = [];
@@ -66,6 +76,9 @@ function normalizeProjects(raw) {
     if (typeof p.profile === 'string') entry.profile = p.profile.trim();
     // Иконка окна сессий этого проекта (src/mqtt/window-icons.js); пусто — по профилю.
     if (typeof p.icon === 'string' && p.icon.trim()) entry.icon = p.icon.trim();
+    // Тип проекта для группировки в ccfzf-picker; пустой — поля нет.
+    const type = normalizeProjectType(p.type);
+    if (type) entry.type = type;
     if (p.profiles && typeof p.profiles === 'object') {
       const profiles = {};
       // Годна строка сама по себе, а не непустая после trim: `{wt: ''}` —
@@ -323,6 +336,7 @@ export {
   pickOpenProjectSession,
   escapeForSingleQuoted,
   normalizeProjects,
+  normalizeProjectType,
   profileForTerminal,
   planWtLaunch,
   planLaunchNew,

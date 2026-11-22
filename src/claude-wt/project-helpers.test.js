@@ -9,6 +9,7 @@ import {
   planWtLaunch,
   planLaunchNew,
   normalizeProjects,
+  normalizeProjectType,
   profileForTerminal,
 } from './project-helpers.js';
 import { TERMINAL_DEFAULTS } from './terminal-helpers.js';
@@ -273,6 +274,30 @@ describe('normalizeProjects', () => {
       { name: 'home', cwd: '/p/home', hotkey: 'Ctrl+F11', profile: 'home' },
       { name: 'silent', cwd: '/p/silent', profile: '' },
     ]);
+  });
+});
+
+describe('normalizeProjects — тип проекта', () => {
+  it('тип обрезается и приводится к нижнему регистру', () => {
+    expect(normalizeProjects([{ name: 'a', cwd: '/p/a', type: ' Work ' }])).toEqual([{ name: 'a', cwd: '/p/a', type: 'work' }]);
+  });
+
+  it('пустой и нестроковый тип — поля нет', () => {
+    expect(normalizeProjects([
+      { name: 'a', cwd: '/p/a', type: '' },
+      { name: 'b', cwd: '/p/b', type: '   ' },
+      { name: 'c', cwd: '/p/c', type: 7 },
+    ])).toEqual([{ name: 'a', cwd: '/p/a' }, { name: 'b', cwd: '/p/b' }, { name: 'c', cwd: '/p/c' }]);
+  });
+});
+
+describe('normalizeProjectType', () => {
+  it('строка — обрезанная в нижнем регистре, прочее — пусто', () => {
+    expect(normalizeProjectType(' Home ')).toBe('home');
+    expect(normalizeProjectType('')).toBe('');
+    expect(normalizeProjectType(null)).toBe('');
+    expect(normalizeProjectType(undefined)).toBe('');
+    expect(normalizeProjectType(1)).toBe('');
   });
 });
 

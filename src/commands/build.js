@@ -142,6 +142,7 @@ function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = 
     'claude-session-open': withRefresh(claude['claude-session-open']),
     'claude-session-new': claude['claude-session-new'],
     'claude-terminal': claude['claude-terminal'],
+    'claude-project-type': claude['claude-project-type'],
     'claude-snapshot-restore': throttlePress(claude['claude-snapshot-restore'], {
       onDrop: (payload) => log(`claude-snapshot-restore ${payload} — отброшено, не чаще раза в секунду`, 'warn'),
     }),

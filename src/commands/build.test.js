@@ -46,7 +46,7 @@ describe('buildCommandMap', () => {
   });
 
   it('содержит все команды claude-wt', () => {
-    for (const c of ['claude-focus', 'claude-focus-slot', 'claude-session-unread', 'claude-snapshot-restore', 'claude-session-open', 'claude-wt-restore']) {
+    for (const c of ['claude-focus', 'claude-focus-slot', 'claude-session-unread', 'claude-snapshot-restore', 'claude-session-open', 'claude-wt-restore', 'claude-project-type']) {
       expect(Object.keys(map)).toContain(c);
     }
   });
@@ -89,6 +89,14 @@ describe('buildCommandMap', () => {
     const m = makeMap({ winMan });
     expect(await m['claude-session-seen']('abc')).toEqual({ ok: true });
     await expect(m['claude-session-unread']('abc')).resolves.toBeUndefined();
+  });
+
+  // До файла конфига эта просьба не доходит: кривой cwd отсекается раньше.
+  // Проверяется проводка карты — настоящий setProjectType, а не заглушка.
+  it('claude-project-type проведён до setProjectType: отказ приходит причиной', async () => {
+    const m = makeMap();
+    expect(await m['claude-project-type']('{"cwd":"rel/path","type":"work"}'))
+      .toEqual({ ok: false, reason: 'cwd must be an absolute POSIX path without ; " \' ` $ \\ { }' });
   });
 
   it('содержит claude-place', () => {

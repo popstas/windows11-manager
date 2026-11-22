@@ -15,6 +15,7 @@ import { parseArrangePayload } from '../claude-layout-helpers.js';
 import { startTiming, noTiming } from '../claude-wt/timing.js';
 import { publishedTerminal } from '../claude-wt/terminal-helpers.js';
 import { isSessionUuid, sessionNameProblem, pickSessionByTitle } from '../claude-wt/session-name-helpers.js';
+import { setProjectType as defaultSetProjectType } from './claude-config-commands.js';
 
 /** Тело просьбы: `{"id": …}` либо голый id строкой — ради вызова руками. */
 function parseIdPayload(payload) {
@@ -58,7 +59,9 @@ const FOREGROUND_STEP_MS = 100;
 
 const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function claudeCommands({ winMan, log, notify, slots, now = () => Date.now(), sleep = defaultSleep }) {
+function claudeCommands({
+  winMan, log, notify, slots, now = () => Date.now(), sleep = defaultSleep, setProjectType = defaultSetProjectType,
+}) {
   // id сессии → до какого момента новое открытие её не запускает. Infinity —
   // открытие ещё идёт. Ключ — настоящий id после поиска по имени, чтобы имя и
   // uuid одной сессии делили одну защиту.
@@ -360,6 +363,26 @@ function claudeCommands({ winMan, log, notify, slots, now = () => Date.now(), sl
      */
     'claude-terminal'() {
       return publishedTerminal(winMan.getClaudeWtConfig());
+    },
+
+    /**
+     * Тип проекта из ^K пикера: `{ cwd, type }`, `type: null` — снять.
+     * Правит живой YAML-конфиг точечно (`setProjectType`); неизвестный cwd
+     * дописывается в `claudeWt.projects` — цена записана в AGENTS.md.
+     * Отказ — `{ok:false, reason}` с кодом 200, как у focus/place: пикер
+     * результат видит по файлу трекера (`type` входит в его отпечаток).
+     */
+    'claude-project-type'(payload) {
+      const res = setProjectType(payload);
+      if (!res.ok) {
+        log(`claude-wt project type: ${res.reason}`, 'warn');
+        notify(`claude-wt: project type — ${res.reason}`);
+        return res;
+      }
+      if (res.changed) {
+        log(`claude-wt project type: ${res.cwd} → ${res.type ?? 'none'}${res.added ? ' (added to claudeWt.projects)' : ''}`);
+      }
+      return res;
     },
 
     async 'claude-session-unread'(payload) {

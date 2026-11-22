@@ -152,7 +152,9 @@ function renderProjectIcons(projects) {
     title.className = 'project-name';
     title.textContent = `${p.name || p.cwd} `;
     const meta = document.createElement('code');
-    meta.textContent = p.profile ? `${p.cwd} · profile ${p.profile}` : p.cwd;
+    // Тип только показывается: ставит его claude-project-type (^K пикера).
+    meta.textContent = [p.cwd, p.profile ? `profile ${p.profile}` : '', p.type ? `type ${p.type}` : '']
+      .filter(Boolean).join(' · ');
     title.append(meta);
     const line = document.createElement('div');
     line.className = 'icon-row';

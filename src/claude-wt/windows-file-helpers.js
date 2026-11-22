@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { isMinimized } from './tracker-helpers.js';
 import { locateWindow } from './head-zones-helpers.js';
+import { normalizeProjectType } from './project-helpers.js';
 
 // Как часто файл переписывается, когда расклад не менялся. Свежесть читатель
 // судит по полю `generated` и только по нему: mtime не отличает «демон умер» от
@@ -112,31 +113,36 @@ function buildWindowsFile({
     // Ключ на месте всегда, даже пустой: читателю дешевле пустой массив, чем
     // проверка на отсутствие ключа при каждом использовании.
     snapshots: (snapshots ?? []).map(trimSnapshot),
-    // Хоткеи проектов. Единственный их источник — claudeWt.projects здесь;
-    // регистрирует клавиши читатель (ccfzf-picker) на своей стороне, и знать
-    // про них ему больше неоткуда. Записи без хоткея не едут: список проектов
-    // читатель собирает сам, а сказать ему нечего.
+    // Проекты: хоткеи, иконки, типы. Единственный их источник —
+    // claudeWt.projects здесь; регистрирует клавиши читатель (ccfzf-picker) на
+    // своей стороне, и знать про них ему больше неоткуда. Едут ВСЕ записи, и
+    // без хоткея, иконки и типа: по ним агрегатор находит проект-владельца
+    // сессии из подкаталога (`projectCwd`), и тип, поставленный из ^K такой
+    // сессии, ложится на существующую запись, а не новой на подкаталог.
     //
     // `profile` не едет намеренно: это знание про Windows Terminal на этой
     // машине, читателю бесполезное.
     //
     // Иконка проекта (`projectIcons`, cwd → абсолютный путь) едет туда же:
     // строкам без окна — истории и проектам пикера — взять её больше неоткуда.
-    // Проект с иконкой, но без хоткея, тоже едет — без ключа `hotkey`, а не с
-    // пустым: агрегатор прежней версии такую запись выбрасывает молча, то есть
-    // новое поле старому читателю ничего не ломает.
+    // Тип проекта (`type`) — группировка активных сессий в ccfzf-picker.
+    // Пустых ключей нет: запись без хоткея едет без `hotkey`, а не с пустым.
+    // Агрегатор прежней версии записи без хоткея и иконки выбрасывает молча,
+    // то есть новые записи старому читателю ничего не ломают.
     projects: (projects ?? [])
+      .filter(p => typeof p?.cwd === 'string' && p.cwd)
       .map(p => ({
         p,
         hotkey: typeof p?.hotkey === 'string' ? p.hotkey.trim() : '',
-        icon: typeof p?.cwd === 'string' && typeof projectIcons?.[p.cwd] === 'string' ? projectIcons[p.cwd] : '',
+        icon: typeof projectIcons?.[p.cwd] === 'string' ? projectIcons[p.cwd] : '',
+        type: normalizeProjectType(p?.type),
       }))
-      .filter(({ hotkey, icon }) => hotkey || icon)
-      .map(({ p, hotkey, icon }) => ({
+      .map(({ p, hotkey, icon, type }) => ({
         cwd: typeof p.cwd === 'string' ? p.cwd : '',
         name: typeof p.name === 'string' ? p.name : '',
         ...(hotkey ? { hotkey } : {}),
         ...(icon ? { icon } : {}),
+        ...(type ? { type } : {}),
       })),
     // Значок head абсолютным путём — для закрытой head-сессии в истории
     // читателя. Ключа нет, когда пути нет: то же правило, что у `http`.
@@ -212,8 +218,9 @@ function windowsFingerprint(windows, snapshots, projects, headIcon = '') {
   // Хоткеи входят по содержимому целиком: их мало, а смена клавиши в конфиге
   // обязана доехать до читателя тем же тиком, а не сердцебиением.
   // Иконки — так же: правка иконки в настройках не должна ждать сердцебиения.
+  // Тип — тоже: запись из ^K пикера видна ему только по этому файлу.
   const keys = (projects ?? [])
-    .map(p => `${p?.cwd}\u0000${p?.hotkey}\u0000${p?.icon ?? ''}`)
+    .map(p => `${p?.cwd}\u0000${p?.hotkey}\u0000${p?.icon ?? ''}\u0000${p?.type ?? ''}`)
     .join('\u0001');
   const tail = `${snaps}${keys ? `\u0002${keys}` : ''}${headIcon ? `\u0003${headIcon}` : ''}`;
   return tail ? `${win}${tail}` : win;
