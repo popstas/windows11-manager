@@ -22,7 +22,10 @@ vi.mock('./progress.js', async (importOriginal) => ({
   progressStamp,
 }));
 
-import { loadSessionIndex, loadShellSessions, invalidateSessionIndex } from './sessions.js';
+import {
+  loadSessionIndex, loadShellSessions, invalidateSessionIndex,
+  localDumpPath, sessionDumps, loadSessionIndexFor, loadBackgroundAgentsFor, loadShellSessionsFor,
+} from './sessions.js';
 
 // loadSessionIndex keeps its cache at module scope, keyed by path. Every test
 // therefore writes to its own file inside the temp dir, so nothing leaks from
@@ -348,5 +351,69 @@ describe('loadShellSessions', () => {
   it('нет файла — пусто, а не падение', () => {
     expect(loadShellSessions(path.join(dir, 'нет.json'), '', 1).size).toBe(0);
     expect(loadShellSessions('', '', 1).size).toBe(0);
+  });
+});
+
+describe('features.localSource: два дампа', () => {
+  // Местный дамп лежит в «доме» — подставляем временный каталог.
+  const setup = ({ remote, local, localSource = true }) => {
+    const remotePath = freshPath();
+    if (remote) writeDump(remotePath, remote, T0);
+    if (local) writeDump(localDumpPath(dir), local, T0);
+    return { cfg: { sessionsFile: remotePath, progressDir: '', features: { localSource } } };
+  };
+  const dump = list => ({ sessions: list });
+
+  it('sessionDumps: без выключателя — только удалённый; с ним — и местный, без progressDir', () => {
+    expect(sessionDumps({ sessionsFile: 'V:/d.json', progressDir: 'V:/p' }, dir))
+      .toEqual([{ path: 'V:/d.json', progressDir: 'V:/p', local: false }]);
+    expect(sessionDumps({ sessionsFile: 'V:/d.json', progressDir: 'V:/p', features: { localSource: true } }, dir))
+      .toEqual([
+        { path: 'V:/d.json', progressDir: 'V:/p', local: false },
+        { path: path.join(dir, '.ccfzf.sessions.json'), progressDir: '', local: true },
+      ]);
+  });
+
+  it('индекс — из обоих дампов; тёзку выигрывает удалённая сессия', () => {
+    const { cfg } = setup({
+      remote: dump([{ id: 'r1', title: 'ccfzf', cwd: '/r' }, { id: 'r2', title: 'twin', cwd: '/r' }]),
+      local: dump([{ id: 'l1', title: 'Режим ускорения', cwd: 'C:\\p' }, { id: 'l2', title: 'twin', cwd: 'C:\\p' }]),
+    });
+    const idx = loadSessionIndexFor(cfg, Date.now(), false, dir);
+    expect(idx.ccfzf.id).toBe('r1');
+    expect(idx['Режим ускорения'].id).toBe('l1');
+    expect(idx.twin.id).toBe('r2');
+  });
+
+  it('выключатель снят — местный дамп не читается', () => {
+    const { cfg } = setup({ remote: dump([{ id: 'r1', title: 'ccfzf' }]), local: dump([{ id: 'l1', title: 'local' }]), localSource: false });
+    expect(Object.keys(loadSessionIndexFor(cfg, Date.now(), false, dir))).toEqual(['ccfzf']);
+  });
+
+  it('местного дампа нет — удалённый индекс как раньше, без жалобы в журнал', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { cfg } = setup({ remote: dump([{ id: 'r1', title: 'ccfzf' }]) });
+    expect(Object.keys(loadSessionIndexFor(cfg, Date.now(), false, dir))).toEqual(['ccfzf']);
+    expect(err).not.toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it('два дампа кэшируются каждый своим путём и не вытесняют друг друга', () => {
+    const { cfg } = setup({ remote: dump([{ id: 'r1', title: 'ccfzf' }]), local: dump([{ id: 'l1', title: 'local' }]) });
+    const read = vi.spyOn(fs, 'readFileSync');
+    loadSessionIndexFor(cfg, 1000, false, dir);
+    const first = read.mock.calls.length;
+    loadSessionIndexFor(cfg, 2000, false, dir);
+    expect(read.mock.calls.length).toBe(first);
+    read.mockRestore();
+  });
+
+  it('фоновые агенты и сессии с фоновой командой — из обоих', () => {
+    const { cfg } = setup({
+      remote: dump([{ id: 'r1', title: 'p', live: true, shell: true }, { id: 'rb', kind: 'background', parent: 'r1', title: 'p' }]),
+      local: dump([{ id: 'l1', title: 'q', live: true, shell: true }, { id: 'lb', kind: 'background', parent: 'l1', title: 'q' }]),
+    });
+    expect(Object.keys(loadBackgroundAgentsFor(cfg, Date.now(), dir)).sort()).toEqual(['l1', 'r1']);
+    expect([...loadShellSessionsFor(cfg, Date.now(), dir)].sort()).toEqual(['l1', 'r1']);
   });
 });
