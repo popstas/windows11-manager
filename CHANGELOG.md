@@ -1,6 +1,51 @@
 # Changelog
 
 
+## v4.13.0 - 2026-11-23
+
+### Features
+
+- claude-wt: Маршруты window-icon, window-badge, window-icons
+- window-icons: Явная иконка и значок сессии поверх автоматики
+- claude-wt: Хранилище явных иконок сессий и имена из папки иконок
+- window-icons: Заголовок окна до iconFor, отпечаток badges, warn о кривом регэкспе
+- claude-wt: Значок окна по заголовку из claudeWt.projects[].badges
+- claude-wt: Features.localSource — окна местных сессий claude
+- claude-wt: Claude-place mode zone — окно сессии в зону FancyZones
+- claude-wt: Отметка unreadAt в файле трекера, session-seen ставит focusedAt
+- claude-wt: В файл трекера едут все записи claudeWt.projects
+- claude-wt: Команда claude-project-type
+- claude-wt: Тип проекта в claudeWt.projects и файле трекера
+- claude-wt: Place отвечает результатом, отброшенное — throttled
+- claude-wt: Focus отвечает foreground и умеет только поднять окно
+
+### Bug Fixes
+
+- claude-wt: Id явных иконок — только UUID, хранилище без прототипа, сбой записи не останавливает иконки
+- window-icons: Сторож заголовка для badges, без overlay в аддоне — значков проекта нет
+- claude-wt: Zone — окно уже в зоне отвечает placed 0, а не «свёрнуто»
+- claude-wt: Повтор rename на EPERM/EBUSY/EACCES, отказ записи состояния не роняет тик
+- claude-wt: Причина отказа cwd называет правило POSIX-пути
+- claude-wt: Foreground — по переднему окну, а не по ответу подъёма
+
+### Documentation
+
+- plan: Явная иконка и значок окна сессии из claude-wt CLI
+- spec: Явная иконка и значок окна сессии из claude-wt CLI
+- plan: Бейджи окон по заголовку внутри проекта
+- spec: Бейджи окон по заголовку внутри проекта
+- claude-wt: На маке window place упирается в отсутствие http-менеджера
+- claude-wt: Zone вне headZones в трекере — основная зона или null
+- claude-wt: Ответы focus и place для CLI claude-wt
+
+### Miscellaneous
+
+- Залипшая active на панели — повторить правило ccfzf#29
+
+### Testing
+
+- config: Правки типа и иконки проекта не трогают badges
+
 ## v4.12.0 - 2026-11-22
 
 ### Features
