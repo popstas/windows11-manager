@@ -228,6 +228,19 @@ describe('startWindowIcons', () => {
       expect(overlays).toEqual([[1, 'C:\\ico\\tg2.ico', 'tg2']]);
     });
 
+    // Без SetOverlayIcon в аддоне значку класть некуда: служба не должна
+    // ни звать его, ни предупреждать «нет файла» — причина была бы ложной.
+    it('аддон без setOverlayIcon — значков проекта нет, лишних предупреждений нет', () => {
+      const { overlays, logs } = setup({
+        windows: [{ id: 1, path: WT, title: 'foo-tg-bar' }],
+        sessions: { 1: { sessionId: 'c', cwd: '/p/home', title: 'foo-tg-bar' } },
+        config: { projects: projects('C:\\ico\\telegram.ico').map(p => ({ ...p, badges: p.badges?.slice(1) })) },
+        overlayControl: false,
+      });
+      expect(overlays.filter(o => o[1])).toEqual([]);
+      expect(logs.filter(l => l.startsWith('warn:'))).toHaveLength(1);
+    });
+
     it('кривой регэксп — один warn за несколько тиков, тик не падает', () => {
       const { svc, overlays, logs, advance } = setup({
         windows: [{ id: 1, path: WT, title: 'foo-tg-bar' }],

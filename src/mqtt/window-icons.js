@@ -213,7 +213,11 @@ function startWindowIcons({
       }
       const sessions = windows.length ? winMan.claudeWtWindowSessions(windows) : [];
       const heads = sessions.length ? winMan.claudeWtHeadIds(headsDirFor(cfg)) : new Set();
-      const wanted = new Map(sessions.map(s => [s.id, iconFor(s, { heads, cfg })]));
+      // Без SetOverlayIcon значкам проекта (badges) класть некуда — слот пуст.
+      const wanted = new Map(sessions.map(s => {
+        const want = iconFor(s, { heads, cfg });
+        return [s.id, canOverlay ? want : { ...want, overlay: '' }];
+      }));
       const { ops, next } = planIcons(applied, wanted, present);
       apply(ops, next);
       applied = next;
