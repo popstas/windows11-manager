@@ -255,6 +255,11 @@ claudeWt:
   #   headMode: badge
   #   headsDir: ''
   #   profiles: { home: 'C:\\images\\ico\\home.ico', Site: 'C:\\images\\ico\\site.png' }
+  #   # Папка иконок для claude-wt window icon/badge: агент ставит окну своей
+  #   # сессии иконку или значок по имени файла (только .ico, без подкаталогов);
+  #   # заданное важнее projects[].icon, badges и значка head. Пусто — команды
+  #   # отказывают.
+  #   dir: 'C:\\images\\ico'
   # Терминал по умолчанию для этой машины. Просьба пикера может назвать
   # другой — тогда выигрывает она.
   terminal: wt

@@ -37,6 +37,12 @@ describe('routeToCommand', () => {
     expect(routeToCommand('/claude-wt/project-type')).toBe('claude-project-type');
   });
 
+  it('явная иконка и значок окна сессии из claude-wt CLI', () => {
+    expect(routeToCommand('/claude-wt/window-icon')).toBe('claude-window-icon');
+    expect(routeToCommand('/claude-wt/window-badge')).toBe('claude-window-badge');
+    expect(routeToCommand('/claude-wt/window-icons')).toBe('claude-window-icons');
+  });
+
   it('чужой путь — null', () => {
     expect(routeToCommand('/nope')).toBe(null);
     expect(routeToCommand('/')).toBe(null);

@@ -8,6 +8,7 @@ import { windowCommands } from './window-commands.js';
 import { claudeCommands, parseIdPayload, slotFromPayload } from './claude-commands.js';
 import { throttlePress } from './press-throttle.js';
 import { createDelayedSlotOff } from './delayed-slot-off.js';
+import { sessionIconCommands } from './session-icon-commands.js';
 
 const SLOT_COUNT_DEFAULT = 10;
 
@@ -20,7 +21,9 @@ const SLOT_COUNT_DEFAULT = 10;
  * настоящая работа. `claude-focus` без ограничителя: там источник — Enter в
  * списке пикера, дребезжать нечему.
  */
-function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = () => {}, dock = null, taskbar = null }) {
+function buildCommandMap({
+  winMan, config, log, notify, haExport, publishDone = () => {}, dock = null, taskbar = null, sessionIcons = null,
+}) {
   const windows = windowCommands({ winMan, config, log, notify });
   const claude = claudeCommands({ winMan, log, notify, slots: () => haExport.slots() });
 
@@ -140,6 +143,11 @@ function buildCommandMap({ winMan, config, log, notify, haExport, publishDone = 
       log(`claude-wt cache warn: ${count} session(s)`);
       return { ok: true, count };
     },
+    // Явная иконка и значок окна сессии из claude-wt CLI (хранилище и служба
+    // иконок — у service.js; без них команд нет).
+    ...(sessionIcons ? sessionIconCommands({
+      store: sessionIcons.store, icons: sessionIcons.icons, getCfg: () => winMan.getClaudeWtConfig(), log,
+    }) : {}),
     'claude-session-open': withRefresh(claude['claude-session-open']),
     'claude-session-new': claude['claude-session-new'],
     'claude-terminal': claude['claude-terminal'],

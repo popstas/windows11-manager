@@ -31,6 +31,13 @@
  * иконка окна: в режиме badge — иконка проекта, в режиме icon — значок head
  * (`publishedIcons`). Пишется, только когда карта изменилась;
  * выключенные иконки — пустая карта.
+ *
+ * Явное, заданное из claude-wt CLI (`store`, src/claude-wt/session-icons.js),
+ * ложится поверх `iconFor`: явная иконка важнее значка head в режиме icon и
+ * иконки проекта, явный значок — значка head и правил `badges` (решение Стаса,
+ * вариант A). Версия хранилища входит в отпечаток, так что правка встаёт на
+ * ближайшем тике; маршрут вдобавок зовёт `tick()` сам и спрашивает
+ * `statusOf`, встало ли.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -56,9 +63,9 @@ function writeIconsSidecar(cfg, icons) {
 function startWindowIcons({
   winMan, log, intervalMs = ICONS_INTERVAL_MS, refreshMs = ICONS_REFRESH_MS, repoRoot = REPO_ROOT,
   now = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval,
-  publishIcons = writeIconsSidecar,
+  publishIcons = writeIconsSidecar, store = null,
 }) {
-  const off = { tick() {}, stop() {} };
+  const off = { tick() {}, stop() {}, statusOf: () => ({ applied: false, reason: 'no icon service' }) };
   if (typeof winMan?.hasWindowIconControl !== 'function') return off;
   if (!winMan.hasWindowIconControl()) {
     log('window icons: в аддоне node-window-manager нет setWindowIcon — иконки окон не ставятся '
@@ -84,6 +91,9 @@ function startWindowIcons({
   let headPath = '';
   let lastError = '';
   let lastPublished = null;
+  // С последнего полного прохода — для statusOf.
+  let enabled = false;
+  let windowOf = new Map();
   // Значки окнам терминала надо сверить: на старте — снять оставленные
   // прошлым процессом, после перезапуска explorer — поставить заново. Число —
   // сколько полных проходов подряд считать значки неизвестными.
@@ -188,6 +198,7 @@ function startWindowIcons({
       // тогда он встаёт вместо иконки, как раньше.
       const cfg = canOverlay ? raw : { ...raw, windowIcons: { ...raw.windowIcons, headMode: 'icon' } };
       if (!cfg.enabled || !cfg.windowIcons?.enabled) {
+        enabled = false;
         if (applied.size) resetAll();
         lastPrint = '';
         publish(cfg, {});
@@ -199,10 +210,12 @@ function startWindowIcons({
         badNamed.add(m);
         log(`window icons: кривой регэксп в badges: ${m}`, 'warn');
       }
+      enabled = true;
       watchTaskbar();
       const { windows, present } = terminalWindows();
       const print = JSON.stringify([
         windows, cfg.windowIcons, cfg.projects.map(p => [p.cwd, p.icon ?? '', p.profile ?? '', p.badges ?? []]),
+        store?.version ?? 0,
       ]);
       if (print === lastPrint && now() - lastFull < refreshMs) return;
       lastPrint = print;
@@ -215,12 +228,22 @@ function startWindowIcons({
       const heads = sessions.length ? winMan.claudeWtHeadIds(headsDirFor(cfg)) : new Set();
       // Без SetOverlayIcon значкам проекта (badges) класть некуда — слот пуст.
       const wanted = new Map(sessions.map(s => {
-        const want = iconFor(s, { heads, cfg });
+        const auto = iconFor(s, { heads, cfg });
+        const e = (s.sessionId && store?.get(s.sessionId)) || {};
+        const want = { icon: e.icon || auto.icon, overlay: e.badge || auto.overlay };
         return [s.id, canOverlay ? want : { ...want, overlay: '' }];
       }));
+      windowOf = new Map(sessions.filter(s => s.sessionId).map(s => [s.sessionId, s.id]));
       const { ops, next } = planIcons(applied, wanted, present);
       apply(ops, next);
       applied = next;
+      // После расстановки и мимо общего catch: сбой записи хранилища не
+      // должен останавливать автоматические иконки всех окон.
+      try {
+        store?.touch([...windowOf.keys()]);
+      } catch (e) {
+        report(e);
+      }
       publish(cfg, publishedIcons(sessions, wanted, repoRoot));
       lastError = '';
     } catch (e) {
@@ -232,8 +255,22 @@ function startWindowIcons({
   const timer = setIntervalFn(tick, intervalMs);
   timer?.unref?.();
 
+  // Встало ли заданное (или снятое) сессии на её окне — по последнему проходу.
+  function statusOf(sessionId, kind) {
+    if (!enabled) return { applied: false, reason: 'icons disabled' };
+    if (kind === 'badge' && !canOverlay) return { applied: false, reason: 'no overlay support' };
+    const id = windowOf.get(sessionId);
+    if (id === undefined) return { applied: false, reason: 'no window' };
+    const target = store?.get(sessionId)?.[kind];
+    if (!target) return { applied: true };
+    const slot = kind === 'badge' ? 'overlay' : 'icon';
+    if (applied.get(id)?.[slot] === target) return { applied: true };
+    return { applied: false, reason: 'not applied (see tray log)' };
+  }
+
   return {
     tick,
+    statusOf,
     stop() {
       clearIntervalFn(timer);
       try {

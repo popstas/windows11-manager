@@ -36,6 +36,9 @@ const ROUTES = {
   '/claude-wt/place': 'claude-place',
   '/claude-wt/terminal': 'claude-terminal',
   '/claude-wt/project-type': 'claude-project-type',
+  '/claude-wt/window-icon': 'claude-window-icon',
+  '/claude-wt/window-badge': 'claude-window-badge',
+  '/claude-wt/window-icons': 'claude-window-icons',
 };
 
 function routeToCommand(url) {
