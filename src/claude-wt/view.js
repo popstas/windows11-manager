@@ -107,10 +107,13 @@ function claudeWtWindowSessions(windows) {
   const index = loadSessionIndexFor(cfg);
   const out = [];
   for (const w of windows) {
-    const hit = resolveSession(stripTitleDecoration(w.title), index, state.slots);
+    // Заголовок без префиксов zellij/WezTerm: по нему ищется сессия и по нему
+    // же — значок проекта (badges, src/claude-wt/window-icons-helpers.js).
+    const title = stripTitleDecoration(w.title);
+    const hit = resolveSession(title, index, state.slots);
     if (!hit) continue;
     const slot = state.slots[hit.id];
-    out.push({ id: w.id, sessionId: hit.id, cwd: hit.cwd || slot?.cwd || '', focusedAt: slot?.focusedAt ?? 0 });
+    out.push({ id: w.id, sessionId: hit.id, cwd: hit.cwd || slot?.cwd || '', focusedAt: slot?.focusedAt ?? 0, title });
   }
   return out;
 }
