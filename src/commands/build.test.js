@@ -127,6 +127,19 @@ describe('buildCommandMap', () => {
       .toEqual({ ok: false, reason: 'cwd must be an absolute POSIX path without ; " \' ` $ \\ { }' });
   });
 
+  it('явные иконки сессий: команды есть, папка — из конфига claudeWt, служба — через замыкание', async () => {
+    const winMan = { ...winManStub(), getClaudeWtConfig: vi.fn(() => ({ windowIcons: { dir: '' } })) };
+    const store = { get: vi.fn(), set: vi.fn(), touch: vi.fn(), version: 0 };
+    let service = null;
+    const m = makeMap({ winMan, sessionIcons: { store, icons: () => service } });
+    service = { tick: vi.fn(), statusOf: vi.fn(() => ({ applied: true })) };
+    expect(await m['claude-window-icon']({ id: 's', icon: 'x' }))
+      .toEqual({ ok: false, reason: 'icons dir not configured (claudeWt.windowIcons.dir)' });
+    expect(await m['claude-window-badge']({ id: 's', badge: null })).toEqual({ ok: true, id: 's', badge: null, applied: true });
+    expect(service.tick).toHaveBeenCalled();
+    expect(Object.keys(m)).toContain('claude-window-icons');
+  });
+
   it('содержит claude-place', () => {
     expect(typeof map['claude-place']).toBe('function');
   });

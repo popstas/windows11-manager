@@ -10,6 +10,7 @@
  * заводились ни автопостановщик, ни сторож демона — хотя брокер обоим не нужен,
  * о чём тут же и написано ниже.
  */
+import path from 'node:path';
 import { createRouter } from '../commands/router.js';
 import { redactPayload } from '../log-redact.js';
 import { buildCommandMap } from '../commands/build.js';
@@ -21,6 +22,7 @@ import { createStatsPublisher } from './stats.js';
 import { startAutoplacer } from './autoplacer.js';
 import { startTaskbarState } from './taskbar.js';
 import { startWindowIcons } from './window-icons.js';
+import { createSessionIconStore } from '../claude-wt/session-icons.js';
 import { startDaemonWatchdog } from './daemon-watchdog.js';
 import { startInboxes } from './telegram-inbox.js';
 import { startHttpServer } from '../http-server.js';
@@ -79,8 +81,15 @@ function startService({
   // до роутера: команда `claude-session-seen` гасит подсветку через него.
   const taskbar = startTaskbarState({ winMan, log });
 
+  // Явные иконки и значки окон сессий (claude-wt window icon|badge): одно
+  // хранилище на маршруты и службу иконок. Маршрут пишет его сам, а службу
+  // лишь подталкивает — она заводится ниже, отсюда замыкание.
+  const sessionIconStore = createSessionIconStore({ file: path.resolve(process.cwd(), 'data', 'session-icons.json') });
+  let windowIcons = null;
+
   const router = createRouter(buildCommandMap({
     winMan, config: withBase, log, notify, haExport, publishDone, dock, taskbar,
+    sessionIcons: { store: sessionIconStore, icons: () => windowIcons },
   }));
 
   // Брокер этим троим не нужен, и ждать подключения они не должны: расстановка
@@ -97,7 +106,7 @@ function startService({
   // Иконки окон claude: сессия — иконка проекта, head — она же и значок head
   // на кнопке панели задач (или вместо иконки, headMode: icon). Окнам и wt, и
   // WezTerm; держит их этот процесс.
-  const windowIcons = startWindowIcons({ winMan, log });
+  windowIcons = startWindowIcons({ winMan, log, store: sessionIconStore });
 
   const stats = settings ? createStatsPublisher({ winMan, publish, log, config: withBase }) : null;
 
