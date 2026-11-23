@@ -90,6 +90,15 @@ function normalizeProjects(raw) {
       }
       if (Object.keys(profiles).length) entry.profiles = profiles;
     }
+    // Значки окон по заголовку (src/claude-wt/window-icons-helpers.js, badgeFor):
+    // порядок значим. Регэксп не обрезается — пробел в нём часть образца — и
+    // здесь не проверяется: логгера у разбора нет, кривой называет служба.
+    if (Array.isArray(p.badges)) {
+      const badges = p.badges
+        .filter(b => b && typeof b.match === 'string' && b.match.trim() && typeof b.icon === 'string' && b.icon.trim())
+        .map(b => ({ match: b.match, icon: b.icon.trim() }));
+      if (badges.length) entry.badges = badges;
+    }
     out.push(entry);
   }
   return out;

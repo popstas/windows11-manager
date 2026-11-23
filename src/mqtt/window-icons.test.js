@@ -201,6 +201,61 @@ describe('startWindowIcons', () => {
     expect(calls).toEqual([[2, 'D:\\x.png']]);
   });
 
+  describe('значки проекта по заголовку', () => {
+    const projects = icon => [
+      { name: 'home', cwd: '/p/home', profile: 'home', badges: [{ match: '([', icon: 'C:\\ico\\bad.ico' }, { match: '-tg-', icon }] },
+      { name: 'exp', cwd: '/p/exp', profile: 'ExpertizeMe' },
+    ];
+
+    it('окно с совпавшим заголовком получает значок проекта', () => {
+      const { overlays } = setup({
+        windows: [{ id: 1, path: WT, title: 'foo-tg-bar' }],
+        sessions: { 1: { sessionId: 'c', cwd: '/p/home', title: 'foo-tg-bar' } },
+        config: { projects: projects('C:\\ico\\telegram.ico') },
+      });
+      expect(overlays).toEqual([[1, 'C:\\ico\\telegram.ico', 'telegram']]);
+    });
+
+    it('правка badges без смены окон переставляет значок на следующем тике', () => {
+      const { svc, overlays, world } = setup({
+        windows: [{ id: 1, path: WT, title: 'foo-tg-bar' }],
+        sessions: { 1: { sessionId: 'c', cwd: '/p/home', title: 'foo-tg-bar' } },
+        config: { projects: projects('C:\\ico\\telegram.ico') },
+      });
+      overlays.length = 0;
+      world.cfg = mergeClaudeWtConfig({ ...world.cfg, projects: projects('C:\\ico\\tg2.ico') });
+      svc.tick();
+      expect(overlays).toEqual([[1, 'C:\\ico\\tg2.ico', 'tg2']]);
+    });
+
+    // Без SetOverlayIcon в аддоне значку класть некуда: служба не должна
+    // ни звать его, ни предупреждать «нет файла» — причина была бы ложной.
+    it('аддон без setOverlayIcon — значков проекта нет, лишних предупреждений нет', () => {
+      const { overlays, logs } = setup({
+        windows: [{ id: 1, path: WT, title: 'foo-tg-bar' }],
+        sessions: { 1: { sessionId: 'c', cwd: '/p/home', title: 'foo-tg-bar' } },
+        config: { projects: projects('C:\\ico\\telegram.ico').map(p => ({ ...p, badges: p.badges?.slice(1) })) },
+        overlayControl: false,
+      });
+      expect(overlays.filter(o => o[1])).toEqual([]);
+      expect(logs.filter(l => l.startsWith('warn:'))).toHaveLength(1);
+    });
+
+    it('кривой регэксп — один warn за несколько тиков, тик не падает', () => {
+      const { svc, overlays, logs, advance } = setup({
+        windows: [{ id: 1, path: WT, title: 'foo-tg-bar' }],
+        sessions: { 1: { sessionId: 'c', cwd: '/p/home', title: 'foo-tg-bar' } },
+        config: { projects: projects('C:\\ico\\telegram.ico') },
+      });
+      advance(60_000);
+      svc.tick();
+      advance(60_000);
+      svc.tick();
+      expect(logs.filter(l => l === 'warn: window icons: кривой регэксп в badges: ([')).toHaveLength(1);
+      expect(overlays[0]).toEqual([1, 'C:\\ico\\telegram.ico', 'telegram']);
+    });
+  });
+
   it('выключение одной строкой снимает поставленные иконки', () => {
     const { svc, calls, world } = setup({
       windows: [{ id: 2, path: WEZ, title: 'a' }], sessions: { 2: { sessionId: 'c', cwd: '/p/home' } },

@@ -363,6 +363,16 @@ describe('buildWindowsFile — projects', () => {
     expect(out.projects[0].profile).toBeUndefined();
   });
 
+  // Правила значков — знание этой машины (пути .ico на ней же), читателю
+  // файла трекера они ни к чему.
+  it('правила значков badges в файл трекера не едут', () => {
+    const out = buildWindowsFile({
+      windows: [], slots: {}, host: 'pc', pid: 42, nowMs: 0,
+      projects: [{ name: 'exp', cwd: '/p/exp', badges: [{ match: '-tg-', icon: 'C:\\ico\\tg.ico' }] }],
+    });
+    expect(out.projects[0]).not.toHaveProperty('badges');
+  });
+
   // Ключ на месте всегда — читателю дешевле пустой массив, чем проверка на
   // отсутствие ключа при каждом использовании. То же правило, что у snapshots.
   it('запись без cwd не едет', () => {

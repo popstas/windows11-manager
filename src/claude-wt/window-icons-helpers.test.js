@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   BUILTIN_HEAD_ICON, resolveIconPath, iconFor, headsDirFor, planIcons, iconsSidecarPath, publishedIcons,
-  projectIcons, headIcon, headModeOf,
+  projectIcons, headIcon, headModeOf, badgeFor, badPatterns,
 } from './window-icons-helpers.js';
 import { mergeClaudeWtConfig } from './daemon-helpers.js';
 
@@ -265,5 +265,80 @@ describe('headIcon', () => {
   it('режим icon — свой значок head из конфига как есть', () => {
     const own = mergeClaudeWtConfig({ windowIcons: { head: 'C:\\icons\\king.ico', headMode: 'icon' } });
     expect(headIcon(own, 'C:\\repo')).toBe('C:\\icons\\king.ico');
+  });
+});
+
+describe('значки проекта по заголовку', () => {
+  const badged = mergeClaudeWtConfig({
+    windowIcons: { profiles: {} },
+    projects: [
+      { name: 'exp', cwd: '/p/exp', icon: 'C:\\ico\\exp.ico', badges: [
+        { match: '^planfix_bot-tg-', icon: 'C:\\ico\\planfix.ico' },
+        { match: '-tg-', icon: 'C:\\ico\\telegram.ico' },
+      ] },
+      { name: 'home', cwd: '/p/home', badges: [{ match: '([', icon: 'C:\\ico\\bad.ico' }, { match: '^srb-', icon: 'C:\\ico\\serbia.ico' }] },
+    ],
+  });
+  const none = new Set();
+
+  it('первое совпавшее правило: planfix раньше tg', () => {
+    expect(iconFor({ sessionId: 's', cwd: '/p/exp', title: 'planfix_bot-tg-42' }, { heads: none, cfg: badged }))
+      .toEqual({ icon: 'C:\\ico\\exp.ico', overlay: 'C:\\ico\\planfix.ico' });
+  });
+
+  it('второе правило, если первое не совпало', () => {
+    expect(iconFor({ sessionId: 's', cwd: '/p/exp', title: 'foo-tg-bar' }, { heads: none, cfg: badged }).overlay)
+      .toBe('C:\\ico\\telegram.ico');
+  });
+
+  it('не совпало ничего — без значка', () => {
+    expect(iconFor({ sessionId: 's', cwd: '/p/exp', title: 'daily' }, { heads: none, cfg: badged }).overlay).toBe('');
+  });
+
+  it('правила чужого проекта не действуют', () => {
+    expect(iconFor({ sessionId: 's', cwd: '/p/home', title: 'foo-tg-bar' }, { heads: none, cfg: badged }).overlay).toBe('');
+  });
+
+  it('подкаталог проекта — не проект, как у иконки', () => {
+    expect(iconFor({ sessionId: 's', cwd: '/p/exp/sub', title: 'foo-tg-bar' }, { heads: none, cfg: badged }).overlay).toBe('');
+  });
+
+  it('кривой регэксп пропускается, следующее правило работает', () => {
+    expect(iconFor({ sessionId: 's', cwd: '/p/home', title: 'srb-visa' }, { heads: none, cfg: badged }).overlay)
+      .toBe('C:\\ico\\serbia.ico');
+  });
+
+  it('head в режиме badge — значок head главнее правила', () => {
+    expect(iconFor({ sessionId: 'h', cwd: '/p/exp', title: 'planfix_bot-tg-1' }, { heads: new Set(['h']), cfg: badged }).overlay)
+      .toBe(BUILTIN_HEAD_ICON);
+  });
+
+  it('head в режиме icon — слот свободен, правило работает', () => {
+    const badgedIcon = { ...badged, windowIcons: { ...badged.windowIcons, headMode: 'icon' } };
+    expect(iconFor({ sessionId: 'h', cwd: '/p/exp', title: 'planfix_bot-tg-1' }, { heads: new Set(['h']), cfg: badgedIcon }).overlay)
+      .toBe('C:\\ico\\planfix.ico');
+  });
+
+  it('без заголовка — без значка', () => {
+    expect(iconFor({ sessionId: 's', cwd: '/p/exp' }, { heads: none, cfg: badged }).overlay).toBe('');
+  });
+
+  it('badgeFor без проекта — пусто', () => {
+    expect(badgeFor('foo-tg-bar', undefined)).toBe('');
+  });
+
+  it('badPatterns называет кривые регэкспы', () => {
+    expect(badPatterns(badged)).toEqual(['([']);
+  });
+
+  it('мусорные элементы badges отбрасываются при разборе', () => {
+    const cfgJunk = mergeClaudeWtConfig({ projects: [{ name: 'x', cwd: '/x', badges: [{ match: '', icon: 'a' }, { match: 'a' }, 'str', null] }] });
+    expect(cfgJunk.projects[0]).not.toHaveProperty('badges');
+  });
+
+  // Путь обрезается, регэксп — нет: пробел в нём часть образца.
+  it('годные правила переживают разбор: путь обрезан, регэксп как есть', () => {
+    const cfgOk = mergeClaudeWtConfig({ projects: [{ name: 'x', cwd: '/x', badges: [{ match: ' tg ', icon: ' C:\\a.ico ' }, null] }] });
+    expect(cfgOk.projects[0].badges).toEqual([{ match: ' tg ', icon: 'C:\\a.ico' }]);
   });
 });

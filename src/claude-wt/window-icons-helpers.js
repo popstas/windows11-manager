@@ -14,6 +14,12 @@
  * корону: та плохо читалась поверх части иконок проектов).
  * Значок виден только на кнопке панели задач (не в заголовке и не в Alt+Tab)
  * и только при включённых в Windows значках на кнопках панели задач.
+ *
+ * Значок проекта по заголовку (решение Стаса 23.11): `claudeWt.projects[].badges`
+ * — список `{match, icon}`, `match` — регэксп по заголовку окна, срабатывает
+ * первое совпавшее правило. Сессии однотипны, и отличать их нужно внутри
+ * проекта, не трогая его иконку, — поэтому слот тот же, что у head, а head
+ * в режиме `badge` его не уступает. Проект — по точному cwd, как у иконки.
  */
 import { fileURLToPath } from 'node:url';
 import { profileForTerminal } from './project-helpers.js';
@@ -49,22 +55,64 @@ function headModeOf(cfg) {
  * профили wt, и окно WezTerm того же проекта должно выглядеть так же.
  */
 function projectIconFor(cwd, cfg) {
-  const project = (cfg.projects ?? []).find(p => p.cwd === cwd);
+  const project = projectFor(cwd, cfg);
   if (project?.icon) return project.icon;
   const profile = profileForTerminal(cwd, 'wt', cfg);
   return (profile && cfg.windowIcons?.profiles?.[profile]) || '';
 }
 
+// Проект сессии — по точному cwd. Один поиск на иконку и значок: разойдись
+// они, подкаталог проекта получал бы значок без иконки или наоборот.
+function projectFor(cwd, cfg) {
+  return (cfg.projects ?? []).find(p => p.cwd === cwd);
+}
+
+// Скомпилированные регэкспы правил; `null` — кривой. Тик службы раз в секунду
+// гонял бы `new RegExp` на каждое окно, а строк в конфиге — единицы.
+const patternCache = new Map();
+
+function compiled(match) {
+  if (!patternCache.has(match)) {
+    let re = null;
+    try { re = new RegExp(match); } catch { /* кривой регэксп — правило пропускается */ }
+    patternCache.set(match, re);
+  }
+  return patternCache.get(match);
+}
+
+/**
+ * Значок первого правила проекта, чей регэксп совпал с заголовком; пустая
+ * строка — значка нет. Правило с кривым регэкспом пропускается.
+ */
+function badgeFor(title, project) {
+  if (!title || !project?.badges) return '';
+  for (const { match, icon } of project.badges) {
+    if (compiled(match)?.test(title)) return icon;
+  }
+  return '';
+}
+
+/** Регэкспы из `badges`, которые не компилируются, — для предупреждения в журнал. */
+function badPatterns(cfg) {
+  const bad = [];
+  for (const p of cfg.projects ?? []) {
+    for (const { match } of p.badges ?? []) if (!compiled(match)) bad.push(match);
+  }
+  return bad;
+}
+
 /**
  * Что поставить окну сессии: `{icon, overlay}` — главная иконка (WM_SETICON)
  * и значок на кнопке панели задач; пустая строка — не трогать / без значка.
- * Значок бывает только у head в режиме `badge`.
+ * Значок — head в режиме `badge`, иначе первое совпавшее правило `badges`
+ * проекта по заголовку окна.
  */
-function iconFor({ sessionId, cwd }, { heads, cfg }) {
+function iconFor({ sessionId, cwd, title }, { heads, cfg }) {
   const isHead = Boolean(sessionId && heads?.has(sessionId));
-  if (!isHead) return { icon: projectIconFor(cwd, cfg), overlay: '' };
+  const badge = () => badgeFor(title, projectFor(cwd, cfg));
+  if (!isHead) return { icon: projectIconFor(cwd, cfg), overlay: badge() };
   const headBadge = cfg.windowIcons?.head || BUILTIN_HEAD_ICON;
-  if (headModeOf(cfg) === 'icon') return { icon: headBadge, overlay: '' };
+  if (headModeOf(cfg) === 'icon') return { icon: headBadge, overlay: badge() };
   return { icon: projectIconFor(cwd, cfg), overlay: headBadge };
 }
 
@@ -191,5 +239,5 @@ function headIcon(cfg, repoRoot) {
 
 export {
   REPO_ROOT, BUILTIN_HEAD_ICON, HEAD_MODES, headModeOf, iconFor, resolveIconPath, iconsSidecarPath,
-  publishedIcons, headsDirFor, planIcons, projectIcons, headIcon,
+  publishedIcons, headsDirFor, planIcons, projectIcons, headIcon, badgeFor, badPatterns,
 };

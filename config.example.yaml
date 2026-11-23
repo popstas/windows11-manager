@@ -229,6 +229,12 @@ claudeWt:
   #     # Ставится из ^K пикера командой claude-project-type; untyped и none
   #     # зарезервированы.
   #     type: work
+  #     # Значок на кнопке панели задач по заголовку окна (регэксп), первое
+  #     # совпавшее правило. Только для сессий ровно в cwd проекта; у head
+  #     # значок head главнее. Правится руками.
+  #     badges:
+  #       - { match: '^planfix_bot-tg-', icon: 'C:\\images\\ico\\planfix.ico' }
+  #       - { match: '-tg-', icon: 'C:\\images\\ico\\telegram.ico' }
   # Иконки окон claude (wt и WezTerm), ставит служба снаружи (WM_SETICON):
   # окно сессии — projects[].icon, иначе иконка профиля wt проекта из
   # `profiles` (встроенной карты профилей нет: пути к своим картинкам задаются

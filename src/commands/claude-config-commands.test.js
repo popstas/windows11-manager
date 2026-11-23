@@ -268,3 +268,71 @@ describe('parseProjectTypeRequest', () => {
     expect(parseProjectTypeRequest({ cwd: '/p/a' })).toEqual({ cwd: '/p/a', type: null });
   });
 });
+
+describe('правки конфига не трогают badges', () => {
+  // badges правятся руками и идут блоком; точечные правки типа и иконки
+  // обязаны пройти мимо него. Блок нарочно последний в записи: туда же
+  // дописывается новая строка поля.
+  const BADGES = [
+    '      badges:',
+    "        - match: '^planfix_bot-tg-'",
+    "          icon: 'C:\\images\\ico\\planfix.ico'",
+    "        - match: '-tg-'",
+    "          icon: 'C:\\images\\ico\\telegram.ico'",
+    '',
+  ].join('\n');
+  const withType = [
+    'claudeWt:',
+    '  projects:',
+    '    - name: exp',
+    '      cwd: /p/exp',
+    '      type: work',
+    BADGES + '    - name: home',
+    '      cwd: /p/home',
+    '',
+  ].join('\n');
+  const noType = withType.replace('      type: work\n', '');
+  const wantBadges = [
+    { match: '^planfix_bot-tg-', icon: 'C:\\images\\ico\\planfix.ico' },
+    { match: '-tg-', icon: 'C:\\images\\ico\\telegram.ico' },
+  ];
+  const parsedBadges = () => parse(fs.readFileSync(file, 'utf8')).claudeWt.projects[0].badges;
+
+  let dir;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'badges-'));
+    file = path.join(dir, 'windows11-manager.config.yaml');
+  });
+  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); config = {}; });
+
+  it('тип проекта ставится, badges той же записи остаются байт в байт', () => {
+    fs.writeFileSync(file, withType);
+    expect(setProjectType({ cwd: '/p/exp', type: 'home' })).toMatchObject({ ok: true, changed: true });
+    expect(fs.readFileSync(file, 'utf8')).toBe(withType.replace('type: work', 'type: home'));
+  });
+
+  it('снятие типа не уносит badges', () => {
+    fs.writeFileSync(file, withType);
+    expect(setProjectType({ cwd: '/p/exp', type: null })).toMatchObject({ ok: true, changed: true });
+    expect(fs.readFileSync(file, 'utf8')).toContain(BADGES);
+    expect(parsedBadges()).toEqual(wantBadges);
+  });
+
+  it('новый тип у записи, где badges последним ключом, не попадает внутрь списка', () => {
+    fs.writeFileSync(file, noType);
+    expect(setProjectType({ cwd: '/p/exp', type: 'work' })).toMatchObject({ ok: true, changed: true });
+    const got = parse(fs.readFileSync(file, 'utf8')).claudeWt.projects[0];
+    expect(got.type).toBe('work');
+    expect(got.badges).toEqual(wantBadges);
+  });
+
+  it('иконка из окна настроек не трогает badges', () => {
+    fs.writeFileSync(file, noType);
+    config = parse(noType);
+    writeClaudeConfig({ projectIcons: { '/p/exp': 'C:\\x.ico' } });
+    const got = parse(fs.readFileSync(file, 'utf8')).claudeWt.projects[0];
+    expect(got.icon).toBe('C:\\x.ico');
+    expect(got.badges).toEqual(wantBadges);
+    expect(fs.readFileSync(file, 'utf8')).toContain(BADGES);
+  });
+});
