@@ -1,12 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
 import { startWindowIcons } from './window-icons.js';
 import { mergeClaudeWtConfig } from '../claude-wt/daemon-helpers.js';
+import { createSessionIconStore } from '../claude-wt/session-icons.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const WEZ = 'C:\\Program Files\\WezTerm\\wezterm-gui.exe';
 const WT = 'C:\\WindowsTerminal.exe';
 const CHROME = 'C:\\chrome.exe';
 
-function setup({ windows = [], sessions = {}, heads = [], config = {}, control = true, overlayControl = true } = {}) {
+function setup({ windows = [], sessions = {}, heads = [], config = {}, control = true, overlayControl = true, store } = {}) {
   const calls = [];
   const overlays = [];
   const logs = [];
@@ -53,6 +57,7 @@ function setup({ windows = [], sessions = {}, heads = [], config = {}, control =
     setIntervalFn: () => 1,
     clearIntervalFn: () => {},
     publishIcons: (cfg, icons) => published.push(icons),
+    store,
   });
   return { svc, calls, overlays, logs, published, winMan, world, advance: ms => { clock += ms; } };
 }
@@ -325,5 +330,116 @@ describe('startWindowIcons', () => {
     world.cfg = mergeClaudeWtConfig({ ...world.cfg, windowIcons: { enabled: false } });
     svc.tick();
     expect(published.at(-1)).toEqual({});
+  });
+
+  describe('явная иконка и значок из claude-wt CLI', () => {
+    const tmpStore = () => createSessionIconStore({
+      file: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'w11m-wi-')), 'session-icons.json'),
+    });
+    const TG = 'C:\\images\\ico\\telegram.ico';
+    const PF = 'C:\\images\\ico\\planfix.ico';
+    const two = {
+      windows: [{ id: 1, path: WT, title: 'h' }, { id: 2, path: WEZ, title: 'c' }],
+      sessions: { 1: { sessionId: 'h', cwd: '/p/home' }, 2: { sessionId: 'c', cwd: '/p/exp' } },
+      heads: ['h'],
+    };
+
+    it('явная иконка перебивает иконку проекта и попадает демону', () => {
+      const store = tmpStore();
+      store.set('c', 'icon', TG);
+      const { calls, published } = setup({ ...two, store });
+      expect(calls).toEqual([[1, 'C:/ico/me.ico'], [2, TG]]);
+      expect(published.at(-1).c).toBe(TG);
+    });
+
+    it('явная иконка у head в режиме icon — явная, не значок head', () => {
+      const store = tmpStore();
+      store.set('h', 'icon', TG);
+      const { calls } = setup({
+        ...two, store,
+        config: { windowIcons: { headMode: 'icon', profiles: { home: 'C:/ico/me.ico', ExpertizeMe: 'C:/ico/exp.ico' } } },
+      });
+      expect(calls).toContainEqual([1, TG]);
+    });
+
+    it('явный значок перебивает значок head и правило badges', () => {
+      const store = tmpStore();
+      store.set('h', 'badge', PF);
+      store.set('c', 'badge', PF);
+      const { overlays } = setup({
+        windows: [{ id: 1, path: WT, title: 'h' }, { id: 2, path: WEZ, title: 'x-tg-y' }],
+        sessions: { 1: { sessionId: 'h', cwd: '/p/home' }, 2: { sessionId: 'c', cwd: '/p/home', title: 'x-tg-y' } },
+        heads: ['h'],
+        store,
+        config: { projects: [{ name: 'home', cwd: '/p/home', profile: 'home', badges: [{ match: '-tg-', icon: TG }] }] },
+      });
+      expect(overlays).toEqual([[1, PF, 'planfix'], [2, PF, 'planfix']]);
+    });
+
+    it('снятие явного значка возвращает автоматику', () => {
+      const store = tmpStore();
+      store.set('h', 'badge', PF);
+      const { svc, overlays } = setup({ ...two, store });
+      overlays.length = 0;
+      store.set('h', 'badge', null);
+      svc.tick();
+      expect(overlays).toEqual([[1, 'C:/repo/icons/head-badge.ico', 'head']]);
+    });
+
+    it('правка хранилища замечается на следующем тике, не через refreshMs', () => {
+      const store = tmpStore();
+      const { svc, calls } = setup({ ...two, store });
+      calls.length = 0;
+      store.set('c', 'icon', TG);
+      svc.tick();
+      expect(calls).toEqual([[2, TG]]);
+    });
+
+    it('statusOf: applied у окна на экране; no window без окна; icons disabled; no overlay support', () => {
+      const store = tmpStore();
+      store.set('c', 'badge', PF);
+      store.set('c', 'icon', TG);
+      const { svc, world } = setup({ ...two, store });
+      expect(svc.statusOf('c', 'badge')).toEqual({ applied: true });
+      expect(svc.statusOf('c', 'icon')).toEqual({ applied: true });
+      // Снятое — встало, раз окно на экране.
+      expect(svc.statusOf('h', 'icon')).toEqual({ applied: true });
+      expect(svc.statusOf('gone', 'icon')).toEqual({ applied: false, reason: 'no window' });
+      world.cfg = mergeClaudeWtConfig({ ...world.cfg, windowIcons: { enabled: false } });
+      svc.tick();
+      expect(svc.statusOf('c', 'icon')).toEqual({ applied: false, reason: 'icons disabled' });
+
+      const noOverlay = setup({ ...two, store, overlayControl: false });
+      expect(noOverlay.svc.statusOf('c', 'badge')).toEqual({ applied: false, reason: 'no overlay support' });
+      expect(noOverlay.svc.statusOf('c', 'icon')).toEqual({ applied: true });
+    });
+
+    it('statusOf: not applied, если setOverlayIcon вернул false', () => {
+      const store = tmpStore();
+      const { svc, winMan } = setup({ ...two, store });
+      winMan.setOverlayIcon.mockImplementation(() => false);
+      store.set('c', 'badge', PF);
+      svc.tick();
+      expect(svc.statusOf('c', 'badge')).toEqual({ applied: false, reason: 'not applied (see tray log)' });
+    });
+
+    it('аддон без setWindowIcon — statusOf говорит no icon service', () => {
+      const { svc } = setup({ ...two, store: tmpStore(), control: false });
+      expect(svc.statusOf('c', 'icon')).toEqual({ applied: false, reason: 'no icon service' });
+    });
+
+    it('touch зовётся с sessionId окон на экране', () => {
+      const store = tmpStore();
+      const touch = vi.spyOn(store, 'touch');
+      setup({ ...two, store });
+      expect([...touch.mock.calls[0][0]]).toEqual(['h', 'c']);
+    });
+
+    it('заданное до перезапуска службы встаёт без повторной команды', () => {
+      const store = tmpStore();
+      store.set('c', 'badge', PF);
+      const { overlays } = setup({ ...two, store });
+      expect(overlays).toContainEqual([2, PF, 'planfix']);
+    });
   });
 });
