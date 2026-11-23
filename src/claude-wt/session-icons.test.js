@@ -104,6 +104,17 @@ describe('createSessionIconStore', () => {
     expect(store.get('A')).toEqual({ icon: 'a.ico' });
   });
 
+  it('__proto__ в файле и в set не трогает Object.prototype', () => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, '{"__proto__": {"icon": "evil.ico", "at": 1}}');
+    const store = createSessionIconStore({ file, now });
+    store.set('__proto__', 'badge', 'evil.ico');
+    expect(({}).icon).toBeUndefined();
+    expect(({}).badge).toBeUndefined();
+    // Запись из файла — обычная, со своим icon; прототип чист.
+    expect(store.get('__proto__')).toEqual({ icon: 'evil.ico', badge: 'evil.ico' });
+  });
+
   it('битый файл — пустое хранилище, а не падение', () => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, '{oops');

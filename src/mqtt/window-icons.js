@@ -234,10 +234,16 @@ function startWindowIcons({
         return [s.id, canOverlay ? want : { ...want, overlay: '' }];
       }));
       windowOf = new Map(sessions.filter(s => s.sessionId).map(s => [s.sessionId, s.id]));
-      store?.touch([...windowOf.keys()]);
       const { ops, next } = planIcons(applied, wanted, present);
       apply(ops, next);
       applied = next;
+      // После расстановки и мимо общего catch: сбой записи хранилища не
+      // должен останавливать автоматические иконки всех окон.
+      try {
+        store?.touch([...windowOf.keys()]);
+      } catch (e) {
+        report(e);
+      }
       publish(cfg, publishedIcons(sessions, wanted, repoRoot));
       lastError = '';
     } catch (e) {

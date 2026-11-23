@@ -11,6 +11,7 @@
  */
 import { listIcons, resolveIcon } from '../claude-wt/session-icons.js';
 import { parseIdPayload } from './claude-commands.js';
+import { isSessionUuid } from '../claude-wt/session-name-helpers.js';
 
 const NO_DIR = 'icons dir not configured (claudeWt.windowIcons.dir)';
 
@@ -22,6 +23,9 @@ function sessionIconCommands({ store, icons, getCfg, log }) {
       const body = parseIdPayload(payload);
       const { id } = body;
       if (!id) return { ok: false, reason: 'no id' };
+      // Только UUID: http без авторизации, а id — ключ хранилища на диске
+      // (`__proto__`, мусорные id тысячами).
+      if (!isSessionUuid(id)) return { ok: false, reason: 'bad id' };
       const name = body[kind];
       if (name !== null && (typeof name !== 'string' || !name)) {
         return { ok: false, reason: `need ${kind} name or null` };

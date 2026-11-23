@@ -435,6 +435,14 @@ describe('startWindowIcons', () => {
       expect([...touch.mock.calls[0][0]]).toEqual(['h', 'c']);
     });
 
+    it('сбой записи хранилища не останавливает расстановку иконок', () => {
+      const store = tmpStore();
+      store.touch = () => { throw new Error('EACCES'); };
+      const { calls, logs } = setup({ ...two, store });
+      expect(calls).toEqual([[1, 'C:/ico/me.ico'], [2, 'C:/ico/exp.ico']]);
+      expect(logs.filter(l => l.includes('EACCES'))).toHaveLength(1);
+    });
+
     it('заданное до перезапуска службы встаёт без повторной команды', () => {
       const store = tmpStore();
       store.set('c', 'badge', PF);

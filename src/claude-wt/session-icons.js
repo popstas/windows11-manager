@@ -48,8 +48,9 @@ function resolveIcon(name, dir) {
 function readEntries(file) {
   try {
     const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
-    const out = {};
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return Object.create(null);
+    // Без прототипа: ключ `__proto__` из файла — обычная запись.
+    const out = Object.create(null);
     for (const [id, e] of Object.entries(data)) {
       if (!e || typeof e !== 'object') continue;
       const entry = { at: Number(e.at) || 0 };
@@ -60,7 +61,7 @@ function readEntries(file) {
   } catch {
     // Нет файла или он битый — начинаем с пустого: заданное агентом не
     // стоит того, чтобы служба иконок не поднялась.
-    return {};
+    return Object.create(null);
   }
 }
 
