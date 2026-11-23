@@ -115,6 +115,8 @@ const CLAUDE_WT_DEFAULTS = {
     headsDir: '',
     head: '',
     headMode: 'badge',
+    // Папка иконок для claude-wt window icon/badge (только .ico, плоско).
+    dir: '',
     profiles: {},
   },
 };
