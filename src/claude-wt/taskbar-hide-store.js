@@ -1,7 +1,7 @@
 /**
  * Явные отметки прятания кнопки сессии (`hide`/`show`), заданные агентом
  * через claude-wt CLI. JSON у службы, ключ — sessionId:
- * `{ mode, hwnd?, sawIdle?, at }`. Журнала спрятанных hwnd нет: старт службы
+ * `{ mode, hwnd?, sawIdle?, at, setAt? }`. Журнала спрятанных hwnd нет: старт службы
  * возвращает кнопки всем окнам терминалов. Писатель один — служба; файл
  * читается раз при создании. Записи без обновления дольше KEEP_MS
  * выбрасываются при записи. Устройство — как у session-icons.js.
@@ -23,6 +23,7 @@ function readEntries(file) {
       const entry = { mode: e.mode, at: Number(e.at) || 0 };
       if (Number.isFinite(e.hwnd)) entry.hwnd = e.hwnd;
       if (e.sawIdle === true) entry.sawIdle = true;
+      if (Number.isFinite(e.setAt)) entry.setAt = e.setAt;
       out[id] = entry;
     }
     return out;
@@ -47,7 +48,14 @@ function createTaskbarHideStore({ file, now = () => Date.now() }) {
     writeFileAtomic(file, JSON.stringify(entries, null, 2));
   }
 
-  const view = ({ at, ...rest }) => rest;
+  // `at` — последнее обновление (для KEEP_MS), `setAt` — постановка отметки:
+  // служебное, в вид отметки не входит.
+  const view = (e) => {
+    const out = { ...e };
+    delete out.at;
+    delete out.setAt;
+    return out;
+  };
 
   return {
     get version() { return version; },
@@ -59,7 +67,7 @@ function createTaskbarHideStore({ file, now = () => Date.now() }) {
 
     set(id, mode) {
       if (mode === null) delete entries[id];
-      else if (MODES.includes(mode)) entries[id] = { mode, at: now() };
+      else if (MODES.includes(mode)) entries[id] = { mode, at: now(), setAt: now() };
       else throw new Error(`unknown mode ${mode}`);
       version += 1;
       write();
@@ -68,9 +76,15 @@ function createTaskbarHideStore({ file, now = () => Date.now() }) {
     patch(id, fields) {
       const e = entries[id];
       if (!e) return;
-      Object.assign(e, fields, { mode: e.mode, at: now() });
+      Object.assign(e, fields, { mode: e.mode, at: now(), setAt: e.setAt });
+      if (e.setAt === undefined) delete e.setAt;
       version += 1;
       write();
+    },
+
+    /** Когда отметку поставили (мс, часы службы); у записей старого файла — нет. */
+    setAtOf(id) {
+      return entries[id]?.setAt;
     },
 
     ids() { return Object.keys(entries); },

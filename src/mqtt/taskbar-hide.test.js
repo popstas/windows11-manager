@@ -2,7 +2,9 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { startTaskbarHide, TASKBAR_HIDE_TTL_MS, TASKBAR_REHIDE_MS } from './taskbar-hide.js';
+import {
+  startTaskbarHide, TASKBAR_HIDE_TTL_MS, TASKBAR_REHIDE_MS, TASKBAR_REHIDE_TICKS_AFTER_TRAY,
+} from './taskbar-hide.js';
 import { createTaskbarHideStore } from '../claude-wt/taskbar-hide-store.js';
 
 const WEZ = 'C:\\Program Files\\WezTerm\\wezterm-gui.exe';
@@ -51,6 +53,7 @@ function setup({ windows, sessions = {}, agents = {}, control = true, withStore 
       .map(w => ({
         id: w.id, sessionId: world.sessions[w.id], title: w.title,
         agentState: world.agents[w.id]?.state ?? null, agentSeen: Boolean(world.agents[w.id]?.seen),
+        agentUpdated: world.agents[w.id]?.updated ?? 1,
       }))),
     getTaskbarWindow: vi.fn(() => world.tray),
     deleteTab: vi.fn(id => { calls.push(['delete', id]); return true; }),
@@ -172,9 +175,6 @@ describe('startTaskbarHide', () => {
     svc.tick();
     expect(calls).toEqual([['delete', 1]]);
     expect(logs.filter(l => l.includes('спрятана')), 'перепрятывание не пишет строку на окно').toEqual([]);
-    reset();
-    svc.tick();
-    expect(calls).toEqual([]);
   });
 
   it('панели задач нет — набор ждёт её, а не прячет в пустоту', () => {
@@ -235,6 +235,47 @@ describe('startTaskbarHide', () => {
     svc.tick();
     expect(calls).toEqual([['delete', 1]]);
     expect(store.get(A)).toEqual({ mode: 'hide', hwnd: 1 });
+  });
+
+  it('явная hide, поставленная до записи хука о новом ходе, не снимается этим ходом', () => {
+    // Живая проверка на nb: hide через 2 с после промпта, а тик ещё читал
+    // review прошлого хода (кеш 3 с, запаздывание хука) — sawIdle, затем
+    // active, и отметка снималась собственным ходом агента.
+    const { svc, world, store, calls, advance, reset } = setup({
+      sessions: { 1: A }, agents: { 1: { state: 'review', seen: true, updated: 50 } },
+    });
+    advance(100_000);
+    store.set(A, 'hide');
+    reset();
+    svc.tick();
+    expect(calls).toEqual([['delete', 1]]);
+    expect(store.get(A), 'review записан до отметки — не пауза').toEqual({ mode: 'hide', hwnd: 1 });
+    world.agents[1] = { state: 'active', updated: 101 };
+    svc.tick();
+    expect(store.get(A), 'свой ход отметку не снимает').toEqual({ mode: 'hide', hwnd: 1 });
+    world.agents[1] = { state: 'review', seen: true, updated: 160 };
+    svc.tick();
+    expect(store.get(A), 'пауза после отметки засчитана').toEqual({ mode: 'hide', hwnd: 1, sawIdle: true });
+    world.agents[1] = { state: 'active', updated: 200 };
+    reset();
+    svc.tick();
+    expect(store.get(A), 'новый ход снял отметку').toBeUndefined();
+    expect(calls).toEqual([['add', 1]]);
+  });
+
+  it('после смены панели перепрятывание повторяется несколько тиков', () => {
+    // Живая проверка на nb: explorer создаёт кнопки через секунды после
+    // Shell_TrayWnd, и одно перепрятывание на первом тике приходилось в пустоту.
+    const { svc, world, calls, reset } = setup({ sessions: { 1: A } });
+    svc.setSet({ sessions: [A] });
+    world.tray = 200;
+    reset();
+    for (let i = 0; i < TASKBAR_REHIDE_TICKS_AFTER_TRAY; i += 1) svc.tick();
+    expect(calls).toEqual(Array(TASKBAR_REHIDE_TICKS_AFTER_TRAY).fill(['delete', 1]));
+    expect(TASKBAR_REHIDE_TICKS_AFTER_TRAY * 3000, 'покрывает ~10 с при тике 3 с').toBeGreaterThanOrEqual(10_000);
+    reset();
+    svc.tick();
+    expect(calls).toEqual([]);
   });
 
   it('состояние агента неизвестно — sawIdle не ставится', () => {

@@ -39,6 +39,23 @@ describe('createTaskbarHideStore', () => {
     expect(make().get('a')).toEqual({ mode: 'show', hwnd: 7 });
   });
 
+  it('время постановки отметки: не сдвигается patch-ем, переживает пересоздание', () => {
+    // По нему служба отличает устаревшее чтение состояния агента от паузы
+    // после отметки (taskbar-hide.js, advanceExplicit).
+    const s = make();
+    expect(s.setAtOf('a')).toBeUndefined();
+    s.set('a', 'hide');
+    clock += 5000;
+    s.patch('a', { hwnd: 1, sawIdle: true });
+    expect(s.setAtOf('a')).toBe(1_000_000);
+    expect(s.get('a'), 'в виде отметки его нет').toEqual({ mode: 'hide', hwnd: 1, sawIdle: true });
+    expect(make().setAtOf('a')).toBe(1_000_000);
+    s.patch('a', { setAt: 1 });
+    expect(s.setAtOf('a'), 'patch его не перезаписывает').toBe(1_000_000);
+    s.set('a', 'hide');
+    expect(s.setAtOf('a'), 'новая постановка — новое время').toBe(1_005_000);
+  });
+
   it('битый файл — пусто', () => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, '{oops');

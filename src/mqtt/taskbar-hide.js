@@ -39,6 +39,11 @@ import { terminalWindowsOf } from './window-icons.js';
 const TASKBAR_HIDE_INTERVAL_MS = 3000;
 const TASKBAR_HIDE_TTL_MS = 20 * 60 * 1000;
 const TASKBAR_REHIDE_MS = 60 * 1000;
+// Сколько тиков подряд прятать заново после смены панели задач: explorer
+// создаёт кнопки через секунды после Shell_TrayWnd (живая проверка на nb), и
+// одно перепрятывание на первом тике уходило в пустоту до страховки в 60 с.
+// 4 тика по 3 с — около 10 с, как `overlayResync` в window-icons.js.
+const TASKBAR_REHIDE_TICKS_AFTER_TRAY = 4;
 // Сколько пропавших из видимых спрятанных окон помнить.
 const LOST_MAX = 64;
 
@@ -74,7 +79,8 @@ function startTaskbarHide({
   let set = new Set();
   let setAt = 0;
   let tray = taskbarWindow();
-  let trayChanged = false;
+  // Сколько тиков ещё прятать заново после смены панели.
+  let trayRehide = 0;
   let lastRehide = now();
   // С последнего полного прохода — для statusOf.
   let windowOf = new Map();
@@ -160,7 +166,7 @@ function startTaskbarHide({
     if (t === tray) return;
     tray = t;
     if (!t) return;
-    trayChanged = true;
+    trayRehide = TASKBAR_REHIDE_TICKS_AFTER_TRAY;
     if (hidden.size) log('taskbar hide: панель задач пересоздана (перезапуск explorer) — кнопки прячутся заново');
   }
 
@@ -181,12 +187,19 @@ function startTaskbarHide({
   }
 
   // Новый ход сессии снимает её `hide`. Неизвестное состояние паузой не
-  // считается: иначе собственный ход агента снял бы отметку.
+  // считается: иначе собственный ход агента снял бы отметку. Не считается ею и
+  // не-active, записанное хуком до постановки отметки: hide через пару секунд
+  // после промпта читал review прошлого хода (кеш loadProgress 3 с, запаздывание
+  // хука — живая проверка на nb), а следующий тик видел active и снимал
+  // отметку собственным ходом агента. `agentUpdated` — секунды, `setAt` — мс.
   function advanceExplicit(agents) {
     for (const a of agents) {
       if (!a.agentState) continue;
       const e = store.get(a.sessionId);
       if (e?.mode !== 'hide') continue;
+      const setAt = store.setAtOf?.(a.sessionId);
+      const stale = Number.isFinite(setAt) && !((a.agentUpdated ?? 0) * 1000 > setAt);
+      if (a.agentState !== 'active' && stale) continue;
       const next = nextExplicit(e, a.agentState);
       if (next === null) store.set(a.sessionId, null);
       else if (next.sawIdle && !e.sawIdle) store.patch(a.sessionId, { sawIdle: true });
@@ -209,7 +222,7 @@ function startTaskbarHide({
       if (!hidden.size) lastRehide = now();
       const current = liveSet();
       if (!current.size && !store.ids().length && !hidden.size) {
-        trayChanged = false;
+        trayRehide = 0;
         windowOf = new Map();
         signaled = new Set();
         return;
@@ -230,11 +243,9 @@ function startTaskbarHide({
       const blinkingSessions = new Set(sessions.filter(s => isBlinking(s.id)).map(s => s.sessionId));
       const signalOf = id => hasSignal(agentOf.get(id)) || blinkingSessions.has(id);
       const wanted = wantedHidden({ sessions, set: current, explicitOf: id => store.get(id), signalOf });
-      const reapply = trayChanged || (hidden.size > 0 && now() - lastRehide >= rehideMs);
-      if (reapply) {
-        trayChanged = false;
-        lastRehide = now();
-      }
+      const reapply = trayRehide > 0 || (hidden.size > 0 && now() - lastRehide >= rehideMs);
+      if (trayRehide > 0) trayRehide -= 1;
+      if (reapply) lastRehide = now();
       const { remove, add } = planTabs(new Set(hidden.keys()), wanted, termIds, reapply);
       // Панели нет (explorer лежит) — прятать некуда: ждать её возвращения.
       if (tray || typeof winMan.getTaskbarWindow !== 'function') hide(remove, new Map(sessions.map(s => [s.id, s.sessionId])));
@@ -315,4 +326,6 @@ function startTaskbarHide({
   };
 }
 
-export { startTaskbarHide, TASKBAR_HIDE_INTERVAL_MS, TASKBAR_HIDE_TTL_MS, TASKBAR_REHIDE_MS };
+export {
+  startTaskbarHide, TASKBAR_HIDE_INTERVAL_MS, TASKBAR_HIDE_TTL_MS, TASKBAR_REHIDE_MS, TASKBAR_REHIDE_TICKS_AFTER_TRAY,
+};
