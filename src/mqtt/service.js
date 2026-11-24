@@ -22,7 +22,9 @@ import { createStatsPublisher } from './stats.js';
 import { startAutoplacer } from './autoplacer.js';
 import { startTaskbarState } from './taskbar.js';
 import { startWindowIcons } from './window-icons.js';
+import { startTaskbarHide } from './taskbar-hide.js';
 import { createSessionIconStore } from '../claude-wt/session-icons.js';
+import { createTaskbarHideStore } from '../claude-wt/taskbar-hide-store.js';
 import { startDaemonWatchdog } from './daemon-watchdog.js';
 import { startInboxes } from './telegram-inbox.js';
 import { startHttpServer } from '../http-server.js';
@@ -86,6 +88,21 @@ function startService({
   // лишь подталкивает — она заводится ниже, отсюда замыкание.
   const sessionIconStore = createSessionIconStore({ file: path.resolve(process.cwd(), 'data', 'session-icons.json') });
   let windowIcons = null;
+
+  // Кнопки окон погашенных сессий прячутся с панели задач: набор от пикера и
+  // явные отметки claude-wt CLI. Вернувшаяся кнопка новая — значок и полоса
+  // ставятся ей заново (resync). Порядок нагружен: стартовый addTab всем окнам
+  // терминалов должен пройти до первого тика иконок, иначе кнопка, оставленная
+  // спрятанной убитым процессом, вернулась бы без значка, а `applied` иконок
+  // считал бы его поставленным. `windowIcons` здесь ещё null — отсюда `?.`.
+  const taskbarHideStore = createTaskbarHideStore({ file: path.resolve(process.cwd(), 'data', 'session-taskbar.json') });
+  const taskbarHide = startTaskbarHide({
+    winMan, log, store: taskbarHideStore,
+    onShown: (ids) => {
+      windowIcons?.resync(ids);
+      taskbar.resync(ids);
+    },
+  });
 
   const router = createRouter(buildCommandMap({
     winMan, config: withBase, log, notify, haExport, publishDone, dock, taskbar,
@@ -159,6 +176,7 @@ function startService({
       autoplacer.stop();
       daemonWatchdog.stop();
       inboxes.stop();
+      taskbarHide.stop();
       taskbar.stop();
       windowIcons.stop();
       client?.end(true);

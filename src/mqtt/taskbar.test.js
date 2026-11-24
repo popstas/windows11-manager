@@ -267,6 +267,26 @@ describe('startTaskbarState', () => {
     svc.tick();
     expect(calls).toEqual([['progress', 1, 0, 0]]);
   });
+
+  it('resync([id]) — вид кнопки этого окна ставится заново', () => {
+    // После addTab кнопка новая: полоса и подсветка старой пропали.
+    const { svc, calls } = setup({
+      windows: [{ id: 1, path: WEZ, title: 'a' }, { id: 2, path: WEZ, title: 'b' }],
+      agents: { 1: 'question', 2: 'active' },
+    });
+    svc.tick();
+    calls.length = 0;
+    svc.tick();
+    expect(calls, 'без resync тик ничего не ставит').toEqual([]);
+    svc.resync([1]);
+    svc.tick();
+    expect(calls).toEqual([['progress', 1, 8, 22], ['flash', 1, true]]);
+  });
+
+  it('заглушка тоже умеет resync', () => {
+    const { svc } = setup({ control: false });
+    expect(() => svc.resync([1])).not.toThrow();
+  });
 });
 
 describe('cacheWarn — мигание перед остыванием кеша', () => {
