@@ -383,7 +383,7 @@ async function start() {
   // через аддон: иначе спрятанное оставалось бы спрятанным до перезапуска
   // explorer, а пункт трея «Show all taskbar buttons» не делал бы ничего
   // (финальное ревью, I2). Ответ с ошибкой — не «не отвечает»: служба жива.
-  async function taskbarCall(route) {
+  async function taskbarCall(route, body = {}) {
     const { getConfig } = await import('./config.js');
     // Без конфига служба не поднялась бы вовсе — но вернуть кнопки всё равно надо.
     let port = 9722;
@@ -396,7 +396,7 @@ async function start() {
       const res = await fetch(`http://127.0.0.1:${port}/claude-wt/${route}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: '{}',
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(1500),
       });
       console.log(await res.text());
@@ -427,7 +427,9 @@ async function start() {
     .description('return every hidden taskbar button but keep the hide marks (the tray runs it before stopping the service)')
     // Трей зовёт это перед kill-ом службы: kill не даёт ей вернуть кнопки
     // самой, а следующий старт спрячет по отметкам снова.
-    .action(() => taskbarCall('taskbar-release'));
+    // `startedAt` — старт этого процесса: служба, поднятая позже, отклонит
+    // запоздалую просьбу и продолжит прятать.
+    .action(() => taskbarCall('taskbar-release', { startedAt: Math.round(performance.timeOrigin) }));
 
   claudeWt
     .command('open-project')

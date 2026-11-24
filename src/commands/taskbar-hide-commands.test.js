@@ -17,6 +17,8 @@ describe('taskbarHideCommands', () => {
       statusOf: vi.fn(() => ({ applied: true })),
       showAll: vi.fn(() => 2),
       release: vi.fn(() => 5),
+      startedAt: 1000,
+      isReleased: vi.fn(() => false),
     };
     logs = [];
     cmds = taskbarHideCommands({ store, service, log: (m, level = 'info') => logs.push(`${level}: ${m}`) });
@@ -62,7 +64,24 @@ describe('taskbarHideCommands', () => {
   });
 
   it('claude-taskbar-release зовёт release, а не showAll: отметки целы', async () => {
-    expect(await cmds['claude-taskbar-release']({})).toEqual({ ok: true, shown: 5 });
+    expect(await cmds['claude-taskbar-release']({ startedAt: 1000 })).toEqual({ ok: true, shown: 5 });
+    expect(await cmds['claude-taskbar-release']('{"startedAt":2000}'), 'строкой тоже').toEqual({ ok: true, shown: 5 });
     expect(service.showAll).not.toHaveBeenCalled();
+  });
+
+  it('claude-taskbar-release без числового startedAt — отказ', async () => {
+    for (const body of [{}, '', { startedAt: null }, { startedAt: '1000' }, { startedAt: Infinity }, '{"startedAt":"x"}']) {
+      expect(await cmds['claude-taskbar-release'](body), JSON.stringify(body))
+        .toEqual({ ok: false, reason: 'need startedAt' });
+    }
+    expect(service.release).not.toHaveBeenCalled();
+  });
+
+  it('claude-taskbar-release от CLI старше службы — отказ', async () => {
+    // Трей не дождался release, человек поднял службу заново, и запоздалый
+    // POST старого CLI выключил бы прятание у свежей службы.
+    expect(await cmds['claude-taskbar-release']({ startedAt: 999 }))
+      .toEqual({ ok: false, reason: 'stale release: service started after the request' });
+    expect(service.release).not.toHaveBeenCalled();
   });
 });

@@ -627,7 +627,7 @@ describe('startTaskbarHide', () => {
     svc.setSet({ sessions: [A] });
     expect(calls.filter(c => c[0] === 'delete')).toEqual([['delete', 1], ['delete', 2]]);
     reset();
-    expect(await cmds['claude-taskbar-release']({})).toEqual({ ok: true, shown: 2 });
+    expect(await cmds['claude-taskbar-release']({ startedAt: 0 })).toEqual({ ok: true, shown: 2 });
     expect(calls).toEqual([['add', 1], ['add', 2]]);
     expect(store.get(B), 'явная отметка цела').toEqual({ mode: 'hide', hwnd: 2 });
     reset();
@@ -641,6 +641,21 @@ describe('startTaskbarHide', () => {
       winMan, log: () => {}, store, setIntervalFn: () => 1, clearIntervalFn: () => {},
     });
     expect(calls).toEqual([['add', 1], ['add', 2], ['delete', 2]]);
+  });
+
+  it('отпущенная служба говорит об этом: statusOf, warn на набор, released в ответе', async () => {
+    // Иначе выключенное прятание выглядело бы исправным: набор «принят», ok.
+    const { svc, store, logs, reset } = setup({ sessions: { 1: A, 2: B } });
+    const cmds = taskbarHideCommands({ store, service: svc, log: (m, level = 'info') => logs.push(`${level}: ${m}`) });
+    expect((await cmds['claude-taskbar-hide']({ sessions: [A] })).released, 'до release — нет флага').toBeUndefined();
+    svc.release();
+    reset();
+    expect(svc.statusOf(A)).toEqual({ applied: false, reason: 'released (restart the service)' });
+    expect(svc.statusOf(B), 'и без отметки').toEqual({ applied: false, reason: 'released (restart the service)' });
+    expect(await cmds['claude-taskbar-hide']({ sessions: [A] })).toEqual({ ok: true, count: 1, released: true });
+    await cmds['claude-taskbar-hide']({ sessions: [A, B] });
+    const warn = 'warn: taskbar hide: служба отпустила кнопки — набор не применяется до перезапуска';
+    expect(logs.filter(l => l === warn), 'одна строка на период').toEqual([warn]);
   });
 
   it('release: сбой addTab одного окна не мешает остальным', () => {

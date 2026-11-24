@@ -41,6 +41,10 @@ import { createDock } from '../claude-wt/dock/slots.js';
  * лог, ради читаемости которого и заведено логирование входящих.
  */
 const FOREIGN_COMMANDS = new Set(['sleep', 'restart', 'restart_restore', 'shutdown']);
+// Команды только для http: release выключает прятание кнопок до перезапуска
+// службы, и публикация в `<base>/claude-taskbar-release` (retained — на каждом
+// старте) делала бы это молча. Зовёт его трей через CLI, по http.
+const HTTP_ONLY_COMMANDS = new Set(['claude-taskbar-release']);
 
 function startService({
   winMan, config, log, env = process.env,
@@ -158,6 +162,10 @@ function startService({
         // Промпт `terminal-prompt` — длиной и началом (`redactPayload`).
         log(`< ${topic ?? command}: ${redactPayload(payload)}`);
         if (FOREIGN_COMMANDS.has(command)) return;
+        if (HTTP_ONLY_COMMANDS.has(command)) {
+          log(`MQTT ${command}: только по http — пропущено`, 'warn');
+          return;
+        }
         const res = await router.dispatch(command, payload);
         if (!res.ok) log(`MQTT ${command}: ${res.error}`, 'warn');
       },
@@ -191,4 +199,4 @@ function startService({
   };
 }
 
-export { startService, FOREIGN_COMMANDS };
+export { startService, FOREIGN_COMMANDS, HTTP_ONLY_COMMANDS };

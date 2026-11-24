@@ -91,6 +91,8 @@ function startTaskbarHide({
     statusOf: () => ({ applied: false, reason: 'no taskbar tab support' }),
     showAll: () => 0,
     release: () => 0,
+    isReleased: () => false,
+    startedAt: now(),
     stop() {},
   };
   if (typeof winMan?.hasTabControl !== 'function') return off;
@@ -130,7 +132,13 @@ function startTaskbarHide({
   // при свёрнутом окне — такое окно он не прячет, пока не придёт набор новее.
   const restoredAt = new Map();
   // После release() служба не прячет ничего до перезапуска: её вот-вот убьют.
+  // Это видно и снаружи — statusOf, warn на набор, `released` в ответе
+  // claude-taskbar-hide: иначе выключенное прятание выглядело бы исправным.
   let released = false;
+  let releasedWarned = false;
+  // Когда служба поднялась: release от CLI, запущенного раньше, — запоздалый
+  // (claude-taskbar-release сверяет его `startedAt`).
+  const startedAt = now();
 
   function report(e) {
     if (e.message === lastError) return;
@@ -358,6 +366,10 @@ function startTaskbarHide({
 
   /** Набор от пикера `{sessions: [...]}` целиком заменяет прежний. Число сессий в нём. */
   function setSet(body) {
+    if (released && !releasedWarned) {
+      releasedWarned = true;
+      log('taskbar hide: служба отпустила кнопки — набор не применяется до перезапуска', 'warn');
+    }
     set = parseHideSet(body);
     setAt = now();
     tick();
@@ -366,6 +378,7 @@ function startTaskbarHide({
 
   // Встала ли явная отметка сессии на её окне — по последнему проходу.
   function statusOf(sessionId) {
+    if (released) return { applied: false, reason: 'released (restart the service)' };
     const e = store.get(sessionId);
     // Без отметки решает пикер: снятие встало всегда.
     if (!e) return { applied: true };
@@ -450,6 +463,8 @@ function startTaskbarHide({
     statusOf,
     showAll,
     release,
+    isReleased: () => released,
+    startedAt,
     stop() {
       if (!released) clearIntervalFn(timer);
       released = true;

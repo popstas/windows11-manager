@@ -3,9 +3,14 @@
  * `claude-taskbar-hide {sessions}` — набор от пикера (раз в 5 минут),
  * `claude-window-taskbar {id, taskbar: 'hide'|'show'|null}` — явная отметка из
  * claude-wt CLI, `claude-taskbar-show-all {}` — вернуть все кнопки (пункт
- * трея), `claude-taskbar-release {}` — вернуть все кнопки, сохранив отметки, и
- * больше не прятать (трей, перед kill-ом службы). Доступны и по http
- * (`/claude-wt/...`), и по MQTT `<base>/<команда>`.
+ * трея), `claude-taskbar-release {startedAt}` — вернуть все кнопки, сохранив
+ * отметки, и больше не прятать (трей, перед kill-ом службы). Доступны по http
+ * (`/claude-wt/...`) и по MQTT `<base>/<команда>` — кроме release: он только
+ * по http (`HTTP_ONLY_COMMANDS` в service.js).
+ *
+ * `startedAt` у release — мс старта процесса CLI. Служба, поднявшаяся позже,
+ * его отклоняет: трей мог не дождаться release, человек — поднять службу
+ * заново, и запоздалый POST выключил бы прятание у свежей службы.
  */
 import { parseIdPayload } from './claude-commands.js';
 import { isSessionUuid } from '../claude-wt/session-name-helpers.js';
@@ -21,7 +26,7 @@ function taskbarHideCommands({ store, service, log }) {
         lastCount = count;
         log(`claude-wt taskbar hide: ${count} session(s)`);
       }
-      return { ok: true, count };
+      return service.isReleased?.() ? { ok: true, count, released: true } : { ok: true, count };
     },
     async 'claude-window-taskbar'(payload) {
       const body = parseIdPayload(payload);
@@ -46,7 +51,10 @@ function taskbarHideCommands({ store, service, log }) {
       log(`claude-wt taskbar show all: ${shown} button(s)`);
       return { ok: true, shown };
     },
-    async 'claude-taskbar-release'() {
+    async 'claude-taskbar-release'(payload) {
+      const { startedAt } = parseIdPayload(payload);
+      if (typeof startedAt !== 'number' || !Number.isFinite(startedAt)) return { ok: false, reason: 'need startedAt' };
+      if (service.startedAt > startedAt) return { ok: false, reason: 'stale release: service started after the request' };
       return { ok: true, shown: service.release() };
     },
   };
