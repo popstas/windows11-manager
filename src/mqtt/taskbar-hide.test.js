@@ -162,9 +162,9 @@ describe('startTaskbarHide', () => {
     expect(calls).toEqual([['delete', 1]]);
     expect(logs).toContain(`info: taskbar hide: 1 ${A} спрятана`);
     reset();
-    world.windows[0].minimized = false;
+    advance(10 * 60_000);
     svc.tick();
-    expect(calls, 'спрятанная остаётся спрятанной и развёрнутой').toEqual([]);
+    expect(calls.filter(c => c[0] === 'add'), 'свёрнутая спрятанная остаётся спрятанной').toEqual([]);
   });
 
   it('развёрнутое погашенное прячется сразу', () => {
@@ -203,13 +203,74 @@ describe('startTaskbarHide', () => {
     expect(of1()).toEqual([['delete', 1]]);
   });
 
-  it('свёрнутость спрашивается только у кандидатов на прятание', () => {
-    // Бюджет опроса: ни окнам вне набора, ни уже спрятанным.
+  it('развернул окно, ждавшее минуту, — не прячется до нового набора', () => {
+    // Набор пикера считался при свёрнутом окне: разворот — человек смотрит.
+    const { svc, world, calls, advance, reset } = setup({ sessions: { 1: A } });
+    world.windows[0].minimized = true;
+    svc.setSet({ sessions: [A] });
+    advance(30_000);
+    svc.tick();
+    world.windows[0].minimized = false;
+    reset();
+    svc.tick();
+    advance(5 * 60_000);
+    svc.tick();
+    expect(calls, 'старый набор развёрнутое не прячет').toEqual([]);
+  });
+
+  it('спрятанное свёрнутое развернули — кнопка вернулась до нового набора', () => {
+    const { svc, world, calls, shown, logs, advance, reset } = setup({ sessions: { 1: A } });
+    world.windows[0].minimized = true;
+    svc.setSet({ sessions: [A] });
+    advance(MINIMIZED_HIDE_DELAY_MS);
+    svc.tick();
+    expect(calls.filter(c => c[0] === 'delete')).toEqual([['delete', 1]]);
+    world.windows[0].minimized = false;
+    reset();
+    advance(1000);
+    svc.tick();
+    expect(calls).toEqual([['add', 1]]);
+    expect(shown).toEqual([[1]]);
+    expect(logs).toContain(`info: taskbar hide: 1 ${A} возвращена`);
+    reset();
+    svc.tick();
+    expect(calls).toEqual([]);
+  });
+
+  it('новый набор после разворота снова решает', () => {
+    const { svc, world, calls, advance, reset } = setup({ sessions: { 1: A } });
+    world.windows[0].minimized = true;
+    svc.setSet({ sessions: [A] });
+    advance(MINIMIZED_HIDE_DELAY_MS);
+    svc.tick();
+    world.windows[0].minimized = false;
+    advance(1000);
+    svc.tick();
+    reset();
+    advance(1000);
+    // Пикер пересчитал после разворота и всё ещё считает сессию погашенной.
+    svc.setSet({ sessions: [A] });
+    expect(calls).toEqual([['delete', 1]]);
+  });
+
+  it('явная hide развёрнутого после сворачивания — по-прежнему спрятана', () => {
+    const { svc, world, store, calls, reset } = setup({ sessions: { 1: A } });
+    world.windows[0].minimized = true;
+    store.set(A, 'hide');
+    svc.tick();
+    world.windows[0].minimized = false;
+    reset();
+    svc.tick();
+    expect(calls).toEqual([]);
+  });
+
+  it('свёрнутость спрашивается только у кандидатов на прятание и спрятанных', () => {
+    // Бюджет опроса: окнам вне набора — никогда.
     const { svc, world } = setup({ sessions: { 1: A, 2: B } });
     svc.setSet({ sessions: [A] });
     expect(world.boundsOf).toEqual([1]);
     svc.tick();
-    expect(world.boundsOf).toEqual([1]);
+    expect(world.boundsOf, 'спрятанное — следить за разворотом').toEqual([1, 1]);
   });
 
   it('набор старше 20 минут — кнопки вернулись', () => {

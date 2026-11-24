@@ -124,6 +124,11 @@ function startTaskbarHide({
   // hwnd → когда служба впервые увидела окно свёрнутым (подряд). Сворачивания
   // до старта службы она не видела — отсчёт идёт от первого взгляда.
   let minimizedSince = new Map();
+  // Окна из набора, которые служба видела свёрнутыми на прошлой проверке.
+  let wasMinimized = new Set();
+  // hwnd → когда окно развернули. Набор пикера, пришедший раньше, считался
+  // при свёрнутом окне — такое окно он не прячет, пока не придёт набор новее.
+  const restoredAt = new Map();
   // После release() служба не прячет ничего до перезапуска: её вот-вот убьют.
   let released = false;
 
@@ -250,22 +255,38 @@ function startTaskbarHide({
     }
   }
 
-  // Свёрнутое окно, которое прячет только набор, ждёт MINIMIZED_HIDE_DELAY_MS
-  // свёрнутым подряд. Свёрнутость (getBounds, без сети) спрашивается лишь у
-  // ещё не спрятанных кандидатов из набора; отсчёт прочих забывается.
-  function holdMinimized(wanted, sessions) {
+  // Свёрнутые окна, которые прячет только набор (явная hide — сразу и всегда):
+  // - свёрнутое ждёт MINIMIZED_HIDE_DELAY_MS свёрнутым подряд (решение Стаса,
+  //   24.11), уже спрятанное остаётся спрятанным;
+  // - развёрнутое после свёрнутого — человек на него смотрит, а набор пикера
+  //   считался при свёрнутом: не прячется (спрятанное возвращается), пока не
+  //   придёт набор новее разворота, — тот решает заново (решение по ревью).
+  // Свёрнутость (getBounds, без сети) спрашивается лишь у этих окон: кандидатов
+  // из набора и спрятанных; отсчёт прочих забывается.
+  function holdMinimized(wanted, sessions, termIds) {
     const sessionOf = new Map(sessions.map(s => [s.id, s.sessionId]));
-    const next = new Map();
+    const nextSince = new Map();
+    const nextMin = new Set();
     const t = now();
+    for (const [id, at] of [...restoredAt]) if (at < setAt || !termIds.has(id)) restoredAt.delete(id);
     for (const id of [...wanted]) {
-      if (hidden.has(id) || store.get(sessionOf.get(id))?.mode === 'hide') continue;
+      if (store.get(sessionOf.get(id))?.mode === 'hide') continue;
       const w = terminalWindows.windowOf(id);
-      if (!w || !isMinimized(w.getBounds())) continue;
-      const since = minimizedSince.get(id) ?? t;
-      next.set(id, since);
-      if (t - since < MINIMIZED_HIDE_DELAY_MS) wanted.delete(id);
+      if (!w) continue;
+      if (isMinimized(w.getBounds())) {
+        nextMin.add(id);
+        restoredAt.delete(id);
+        if (hidden.has(id)) continue;
+        const since = minimizedSince.get(id) ?? t;
+        nextSince.set(id, since);
+        if (t - since < MINIMIZED_HIDE_DELAY_MS) wanted.delete(id);
+        continue;
+      }
+      if (wasMinimized.has(id)) restoredAt.set(id, t);
+      if (restoredAt.has(id)) wanted.delete(id);
     }
-    minimizedSince = next;
+    minimizedSince = nextSince;
+    wasMinimized = nextMin;
   }
 
   function tick() {
@@ -287,6 +308,8 @@ function startTaskbarHide({
       if (!current.size && !store.ids().length && !hidden.size) {
         trayRehide = 0;
         minimizedSince = new Map();
+        wasMinimized = new Set();
+        restoredAt.clear();
         windowOf = new Map();
         signaled = new Set();
         return;
@@ -307,7 +330,7 @@ function startTaskbarHide({
       const blinkingSessions = new Set(sessions.filter(s => isBlinking(s.id)).map(s => s.sessionId));
       const signalOf = id => hasSignal(agentOf.get(id)) || blinkingSessions.has(id);
       const wanted = wantedHidden({ sessions, set: current, explicitOf: id => store.get(id), signalOf });
-      holdMinimized(wanted, sessions);
+      holdMinimized(wanted, sessions, termIds);
       const reapply = trayRehide > 0 || (hidden.size > 0 && now() - lastRehide >= rehideMs);
       if (trayRehide > 0) trayRehide -= 1;
       if (reapply) lastRehide = now();
