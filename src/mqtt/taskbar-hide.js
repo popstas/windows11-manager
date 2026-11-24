@@ -38,6 +38,7 @@ import {
   parseHideSet, hasSignal, nextExplicit, wantedHidden, planTabs,
 } from '../claude-wt/taskbar-hide-helpers.js';
 import { terminalWindowsOf } from './window-icons.js';
+import { isMinimized } from '../windows-helpers.js';
 
 const TASKBAR_HIDE_INTERVAL_MS = 3000;
 const TASKBAR_HIDE_TTL_MS = 20 * 60 * 1000;
@@ -54,6 +55,11 @@ const LOST_MAX = 64;
 // Дальше простой засчитывается паузой как есть — иначе hide на давно
 // простаивающей сессии пережила бы её следующий ход (хук до промпта молчит).
 const TASKBAR_STALE_GRACE_MS = 10 * 1000;
+// Свёрнутое окно из набора пикера прячется, только пробыв свёрнутым столько
+// подряд (решение Стаса, 24.11: «прятать через минуту после сворачивания, а
+// не сразу»). Явная hide и развёрнутое погашенное — сразу, спрятанное
+// остаётся спрятанным.
+const MINIMIZED_HIDE_DELAY_MS = 60 * 1000;
 
 /**
  * addTab всем видимым окнам терминалов в обход службы — для CLI, когда служба
@@ -115,6 +121,9 @@ function startTaskbarHide({
   let signaled = new Set();
   let lastError = '';
   const failed = new Set();
+  // hwnd → когда служба впервые увидела окно свёрнутым (подряд). Сворачивания
+  // до старта службы она не видела — отсчёт идёт от первого взгляда.
+  let minimizedSince = new Map();
   // После release() служба не прячет ничего до перезапуска: её вот-вот убьют.
   let released = false;
 
@@ -241,6 +250,24 @@ function startTaskbarHide({
     }
   }
 
+  // Свёрнутое окно, которое прячет только набор, ждёт MINIMIZED_HIDE_DELAY_MS
+  // свёрнутым подряд. Свёрнутость (getBounds, без сети) спрашивается лишь у
+  // ещё не спрятанных кандидатов из набора; отсчёт прочих забывается.
+  function holdMinimized(wanted, sessions) {
+    const sessionOf = new Map(sessions.map(s => [s.id, s.sessionId]));
+    const next = new Map();
+    const t = now();
+    for (const id of [...wanted]) {
+      if (hidden.has(id) || store.get(sessionOf.get(id))?.mode === 'hide') continue;
+      const w = terminalWindows.windowOf(id);
+      if (!w || !isMinimized(w.getBounds())) continue;
+      const since = minimizedSince.get(id) ?? t;
+      next.set(id, since);
+      if (t - since < MINIMIZED_HIDE_DELAY_MS) wanted.delete(id);
+    }
+    minimizedSince = next;
+  }
+
   function tick() {
     if (released) return;
     try {
@@ -259,6 +286,7 @@ function startTaskbarHide({
       const current = liveSet();
       if (!current.size && !store.ids().length && !hidden.size) {
         trayRehide = 0;
+        minimizedSince = new Map();
         windowOf = new Map();
         signaled = new Set();
         return;
@@ -279,6 +307,7 @@ function startTaskbarHide({
       const blinkingSessions = new Set(sessions.filter(s => isBlinking(s.id)).map(s => s.sessionId));
       const signalOf = id => hasSignal(agentOf.get(id)) || blinkingSessions.has(id);
       const wanted = wantedHidden({ sessions, set: current, explicitOf: id => store.get(id), signalOf });
+      holdMinimized(wanted, sessions);
       const reapply = trayRehide > 0 || (hidden.size > 0 && now() - lastRehide >= rehideMs);
       if (trayRehide > 0) trayRehide -= 1;
       if (reapply) lastRehide = now();
@@ -411,5 +440,5 @@ function startTaskbarHide({
 export {
   startTaskbarHide, returnTerminalTabs,
   TASKBAR_HIDE_INTERVAL_MS, TASKBAR_HIDE_TTL_MS, TASKBAR_REHIDE_MS, TASKBAR_REHIDE_TICKS_AFTER_TRAY,
-  TASKBAR_STALE_GRACE_MS,
+  TASKBAR_STALE_GRACE_MS, MINIMIZED_HIDE_DELAY_MS,
 };

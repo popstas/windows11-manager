@@ -58,11 +58,11 @@ const UNKNOWN = '\0unknown';
  * `present` — все видимые hwnd. Путь к exe читается один раз на hwnd
  * (getWindowById), пропавший hwnd забывается: Windows переиспользует хэндлы.
  * Кеш вердиктов свой у каждого вызова — им пользуется и служба прятания
- * кнопок (taskbar-hide.js).
+ * кнопок (taskbar-hide.js); `windowOf(id)` отдаёт из него объект окна.
  */
 function terminalWindowsOf(winMan) {
   const verdicts = new Map();
-  return function terminalWindows() {
+  function terminalWindows() {
     const ids = winMan.getVisibleWindowIds();
     const present = new Set(ids);
     for (const id of [...verdicts.keys()]) if (!present.has(id)) verdicts.delete(id);
@@ -76,7 +76,11 @@ function terminalWindowsOf(winMan) {
       if (w) windows.push({ id, title: w.getTitle() });
     }
     return { windows, present };
-  };
+  }
+  // Объект окна из кеша прошлого вызова (null — не терминал или пропал):
+  // taskbar-hide.js спрашивает у него getBounds() без второго getWindowById.
+  terminalWindows.windowOf = id => verdicts.get(id) ?? null;
+  return terminalWindows;
 }
 
 function writeIconsSidecar(cfg, icons) {

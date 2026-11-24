@@ -5,6 +5,7 @@ import path from 'node:path';
 import {
   startTaskbarHide, returnTerminalTabs,
   TASKBAR_HIDE_TTL_MS, TASKBAR_REHIDE_MS, TASKBAR_REHIDE_TICKS_AFTER_TRAY, TASKBAR_STALE_GRACE_MS,
+  MINIMIZED_HIDE_DELAY_MS,
 } from './taskbar-hide.js';
 import { createTaskbarHideStore } from '../claude-wt/taskbar-hide-store.js';
 import { taskbarHideCommands } from '../commands/taskbar-hide-commands.js';
@@ -38,13 +39,21 @@ function setup({ windows, sessions = {}, agents = {}, control = true, withStore 
     agents,
     tray: 100,
     blinking: new Set(),
+    boundsOf: [],
   };
   const winMan = {
     hasTabControl: () => control,
     getVisibleWindowIds: vi.fn(() => world.windows.filter(w => !w.invisible).map(w => w.id)),
     getWindowById: vi.fn(id => {
       const w = world.windows.find(x => x.id === id);
-      return w ? { path: w.path, getTitle: () => w.title } : null;
+      // Свёрнутое окно Windows паркует на x = -32000 (isMinimized).
+      return w ? {
+        path: w.path, getTitle: () => w.title,
+        getBounds: () => {
+          world.boundsOf.push(w.id);
+          return { x: w.minimized ? -32000 : 0, y: 0, width: 800, height: 600 };
+        },
+      } : null;
     }),
     isTerminalWindow: w => w.path === WEZ || w.path === WT,
     claudeWtWindowSessions: vi.fn(list => list
@@ -136,6 +145,71 @@ describe('startTaskbarHide', () => {
     world.blinking.clear();
     svc.tick();
     expect(calls, 'мигание кончилось — набор снова прячет').toEqual([['delete', 1], ['delete', 2]]);
+  });
+
+  it('свёрнутое окно из набора прячется только через минуту', () => {
+    // Решение Стаса (24.11): свёрнутое прячется через минуту после сворачивания.
+    const { svc, world, calls, logs, advance, reset } = setup({ sessions: { 1: A } });
+    world.windows[0].minimized = true;
+    reset();
+    svc.setSet({ sessions: [A] });
+    expect(calls).toEqual([]);
+    advance(MINIMIZED_HIDE_DELAY_MS - 1);
+    svc.tick();
+    expect(calls).toEqual([]);
+    advance(1);
+    svc.tick();
+    expect(calls).toEqual([['delete', 1]]);
+    expect(logs).toContain(`info: taskbar hide: 1 ${A} спрятана`);
+    reset();
+    world.windows[0].minimized = false;
+    svc.tick();
+    expect(calls, 'спрятанная остаётся спрятанной и развёрнутой').toEqual([]);
+  });
+
+  it('развёрнутое погашенное прячется сразу', () => {
+    const { svc, calls, reset } = setup({ sessions: { 1: A } });
+    reset();
+    svc.setSet({ sessions: [A] });
+    expect(calls).toEqual([['delete', 1]]);
+  });
+
+  it('явная hide свёрнутого — сразу', () => {
+    const { svc, world, store, calls, reset } = setup({ sessions: { 1: A } });
+    world.windows[0].minimized = true;
+    store.set(A, 'hide');
+    reset();
+    svc.tick();
+    expect(calls).toEqual([['delete', 1]]);
+  });
+
+  it('развернул до минуты — отсчёт сначала', () => {
+    const { svc, world, calls, advance } = setup({ sessions: { 1: A, 2: B } });
+    world.windows[0].minimized = true;
+    svc.setSet({ sessions: [A, B] });
+    advance(30_000);
+    // Развернул: пикер счёл сессию живой и убрал из набора.
+    world.windows[0].minimized = false;
+    svc.setSet({ sessions: [B] });
+    advance(10_000);
+    world.windows[0].minimized = true;
+    svc.setSet({ sessions: [A, B] });
+    advance(MINIMIZED_HIDE_DELAY_MS - 1);
+    svc.tick();
+    const of1 = () => calls.filter(c => c[0] === 'delete' && c[1] === 1);
+    expect(of1(), 'минута считается от нового сворачивания').toEqual([]);
+    advance(1);
+    svc.tick();
+    expect(of1()).toEqual([['delete', 1]]);
+  });
+
+  it('свёрнутость спрашивается только у кандидатов на прятание', () => {
+    // Бюджет опроса: ни окнам вне набора, ни уже спрятанным.
+    const { svc, world } = setup({ sessions: { 1: A, 2: B } });
+    svc.setSet({ sessions: [A] });
+    expect(world.boundsOf).toEqual([1]);
+    svc.tick();
+    expect(world.boundsOf).toEqual([1]);
   });
 
   it('набор старше 20 минут — кнопки вернулись', () => {
