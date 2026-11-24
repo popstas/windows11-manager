@@ -16,6 +16,7 @@ describe('taskbarHideCommands', () => {
       setSet: vi.fn(() => 3),
       statusOf: vi.fn(() => ({ applied: true })),
       showAll: vi.fn(() => 2),
+      release: vi.fn(() => 5),
     };
     logs = [];
     cmds = taskbarHideCommands({ store, service, log: (m, level = 'info') => logs.push(`${level}: ${m}`) });
@@ -58,5 +59,10 @@ describe('taskbarHideCommands', () => {
 
   it('claude-taskbar-show-all возвращает shown', async () => {
     expect(await cmds['claude-taskbar-show-all']({})).toEqual({ ok: true, shown: 2 });
+  });
+
+  it('claude-taskbar-release зовёт release, а не showAll: отметки целы', async () => {
+    expect(await cmds['claude-taskbar-release']({})).toEqual({ ok: true, shown: 5 });
+    expect(service.showAll).not.toHaveBeenCalled();
   });
 });

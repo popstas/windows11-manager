@@ -3,7 +3,9 @@
  * `claude-taskbar-hide {sessions}` — набор от пикера (раз в 5 минут),
  * `claude-window-taskbar {id, taskbar: 'hide'|'show'|null}` — явная отметка из
  * claude-wt CLI, `claude-taskbar-show-all {}` — вернуть все кнопки (пункт
- * трея). Доступны и по http (`/claude-wt/...`), и по MQTT `<base>/<команда>`.
+ * трея), `claude-taskbar-release {}` — вернуть все кнопки, сохранив отметки, и
+ * больше не прятать (трей, перед kill-ом службы). Доступны и по http
+ * (`/claude-wt/...`), и по MQTT `<base>/<команда>`.
  */
 import { parseIdPayload } from './claude-commands.js';
 import { isSessionUuid } from '../claude-wt/session-name-helpers.js';
@@ -43,6 +45,9 @@ function taskbarHideCommands({ store, service, log }) {
       const shown = service.showAll();
       log(`claude-wt taskbar show all: ${shown} button(s)`);
       return { ok: true, shown };
+    },
+    async 'claude-taskbar-release'() {
+      return { ok: true, shown: service.release() };
     },
   };
 }

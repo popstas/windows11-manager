@@ -12,6 +12,14 @@ describe('parseHideSet', () => {
     expect(parseHideSet(null).size).toBe(0);
     expect(parseHideSet({ sessions: 'x' }).size).toBe(0);
   });
+  it('строка JSON разбирается: так тело приходит по MQTT', () => {
+    expect(parseHideSet(JSON.stringify({ sessions: [U, 'x', V] }))).toEqual(new Set([U, V]));
+  });
+  it('кривой JSON и пустая строка — пустой набор', () => {
+    expect(parseHideSet('{sessions:').size).toBe(0);
+    expect(parseHideSet('').size).toBe(0);
+    expect(parseHideSet('"x"').size).toBe(0);
+  });
 });
 
 describe('hasSignal', () => {

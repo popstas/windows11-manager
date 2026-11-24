@@ -42,6 +42,7 @@ const ROUTES = {
   '/claude-wt/taskbar-hide': 'claude-taskbar-hide',
   '/claude-wt/window-taskbar': 'claude-window-taskbar',
   '/claude-wt/taskbar-show-all': 'claude-taskbar-show-all',
+  '/claude-wt/taskbar-release': 'claude-taskbar-release',
 };
 
 function routeToCommand(url) {

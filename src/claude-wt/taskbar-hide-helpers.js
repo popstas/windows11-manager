@@ -6,10 +6,18 @@
  */
 import { isSessionUuid } from './session-name-helpers.js';
 
-/** Набор sessionId из тела запроса `{ sessions: [...] }`; прочее отброшено. */
+/**
+ * Набор sessionId из тела запроса `{ sessions: [...] }`; прочее отброшено. По
+ * MQTT тело приходит строкой (client.js), по http — объектом: строка
+ * разбирается, как в `parseCacheWarn`, а кривой JSON даёт пустой набор.
+ */
 function parseHideSet(body) {
   const out = new Set();
-  const list = body && typeof body === 'object' ? body.sessions : null;
+  let src = body;
+  if (typeof body === 'string') {
+    try { src = JSON.parse(body || '{}'); } catch { return out; }
+  }
+  const list = src && typeof src === 'object' ? src.sessions : null;
   if (!Array.isArray(list)) return out;
   for (const id of list) if (isSessionUuid(id)) out.add(id);
   return out;

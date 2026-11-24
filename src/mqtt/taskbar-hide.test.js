@@ -3,9 +3,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  startTaskbarHide, TASKBAR_HIDE_TTL_MS, TASKBAR_REHIDE_MS, TASKBAR_REHIDE_TICKS_AFTER_TRAY,
+  startTaskbarHide, returnTerminalTabs,
+  TASKBAR_HIDE_TTL_MS, TASKBAR_REHIDE_MS, TASKBAR_REHIDE_TICKS_AFTER_TRAY, TASKBAR_STALE_GRACE_MS,
 } from './taskbar-hide.js';
 import { createTaskbarHideStore } from '../claude-wt/taskbar-hide-store.js';
+import { taskbarHideCommands } from '../commands/taskbar-hide-commands.js';
 
 const WEZ = 'C:\\Program Files\\WezTerm\\wezterm-gui.exe';
 const WT = 'C:\\WindowsTerminal.exe';
@@ -263,6 +265,30 @@ describe('startTaskbarHide', () => {
     expect(calls).toEqual([['add', 1]]);
   });
 
+  it('явная hide на простаивающей сессии снимается её следующим ходом', () => {
+    // Голова прячет ребёнка, закончившего минуты назад: хук до следующего
+    // промпта ничего не пишет, и чтение старше отметки — единственное. Его
+    // отбрасывают только первые TASKBAR_STALE_GRACE_MS, дальше это пауза.
+    const { svc, world, store, calls, advance, reset } = setup({
+      sessions: { 1: A }, agents: { 1: { state: 'review', seen: true, updated: 50 } },
+    });
+    advance(100_000);
+    store.set(A, 'hide');
+    reset();
+    svc.tick();
+    expect(calls).toEqual([['delete', 1]]);
+    expect(store.get(A), 'в пределах грации чтение старое').toEqual({ mode: 'hide', hwnd: 1 });
+    advance(TASKBAR_STALE_GRACE_MS);
+    svc.tick();
+    expect(store.get(A), 'после грации простой — пауза').toEqual({ mode: 'hide', hwnd: 1, sawIdle: true });
+    world.agents[1] = { state: 'active', updated: 200 };
+    reset();
+    svc.tick();
+    expect(store.get(A), 'следующий ход снял отметку').toBeUndefined();
+    expect(calls).toEqual([['add', 1]]);
+    expect(TASKBAR_STALE_GRACE_MS, 'больше кеша loadProgress (3 с) и запаздывания хука').toBe(10_000);
+  });
+
   it('после смены панели перепрятывание повторяется несколько тиков', () => {
     // Живая проверка на nb: explorer создаёт кнопки через секунды после
     // Shell_TrayWnd, и одно перепрятывание на первом тике приходилось в пустоту.
@@ -448,6 +474,49 @@ describe('startTaskbarHide', () => {
     expect(calls).toEqual([['add', 1], ['add', 2]]);
   });
 
+  it('claude-taskbar-hide строкой (MQTT) прячет', async () => {
+    // client.js отдаёт роутеру payload строкой — объект приходит только по http.
+    const { svc, store, calls, logs, reset } = setup({ sessions: { 1: A, 2: B } });
+    const cmds = taskbarHideCommands({ store, service: svc, log: m => logs.push(m) });
+    reset();
+    expect(await cmds['claude-taskbar-hide'](JSON.stringify({ sessions: [A] }))).toEqual({ ok: true, count: 1 });
+    expect(calls).toEqual([['delete', 1]]);
+  });
+
+  it('release возвращает кнопки, хранит отметки и больше не прячет', async () => {
+    // Трей гасит службу kill-ом: перед ним он просит release, и отметки
+    // должны дожить до следующего старта.
+    const { svc, store, winMan, calls, logs, reset } = setup({ sessions: { 1: A, 2: B } });
+    const cmds = taskbarHideCommands({ store, service: svc, log: m => logs.push(m) });
+    store.set(B, 'hide');
+    svc.setSet({ sessions: [A] });
+    expect(calls.filter(c => c[0] === 'delete')).toEqual([['delete', 1], ['delete', 2]]);
+    reset();
+    expect(await cmds['claude-taskbar-release']({})).toEqual({ ok: true, shown: 2 });
+    expect(calls).toEqual([['add', 1], ['add', 2]]);
+    expect(store.get(B), 'явная отметка цела').toEqual({ mode: 'hide', hwnd: 2 });
+    reset();
+    svc.tick();
+    svc.setSet({ sessions: [A, B] });
+    expect(calls, 'после release служба не прячет до перезапуска').toEqual([]);
+
+    // Следующий старт службы с тем же хранилищем прячет по отметке снова.
+    reset();
+    startTaskbarHide({
+      winMan, log: () => {}, store, setIntervalFn: () => 1, clearIntervalFn: () => {},
+    });
+    expect(calls).toEqual([['add', 1], ['add', 2], ['delete', 2]]);
+  });
+
+  it('release: сбой addTab одного окна не мешает остальным', () => {
+    const { svc, winMan, calls, reset } = setup({ sessions: { 1: A, 2: B } });
+    svc.setSet({ sessions: [A, B] });
+    reset();
+    winMan.addTab.mockImplementationOnce(() => { throw new Error('boom'); });
+    expect(svc.release()).toBe(1);
+    expect(calls).toEqual([['add', 2]]);
+  });
+
   it('пустой набор и нет отметок — сеть не трогается', () => {
     const { svc, winMan } = setup({ sessions: { 1: A } });
     svc.tick();
@@ -512,5 +581,23 @@ describe('startTaskbarHide', () => {
     winMan.claudeWtWindowSessions.mockImplementation(() => { throw new Error('V: недоступен'); });
     expect(() => { svc.tick(); svc.tick(); }).not.toThrow();
     expect(logs.filter(l => l.includes('V: недоступен'))).toEqual(['warn: taskbar hide: V: недоступен']);
+  });
+});
+
+describe('returnTerminalTabs', () => {
+  it('addTab всем окнам терминалов в обход службы', () => {
+    // CLI зовёт это, когда служба не отвечает: убита из трея или упала.
+    const { winMan, calls, reset } = setup({ sessions: { 1: A } });
+    reset();
+    winMan.addTab.mockImplementationOnce(() => { throw new Error('boom'); });
+    expect(returnTerminalTabs(winMan)).toEqual({ supported: true, shown: 1 });
+    expect(winMan.addTab).toHaveBeenLastCalledWith(2);
+    expect(calls, 'окно не терминала не трогается').toEqual([['add', 2]]);
+  });
+
+  it('без DeleteTab/AddTab в аддоне — не поддерживается', () => {
+    const { winMan } = setup({ control: false });
+    expect(returnTerminalTabs(winMan)).toEqual({ supported: false, shown: 0 });
+    expect(winMan.addTab).not.toHaveBeenCalled();
   });
 });
