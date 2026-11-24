@@ -132,6 +132,26 @@ describe('startInboxes', () => {
     expect(saved.sessions['2026-11-06_08-00-00_Olgazdez_424256.md']).toBe('Olgazdez-tg-2026-11-06-3');
   });
 
+  it('sessionNameByUser с {task}: id задачи из текста файла, повтор с номером', async () => {
+    const inbox = { sessionName: '{user}-tg-{date}', sessionNameByUser: { planfix_bot: 'planfix-{task}-{date}' } };
+    const link = id => `Ссылка на комментарий: https://tagilcity.planfix.com/task/${id}/?comment=1\n`;
+    put('2026-11-24_05-43-25_planfix_bot_427941.md', link(933149));
+    put('2026-11-24_06-16-02_planfix_bot_427945.md', link(933149));
+    put('2026-11-24_06-20-00_planfix_bot_427946.md', 'Ссылка на контакт: https://tagilcity.planfix.com/contact/5/');
+    put('2026-11-24_06-30-21_alexiapost_427947.md', link(1));
+    const { opened, logged, pass } = setup({ inbox });
+    await pass();
+    await pass();
+    expect(opened.map(r => r.name)).toEqual([
+      'planfix-933149-2026-11-24',
+      'planfix-933149-2026-11-24-2',
+      'planfix_bot-tg-2026-11-24',
+      'alexiapost-tg-2026-11-24',
+    ]);
+    expect(logged.some(l => l.startsWith('warn: [inbox:telegram] 2026-11-24_06-20-00_planfix_bot_427946.md:')
+      && l.includes('no task link'))).toBe(true);
+  });
+
   it('a file that does not fit the template opens as tg-<name>, with a warning', async () => {
     put('note.md');
     const { opened, logged, pass } = setup({ inbox: { sessionName: '{user}-tg-{date}' } });

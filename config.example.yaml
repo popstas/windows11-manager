@@ -404,6 +404,11 @@ claudeWt:
     # falls back to tg-{base}. A repeated name gets -2, -3: the window is found
     # by its title, two windows of one name would fight for focus.
     sessionName: '{user}-tg-{date}'   # default: tg-{base}
+    # Per-sender template ({user} of the file name, case-insensitive) over
+    # sessionName. {task} is the first Planfix task id in the file text
+    # (`.../task/<id>`); no such link -> the name by sessionName above.
+    # sessionNameByUser:
+    #   planfix_bot: 'planfix-{task}-{date}'
     # terminal: wt      # default: claudeWt.terminal
     # statePath: ''     # default: next to claudeWt.statePath
     background: true    # default: true

@@ -201,7 +201,10 @@ gets its own session and its own window, even if the previous one is still open.
 session is named `tg-<file name>`, or by the `sessionName` template: for
 `2026-11-06_06-04-22_Olgazdez_424254.md`, `'{user}-tg-{date}'` gives
 `Olgazdez-tg-2026-11-06` (placeholders `{base}`, `{date}`, `{time}`, `{user}`, `{id}`;
-a file of another shape falls back to `tg-<file name>`). A name already issued gets
+a file of another shape falls back to `tg-<file name>`). `sessionNameByUser` overrides
+the template per sender: `{ planfix_bot: 'planfix-{task}-{date}' }` names a Planfix
+notification batch `planfix-933149-2026-11-24`, where `{task}` is the first `/task/<id>`
+link in the file text (no link: the `sessionName` name). A name already issued gets
 `-2`, `-3`, so a second message from the same person on the same day opens as
 `Olgazdez-tg-2026-11-06-2`. The remote command is `claudeWt.launchInbox` (placeholders `{cwd}`,
 `{script}`, `{file}`, `{name}`), so the session is started by a script on the ssh side

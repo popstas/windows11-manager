@@ -31,7 +31,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   inboxRemoteFile,
-  inboxSessionName,
+  inboxSessionNameFor,
+  inboxTemplateFor,
   keepSessionsOf,
   parseInboxState,
   planInboxTick,
@@ -62,6 +63,9 @@ const defaultFs = {
       }
     }
     return out;
+  },
+  readText(file) {
+    return fs.readFileSync(file, 'utf8');
   },
   readState(file) {
     try {
@@ -145,7 +149,17 @@ function startInboxes({ winMan, log, deps = {} }) {
   };
 
   async function openOne(r, name, cfg) {
-    const { name: wanted, warning } = inboxSessionName(name, cfg.sessionName, cfg.sessionPrefix);
+    // Текст читается, только если шаблону нужен `{task}`: файл локальный и
+    // уже устоялся (settleMs), но лишний read на каждую пересылку незачем.
+    let text = null;
+    if (inboxTemplateFor(cfg, name).includes('{task}')) {
+      try {
+        text = io.readText(path.join(cfg.dir, name));
+      } catch (e) {
+        log(`${r.tag} ${name}: cannot read for {task}: ${e.message}`, 'warn');
+      }
+    }
+    const { name: wanted, warning } = inboxSessionNameFor(name, cfg, text);
     if (warning) log(`${r.tag} ${name}: ${warning}`, 'warn');
     const sessionName = uniqueSessionName(wanted, usedSessionNames());
     const file = inboxRemoteFile(cfg.fileDir, name);

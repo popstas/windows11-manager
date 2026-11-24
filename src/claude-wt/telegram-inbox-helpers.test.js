@@ -3,6 +3,9 @@ import {
   inboxSkipReason,
   isSyncthingTemp,
   inboxSessionName,
+  inboxSessionNameFor,
+  inboxTemplateFor,
+  taskIdFromText,
   parseInboxFileName,
   uniqueSessionName,
   keepSessionsOf,
@@ -367,5 +370,60 @@ describe('resolveInboxes', () => {
     ]);
     expect(resolveInboxes({ statePath, inboxes: { email } })).toEqual({ inboxes: [], errors: ['claudeWt.inboxes is not a list, ignored'] });
     expect(resolveInboxes(undefined)).toEqual({ inboxes: [], errors: [] });
+  });
+});
+
+describe('имя по отправителю и {task}', () => {
+  const planfix = '2026-11-24_05-43-25_planfix_bot_427941.md';
+  const text = [
+    'Forwarded from: private @planfix_bot, Name: Planfix',
+    '',
+    'Ольга:',
+    'Стас, посмотри',
+    '',
+    'Задача: Публикация / 2',
+    'Проект: Без проекта',
+    '',
+    'Ссылка на комментарий: https://tagilcity.planfix.com/task/933149/?comment=1234',
+    '',
+    'Ссылка на комментарий: https://tagilcity.planfix.com/task/929814/?comment=99',
+  ].join('\n');
+  const cfgOf = raw => normalizeInboxConfig({ sessionName: '{user}-tg-{date}', ...raw }).cfg;
+
+  it('taskIdFromText: первая ссылка на задачу', () => {
+    expect(taskIdFromText(text)).toBe('933149');
+    expect(taskIdFromText('Ссылка на контакт: https://tagilcity.planfix.com/contact/55/')).toBe('');
+    expect(taskIdFromText(null)).toBe('');
+  });
+
+  it('sessionNameByUser: ключи в нижнем регистре, мусор мимо', () => {
+    const cfg = cfgOf({ sessionNameByUser: { ' Planfix_Bot ': ' planfix-{task}-{date} ', '': 'x', other: 5 } });
+    expect({ ...cfg.sessionNameByUser }).toEqual({ planfix_bot: 'planfix-{task}-{date}' });
+    expect({ ...cfgOf({ sessionNameByUser: ['a'] }).sessionNameByUser }).toEqual({});
+    expect(cfgOf({ sessionNameByUser: { constructor: 'x' } }).sessionNameByUser.toString).toBeUndefined();
+  });
+
+  it('шаблон отправителя побеждает общий, остальные — по общему', () => {
+    const cfg = cfgOf({ sessionNameByUser: { planfix_bot: 'planfix-{task}-{date}' } });
+    expect(inboxTemplateFor(cfg, planfix)).toBe('planfix-{task}-{date}');
+    expect(inboxTemplateFor(cfg, '2026-11-06_06-04-22_Olgazdez_424254.md')).toBe('{user}-tg-{date}');
+    expect(inboxTemplateFor(cfg, 'note.md')).toBe('{user}-tg-{date}');
+    expect(inboxSessionNameFor(planfix, cfg, text)).toEqual({ name: 'planfix-933149-2026-11-24', warning: null });
+    expect(inboxSessionNameFor('2026-11-06_06-04-22_Olgazdez_424254.md', cfg, null).name).toBe('Olgazdez-tg-2026-11-06');
+  });
+
+  it('нет ссылки на задачу — общий шаблон и warning', () => {
+    const cfg = cfgOf({ sessionNameByUser: { planfix_bot: 'planfix-{task}-{date}' } });
+    const res = inboxSessionNameFor(planfix, cfg, 'Ссылка на контакт: https://tagilcity.planfix.com/contact/55/');
+    expect(res.name).toBe('planfix_bot-tg-2026-11-24');
+    expect(res.warning).toContain('no task link');
+    expect(inboxSessionNameFor(planfix, cfg, null).name).toBe('planfix_bot-tg-2026-11-24');
+  });
+
+  it('{task} в общем шаблоне без ссылки — <prefix>-{base}', () => {
+    const res = inboxSessionName(planfix, 'pf-{task}', 'tg');
+    expect(res.name).toBe('tg-2026-11-24_05-43-25_planfix_bot_427941');
+    expect(res.warning).toContain('{task}');
+    expect(inboxSessionName(planfix, 'pf-{task}', 'tg', { task: '7' }).name).toBe('pf-7');
   });
 });
