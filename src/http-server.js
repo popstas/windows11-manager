@@ -39,6 +39,10 @@ const ROUTES = {
   '/claude-wt/window-icon': 'claude-window-icon',
   '/claude-wt/window-badge': 'claude-window-badge',
   '/claude-wt/window-icons': 'claude-window-icons',
+  '/claude-wt/taskbar-hide': 'claude-taskbar-hide',
+  '/claude-wt/window-taskbar': 'claude-window-taskbar',
+  '/claude-wt/taskbar-show-all': 'claude-taskbar-show-all',
+  '/claude-wt/taskbar-release': 'claude-taskbar-release',
 };
 
 function routeToCommand(url) {

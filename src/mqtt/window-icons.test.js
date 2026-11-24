@@ -332,6 +332,38 @@ describe('startWindowIcons', () => {
     expect(published.at(-1)).toEqual({});
   });
 
+  it('resync([id]) — значок этого окна ставится заново на следующем тике', () => {
+    // После addTab кнопка новая: значок, поставленный на старую, пропал.
+    const { svc, overlays, calls } = setup({
+      windows: [{ id: 1, path: WT, title: 'h' }, { id: 2, path: WEZ, title: 'c' }],
+      sessions: { 1: { sessionId: 'h', cwd: '/p/home' }, 2: { sessionId: 'c', cwd: '/p/exp' } },
+      heads: ['h'],
+    });
+    overlays.length = 0;
+    calls.length = 0;
+    svc.tick();
+    expect(overlays, 'без resync тик ничего не ставит').toEqual([]);
+    svc.resync([1]);
+    svc.tick();
+    expect(overlays).toEqual([[1, 'C:/repo/icons/head-badge.ico', 'head']]);
+    expect(calls, 'иконка окна (WM_SETICON) переживает addTab').toEqual([]);
+  });
+
+  it('resync без SetOverlayIcon в аддоне ничего не зовёт', () => {
+    const { svc, winMan } = setup({
+      windows: [{ id: 1, path: WT, title: 'h' }], sessions: { 1: { sessionId: 'h', cwd: '/p/home' } },
+      overlayControl: false,
+    });
+    svc.resync([1]);
+    svc.tick();
+    expect(winMan.setOverlayIcon).not.toHaveBeenCalled();
+  });
+
+  it('заглушка тоже умеет resync', () => {
+    const { svc } = setup({ control: false });
+    expect(() => svc.resync([1])).not.toThrow();
+  });
+
   describe('явная иконка и значок из claude-wt CLI', () => {
     const tmpStore = () => createSessionIconStore({
       file: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'w11m-wi-')), 'session-icons.json'),

@@ -140,6 +140,14 @@ describe('buildCommandMap', () => {
     expect(Object.keys(m)).toContain('claude-window-icons');
   });
 
+  it('прятание кнопок: три команды проведены к службе', async () => {
+    const service = { tick: vi.fn(), setSet: vi.fn(() => 1), statusOf: vi.fn(() => ({ applied: true })), showAll: vi.fn(() => 4) };
+    const m = makeMap({ taskbarHide: { store: { set: vi.fn() }, service } });
+    expect(await m['claude-taskbar-hide']({ sessions: [] })).toEqual({ ok: true, count: 1 });
+    expect(await m['claude-taskbar-show-all']({})).toEqual({ ok: true, shown: 4 });
+    expect(Object.keys(m)).toContain('claude-window-taskbar');
+  });
+
   it('содержит claude-place', () => {
     expect(typeof map['claude-place']).toBe('function');
   });

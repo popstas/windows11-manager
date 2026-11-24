@@ -53,6 +53,36 @@ const ICONS_REFRESH_MS = 15000;
 // planIcons видит «было не то» и ставит или снимает его.
 const UNKNOWN = '\0unknown';
 
+/**
+ * Окна терминалов на экране: `() => {windows: [{id, title}], present}`, где
+ * `present` — все видимые hwnd. Путь к exe читается один раз на hwnd
+ * (getWindowById), пропавший hwnd забывается: Windows переиспользует хэндлы.
+ * Кеш вердиктов свой у каждого вызова — им пользуется и служба прятания
+ * кнопок (taskbar-hide.js); `windowOf(id)` отдаёт из него объект окна.
+ */
+function terminalWindowsOf(winMan) {
+  const verdicts = new Map();
+  function terminalWindows() {
+    const ids = winMan.getVisibleWindowIds();
+    const present = new Set(ids);
+    for (const id of [...verdicts.keys()]) if (!present.has(id)) verdicts.delete(id);
+    const windows = [];
+    for (const id of ids) {
+      if (!verdicts.has(id)) {
+        const w = winMan.getWindowById(id);
+        verdicts.set(id, w && winMan.isTerminalWindow(w) ? w : null);
+      }
+      const w = verdicts.get(id);
+      if (w) windows.push({ id, title: w.getTitle() });
+    }
+    return { windows, present };
+  }
+  // Объект окна из кеша прошлого вызова (null — не терминал или пропал):
+  // taskbar-hide.js спрашивает у него getBounds() без второго getWindowById.
+  terminalWindows.windowOf = id => verdicts.get(id) ?? null;
+  return terminalWindows;
+}
+
 function writeIconsSidecar(cfg, icons) {
   const file = iconsSidecarPath(cfg.statePath);
   if (!file) return;
@@ -65,7 +95,9 @@ function startWindowIcons({
   now = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval,
   publishIcons = writeIconsSidecar, store = null,
 }) {
-  const off = { tick() {}, stop() {}, statusOf: () => ({ applied: false, reason: 'no icon service' }) };
+  const off = {
+    tick() {}, stop() {}, resync() {}, statusOf: () => ({ applied: false, reason: 'no icon service' }),
+  };
   if (typeof winMan?.hasWindowIconControl !== 'function') return off;
   if (!winMan.hasWindowIconControl()) {
     log('window icons: в аддоне node-window-manager нет setWindowIcon — иконки окон не ставятся '
@@ -79,7 +111,7 @@ function startWindowIcons({
       + '(пересоберите vendor/node-window-manager)', 'warn');
   }
 
-  const verdicts = new Map();
+  const terminalWindows = terminalWindowsOf(winMan);
   // hwnd → {icon?, overlay?}: что поставили мы.
   let applied = new Map();
   let lastPrint = '';
@@ -105,22 +137,6 @@ function startWindowIcons({
     if (text === lastPublished) return;
     publishIcons(cfg, icons);
     lastPublished = text;
-  }
-
-  function terminalWindows() {
-    const ids = winMan.getVisibleWindowIds();
-    const present = new Set(ids);
-    for (const id of [...verdicts.keys()]) if (!present.has(id)) verdicts.delete(id);
-    const windows = [];
-    for (const id of ids) {
-      if (!verdicts.has(id)) {
-        const w = winMan.getWindowById(id);
-        verdicts.set(id, w && winMan.isTerminalWindow(w) ? w : null);
-      }
-      const w = verdicts.get(id);
-      if (w) windows.push({ id, title: w.getTitle() });
-    }
-    return { windows, present };
   }
 
   // Подпись значка для экранного диктора.
@@ -268,9 +284,21 @@ function startWindowIcons({
     return { applied: false, reason: 'not applied (see tray log)' };
   }
 
+  /**
+   * Кнопкам этих окон вернули место на панели (addTab, taskbar-hide.js):
+   * кнопка новая, значка на ней нет. Иконка окна (WM_SETICON) живёт на самом
+   * окне и переживает addTab — сверяется только значок, на ближайшем тике.
+   */
+  function resync(ids) {
+    if (!canOverlay || !enabled) return;
+    markOverlaysUnknown(ids.map(id => ({ id })));
+    lastPrint = '';
+  }
+
   return {
     tick,
     statusOf,
+    resync,
     stop() {
       clearIntervalFn(timer);
       try {
@@ -282,4 +310,4 @@ function startWindowIcons({
   };
 }
 
-export { startWindowIcons, ICONS_INTERVAL_MS, ICONS_REFRESH_MS };
+export { startWindowIcons, terminalWindowsOf, ICONS_INTERVAL_MS, ICONS_REFRESH_MS };

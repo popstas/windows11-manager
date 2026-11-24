@@ -1844,11 +1844,81 @@ fn start_mqtt_locked(
     }
 }
 
+/// Сколько трей ждёт, пока служба вернёт кнопки панели задач, прежде чем её
+/// убить. Не дождался — убивает всё равно: `claude-wt taskbar-release` доживает
+/// своё и, не достучавшись до убитой службы, возвращает кнопки через аддон сам.
+const TASKBAR_RELEASE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Чем звать `claude-wt taskbar-release`. Путь проекта и окружение читаются из
+/// хранилища настроек — до мьютекса, как и у запуска службы.
+struct TaskbarRelease {
+    project_path: String,
+    env: [(&'static str, &'static str); 2],
+}
+
+fn taskbar_release_call(app: &tauri::AppHandle) -> Option<TaskbarRelease> {
+    let project_path = get_project_path(app);
+    if project_path.is_empty() {
+        return None;
+    }
+    Some(TaskbarRelease {
+        project_path,
+        env: desktop_env(app),
+    })
+}
+
+/// Перед kill-ом службы: попросить её вернуть спрятанные кнопки панели задач,
+/// сохранив отметки (`/claude-wt/taskbar-release` через CLI — порт из YAML-
+/// конфига знает только node). kill — это TerminateProcess: `stop()` службы
+/// не случается, а DeleteTab переживает процесс, и без этого кнопки оставались
+/// спрятанными до её следующего старта или перезапуска explorer (финальное
+/// ревью, I2). Ждёт не дольше `TASKBAR_RELEASE_TIMEOUT`; команда сама идёт на
+/// фоне рантайма, а ждут её здесь через канал — без `block_on`.
+fn release_taskbar_buttons(app: &tauri::AppHandle, call: &TaskbarRelease) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let app_handle = app.clone();
+    let project_path = call.project_path.clone();
+    let env = call.env;
+    tauri::async_runtime::spawn(async move {
+        let mut command = app_handle
+            .shell()
+            .command("node")
+            .args(["src/index.js", "claude-wt", "taskbar-release"])
+            .current_dir(&project_path);
+        for (key, value) in env {
+            command = command.env(key, value);
+        }
+        let _ = tx.send(command.output().await);
+    });
+    match rx.recv_timeout(TASKBAR_RELEASE_TIMEOUT) {
+        Ok(Ok(out)) => {
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                info!("  taskbar release: {}", line);
+            }
+            for line in String::from_utf8_lossy(&out.stderr).lines() {
+                warn!("  taskbar release: {}", line);
+            }
+        }
+        Ok(Err(e)) => warn!("Taskbar release failed to run: {}", e),
+        Err(_) => warn!(
+            "Taskbar release: no answer in {}s, stopping the service anyway",
+            TASKBAR_RELEASE_TIMEOUT.as_secs()
+        ),
+    }
+}
+
 /// Остановка службы по воле оператора (или на выходе из приложения): подъём
 /// после неё не нужен, и «Stop service» в трее обязан значить именно stop.
-fn stop_mqtt_state(app_state: &mut AppState) {
+/// `release` — вернуть перед kill-ом спрятанные кнопки панели задач (см.
+/// `release_taskbar_buttons`); `None` — путь проекта не настроен, звать нечем.
+fn stop_mqtt_state(app: &tauri::AppHandle, app_state: &mut AppState, release: Option<&TaskbarRelease>) {
     app_state.mqtt_desired = false;
     app_state.mqtt_restart_attempts = 0;
+    if app_state.mqtt_running && app_state.mqtt_child.is_some() {
+        if let Some(call) = release {
+            release_taskbar_buttons(app, call);
+        }
+    }
     // Смена поколения: событие о смерти убитого процесса придёт позже и уже не
     // будет относиться к текущему состоянию.
     app_state.mqtt_generation += 1;
@@ -1866,10 +1936,11 @@ fn toggle_mqtt(app: &tauri::AppHandle, state: &State<'_, Mutex<AppState>>) {
     // `mqtt_running` под одним замком, а запускал под другим: в промежутке
     // помещался подъём из фоновой задачи, и служба поднималась дважды.
     let launch = mqtt_launch_config(app);
+    let release = taskbar_release_call(app);
 
     let mut app_state = state.lock().unwrap();
     if app_state.mqtt_running {
-        stop_mqtt_state(&mut app_state);
+        stop_mqtt_state(app, &mut app_state, release.as_ref());
     } else if let Some((settings, project_path)) = launch {
         start_mqtt_locked(app, &mut app_state, settings, project_path);
     }
@@ -1973,6 +2044,13 @@ pub fn run() {
                 true,
                 None::<&str>,
             )?;
+            let claude_wt_taskbar_show_all_i = MenuItem::with_id(
+                app,
+                "taskbar_show_all",
+                "Show all taskbar buttons",
+                true,
+                None::<&str>,
+            )?;
             // Плитка и каскад для терминалов Claude. Знак перед подписью — тот
             // же приём, что на маке (macos-windows-manager): символ без
             // цветного Emoji_Presentation сам берёт цвет и размер у шрифта
@@ -2056,6 +2134,7 @@ pub fn run() {
                 &claude_wt_i,
                 &tracked_count_i,
                 &claude_wt_restore_i,
+                &claude_wt_taskbar_show_all_i,
                 &claude_wt_place_tile_i,
                 &claude_wt_place_cascade_i,
             ];
@@ -2166,6 +2245,13 @@ pub fn run() {
                             app,
                             &["src/index.js", "claude-wt", "restore"],
                             "claude-wt restore",
+                        );
+                    }
+                    "taskbar_show_all" => {
+                        run_node_command(
+                            app,
+                            &["src/index.js", "claude-wt", "taskbar-show-all"],
+                            "Show all taskbar buttons",
                         );
                     }
                     "claude_wt_place_tile" => {
@@ -2335,6 +2421,7 @@ pub fn run() {
                             std::process::exit(1);
                         });
                         let settings = load_settings_from_store(app);
+                        let release = taskbar_release_call(app);
                         let app_handle = app.clone();
                         // Kill all child processes
                         let state = app.state::<Mutex<AppState>>();
@@ -2347,7 +2434,7 @@ pub fn run() {
                         // счёл бы это падением и поднял бы демона заново прямо
                         // посреди выхода из приложения.
                         stop_claude_wt_locked(&mut s);
-                        stop_mqtt_state(&mut s);
+                        stop_mqtt_state(app, &mut s, release.as_ref());
                         drop(s);
 
                         if settings.store_before_exit {

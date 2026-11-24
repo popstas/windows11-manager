@@ -468,6 +468,30 @@ Napi::Boolean setTaskbarProgress (const Napi::CallbackInfo& info) {
     return Napi::Boolean::New (env, SUCCEEDED (hr));
 }
 
+// deleteTab(hwnd) / addTab(hwnd): remove / bring back the window's own button
+// on the taskbar (ITaskbarList::DeleteTab/AddTab, inherited by ITaskbarList3).
+// The window itself stays alive and in Alt+Tab. false when there is no taskbar
+// list or the handle is not a window.
+Napi::Boolean deleteTab (const Napi::CallbackInfo& info) {
+    Napi::Env env{ info.Env () };
+
+    auto handle{ getValueFromCallbackData<HWND> (info, 0) };
+    ITaskbarList3* list{ getTaskbarList () };
+    if (!list || !IsWindow (handle)) return Napi::Boolean::New (env, false);
+
+    return Napi::Boolean::New (env, SUCCEEDED (list->DeleteTab (handle)));
+}
+
+Napi::Boolean addTab (const Napi::CallbackInfo& info) {
+    Napi::Env env{ info.Env () };
+
+    auto handle{ getValueFromCallbackData<HWND> (info, 0) };
+    ITaskbarList3* list{ getTaskbarList () };
+    if (!list || !IsWindow (handle)) return Napi::Boolean::New (env, false);
+
+    return Napi::Boolean::New (env, SUCCEEDED (list->AddTab (handle)));
+}
+
 // flashWindow(hwnd, on): on lights the button orange and keeps it lit until
 // the window is activated; off takes the light down. One flash cycle without
 // FLASHW_TIMER*: after the cycle Windows leaves the button highlighted, steady,
@@ -668,6 +692,8 @@ Napi::Object Init (Napi::Env env, Napi::Object exports) {
     exports.Set (Napi::String::New (env, "setOverlayIcon"), Napi::Function::New (env, setOverlayIcon));
     exports.Set (Napi::String::New (env, "getTaskbarWindow"), Napi::Function::New (env, getTaskbarWindow));
     exports.Set (Napi::String::New (env, "setTaskbarProgress"), Napi::Function::New (env, setTaskbarProgress));
+    exports.Set (Napi::String::New (env, "deleteTab"), Napi::Function::New (env, deleteTab));
+    exports.Set (Napi::String::New (env, "addTab"), Napi::Function::New (env, addTab));
     exports.Set (Napi::String::New (env, "flashWindow"), Napi::Function::New (env, flashWindow));
     exports.Set (Napi::String::New (env, "getActiveWindow"), Napi::Function::New (env, getActiveWindow));
     exports.Set (Napi::String::New (env, "getMonitorFromWindow"), Napi::Function::New (env, getMonitorFromWindow));

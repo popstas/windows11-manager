@@ -43,7 +43,9 @@ function startTaskbarState({
   setIntervalFn = setInterval, clearIntervalFn = clearInterval,
   blinkMs = BLINK_MS, nowSec = () => Math.floor(Date.now() / 1000),
 }) {
-  const off = { tick() {}, dismiss() {}, markUnread() {}, cacheWarn() {}, stop() {} };
+  const off = {
+    tick() {}, dismiss() {}, markUnread() {}, cacheWarn() {}, resync() {}, isBlinking: () => false, stop() {},
+  };
   if (typeof winMan?.hasTaskbarControl !== 'function') return off;
   if (!winMan.hasTaskbarControl()) {
     log('taskbar: в аддоне node-window-manager нет setTaskbarProgress/flashWindow — '
@@ -259,11 +261,27 @@ function startTaskbarState({
     return warns.size;
   }
 
+  /**
+   * Кнопкам этих окон вернули место на панели (addTab, taskbar-hide.js):
+   * кнопка новая, полосы и подсветки на ней нет. Забытое окно planTaskbar
+   * считает чистым и на ближайшем тике ставит ему вид заново.
+   */
+  function resync(ids) {
+    for (const id of ids) applied.delete(id);
+  }
+
+  /** Мигает ли окно сейчас перед остыванием кеша — для taskbar-hide.js. */
+  function isBlinking(id) {
+    return blinking.has(id);
+  }
+
   return {
     tick,
     dismiss,
     markUnread,
     cacheWarn,
+    resync,
+    isBlinking,
     stop() {
       clearIntervalFn(timer);
       stopBlinkTimer();

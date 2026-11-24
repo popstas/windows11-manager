@@ -267,6 +267,26 @@ describe('startTaskbarState', () => {
     svc.tick();
     expect(calls).toEqual([['progress', 1, 0, 0]]);
   });
+
+  it('resync([id]) — вид кнопки этого окна ставится заново', () => {
+    // После addTab кнопка новая: полоса и подсветка старой пропали.
+    const { svc, calls } = setup({
+      windows: [{ id: 1, path: WEZ, title: 'a' }, { id: 2, path: WEZ, title: 'b' }],
+      agents: { 1: 'question', 2: 'active' },
+    });
+    svc.tick();
+    calls.length = 0;
+    svc.tick();
+    expect(calls, 'без resync тик ничего не ставит').toEqual([]);
+    svc.resync([1]);
+    svc.tick();
+    expect(calls).toEqual([['progress', 1, 8, 22], ['flash', 1, true]]);
+  });
+
+  it('заглушка тоже умеет resync', () => {
+    const { svc } = setup({ control: false });
+    expect(() => svc.resync([1])).not.toThrow();
+  });
 });
 
 describe('cacheWarn — мигание перед остыванием кеша', () => {
@@ -293,6 +313,20 @@ describe('cacheWarn — мигание перед остыванием кеша'
     calls.length = 0;
     blinkTimer(timers).fn();
     expect(calls).toEqual([['progress', 1, 8, 100]]);
+  });
+
+  it('isBlinking — мигает ли окно сейчас (для прятания кнопок)', () => {
+    const { svc, world } = waiting();
+    expect(svc.isBlinking(1)).toBe(false);
+    svc.cacheWarn(body());
+    expect(svc.isBlinking(1)).toBe(true);
+    expect(svc.isBlinking(2)).toBe(false);
+    world.foreground = 1;
+    svc.tick();
+    svc.cacheWarn(body());
+    svc.stop();
+    expect(svc.isBlinking(1), 'stop гасит мигание').toBe(false);
+    expect(setup({ control: false }).svc.isBlinking(1), 'заглушка').toBe(false);
   });
 
   it('до порога не мигает', () => {

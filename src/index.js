@@ -378,6 +378,59 @@ async function start() {
       process.exit(0);
     });
 
+  // Спрятанными кнопками владеет служба, поэтому сначала просят её. Не
+  // отвечает (убита из трея, упала, не запущена) — кнопки возвращаются прямо
+  // через аддон: иначе спрятанное оставалось бы спрятанным до перезапуска
+  // explorer, а пункт трея «Show all taskbar buttons» не делал бы ничего
+  // (финальное ревью, I2). Ответ с ошибкой — не «не отвечает»: служба жива.
+  async function taskbarCall(route, body = {}) {
+    const { getConfig } = await import('./config.js');
+    // Без конфига служба не поднялась бы вовсе — но вернуть кнопки всё равно надо.
+    let port = 9722;
+    try {
+      port = getConfig().httpPort ?? 9722;
+    } catch (e) {
+      console.error(`[claude-wt] config is not readable, trying port ${port}: ${e.message.split('\n')[0]}`);
+    }
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/claude-wt/${route}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(1500),
+      });
+      console.log(await res.text());
+      process.exit(res.ok ? 0 : 1);
+    } catch (e) {
+      const why = e.cause?.code ?? e.message;
+      console.error(`[claude-wt] service is not reachable on port ${port}: ${why}`);
+      const { returnTerminalTabs } = await import('./mqtt/taskbar-hide.js');
+      const { supported, shown } = returnTerminalTabs(winMan);
+      if (!supported) {
+        console.error('[claude-wt] no DeleteTab/AddTab in node-window-manager: nothing to return');
+        process.exit(1);
+      }
+      console.log(`[claude-wt] returned taskbar buttons directly: AddTab on ${shown} terminal window(s); `
+        + 'explicit hide marks are kept and applied again when the service starts');
+      process.exit(0);
+    }
+  }
+
+  claudeWt
+    .command('taskbar-show-all')
+    .description('return every hidden taskbar button of Claude terminal windows')
+    // Тот же маршрут, что и у пункта трея; служба заодно сбрасывает отметки.
+    .action(() => taskbarCall('taskbar-show-all'));
+
+  claudeWt
+    .command('taskbar-release')
+    .description('return every hidden taskbar button but keep the hide marks (the tray runs it before stopping the service)')
+    // Трей зовёт это перед kill-ом службы: kill не даёт ей вернуть кнопки
+    // самой, а следующий старт спрячет по отметкам снова.
+    // `startedAt` — старт этого процесса: служба, поднятая позже, отклонит
+    // запоздалую просьбу и продолжит прятать.
+    .action(() => taskbarCall('taskbar-release', { startedAt: Math.round(performance.timeOrigin) }));
+
   claudeWt
     .command('open-project')
     .description('focus the last open session for a project cwd, or spawn a fresh named Claude')

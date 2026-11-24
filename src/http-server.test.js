@@ -43,6 +43,13 @@ describe('routeToCommand', () => {
     expect(routeToCommand('/claude-wt/window-icons')).toBe('claude-window-icons');
   });
 
+  it('прятание кнопок панели задач', () => {
+    expect(routeToCommand('/claude-wt/taskbar-hide')).toBe('claude-taskbar-hide');
+    expect(routeToCommand('/claude-wt/window-taskbar')).toBe('claude-window-taskbar');
+    expect(routeToCommand('/claude-wt/taskbar-show-all')).toBe('claude-taskbar-show-all');
+    expect(routeToCommand('/claude-wt/taskbar-release')).toBe('claude-taskbar-release');
+  });
+
   it('чужой путь — null', () => {
     expect(routeToCommand('/nope')).toBe(null);
     expect(routeToCommand('/')).toBe(null);

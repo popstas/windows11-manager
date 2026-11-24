@@ -119,6 +119,15 @@ describe('startService', () => {
     expect(logged).toContain('info: < home/room/pc/windows/store: {"a":1}');
   });
 
+  it('claude-taskbar-release по MQTT не исполняется: только http', async () => {
+    // Публикация в <base>/claude-taskbar-release (тем более retained) выключала
+    // бы прятание до перезапуска — на каждом старте службы.
+    const { logged, args } = setup();
+    await args().onCommand('claude-taskbar-release', '{"startedAt":9e15}', 'home/room/pc/windows/claude-taskbar-release');
+    expect(logged).toContain('warn: MQTT claude-taskbar-release: только по http — пропущено');
+    expect(logged.filter(l => l.startsWith('warn:') || l.startsWith('error:'))).toHaveLength(1);
+  });
+
   it('провалившийся вызов виден в логе', async () => {
     const { logged, args } = setup();
     await args().onCommand('не-команда', '', 'home/room/pc/windows/не-команда');

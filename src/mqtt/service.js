@@ -22,7 +22,9 @@ import { createStatsPublisher } from './stats.js';
 import { startAutoplacer } from './autoplacer.js';
 import { startTaskbarState } from './taskbar.js';
 import { startWindowIcons } from './window-icons.js';
+import { startTaskbarHide } from './taskbar-hide.js';
 import { createSessionIconStore } from '../claude-wt/session-icons.js';
+import { createTaskbarHideStore } from '../claude-wt/taskbar-hide-store.js';
 import { startDaemonWatchdog } from './daemon-watchdog.js';
 import { startInboxes } from './telegram-inbox.js';
 import { startHttpServer } from '../http-server.js';
@@ -39,6 +41,10 @@ import { createDock } from '../claude-wt/dock/slots.js';
  * лог, ради читаемости которого и заведено логирование входящих.
  */
 const FOREIGN_COMMANDS = new Set(['sleep', 'restart', 'restart_restore', 'shutdown']);
+// Команды только для http: release выключает прятание кнопок до перезапуска
+// службы, и публикация в `<base>/claude-taskbar-release` (retained — на каждом
+// старте) делала бы это молча. Зовёт его трей через CLI, по http.
+const HTTP_ONLY_COMMANDS = new Set(['claude-taskbar-release']);
 
 function startService({
   winMan, config, log, env = process.env,
@@ -87,9 +93,27 @@ function startService({
   const sessionIconStore = createSessionIconStore({ file: path.resolve(process.cwd(), 'data', 'session-icons.json') });
   let windowIcons = null;
 
+  // Кнопки окон погашенных сессий прячутся с панели задач: набор от пикера и
+  // явные отметки claude-wt CLI. Вернувшаяся кнопка новая — значок и полоса
+  // ставятся ей заново (resync). Порядок нагружен: стартовый addTab всем окнам
+  // терминалов должен пройти до первого тика иконок, иначе кнопка, оставленная
+  // спрятанной убитым процессом, вернулась бы без значка, а `applied` иконок
+  // считал бы его поставленным. `windowIcons` здесь ещё null — отсюда `?.`.
+  const taskbarHideStore = createTaskbarHideStore({ file: path.resolve(process.cwd(), 'data', 'session-taskbar.json') });
+  const taskbarHide = startTaskbarHide({
+    winMan, log, store: taskbarHideStore,
+    onShown: (ids) => {
+      windowIcons?.resync(ids);
+      taskbar.resync(ids);
+    },
+    // Мигающая перед остыванием кеша кнопка не прячется и возвращается сразу.
+    isBlinking: (id) => taskbar.isBlinking(id),
+  });
+
   const router = createRouter(buildCommandMap({
     winMan, config: withBase, log, notify, haExport, publishDone, dock, taskbar,
     sessionIcons: { store: sessionIconStore, icons: () => windowIcons },
+    taskbarHide: { store: taskbarHideStore, service: taskbarHide },
   }));
 
   // Брокер этим троим не нужен, и ждать подключения они не должны: расстановка
@@ -138,6 +162,10 @@ function startService({
         // Промпт `terminal-prompt` — длиной и началом (`redactPayload`).
         log(`< ${topic ?? command}: ${redactPayload(payload)}`);
         if (FOREIGN_COMMANDS.has(command)) return;
+        if (HTTP_ONLY_COMMANDS.has(command)) {
+          log(`MQTT ${command}: только по http — пропущено`, 'warn');
+          return;
+        }
         const res = await router.dispatch(command, payload);
         if (!res.ok) log(`MQTT ${command}: ${res.error}`, 'warn');
       },
@@ -159,6 +187,7 @@ function startService({
       autoplacer.stop();
       daemonWatchdog.stop();
       inboxes.stop();
+      taskbarHide.stop();
       taskbar.stop();
       windowIcons.stop();
       client?.end(true);
@@ -170,4 +199,4 @@ function startService({
   };
 }
 
-export { startService, FOREIGN_COMMANDS };
+export { startService, FOREIGN_COMMANDS, HTTP_ONLY_COMMANDS };
