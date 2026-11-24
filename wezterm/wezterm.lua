@@ -70,9 +70,13 @@ wezterm.on('format-window-title', function(tab)
 end)
 
 -- Звонок своим звуком, как в wt (Стас 15.11: нужен). audible_bell умеет только
--- системный, поэтому звук играет отдельный процесс.
+-- системный, поэтому звук играет отдельный процесс. Пока лежит флаг
+-- ~/.wezterm-bell-off — молчит: его кладёт и снимает кнопка в статуслайне
+-- ccfzf-picker (Стас 24.11), имя файла — контракт с wezterm_bell.rs пикера.
 local BELL_SOUND = 'C:/profiles/sounds/mixkit-sci-fi-click-900.wav'
+local BELL_OFF = wezterm.home_dir .. '/.wezterm-bell-off'
 wezterm.on('bell', function()
+  local off = io.open(BELL_OFF); if off then off:close(); return end
   wezterm.background_child_process {
     'powershell.exe', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command',
     "(New-Object Media.SoundPlayer '" .. BELL_SOUND .. "').PlaySync()",
