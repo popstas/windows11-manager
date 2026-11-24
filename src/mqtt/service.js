@@ -102,6 +102,8 @@ function startService({
       windowIcons?.resync(ids);
       taskbar.resync(ids);
     },
+    // Мигающая перед остыванием кеша кнопка не прячется и возвращается сразу.
+    isBlinking: (id) => taskbar.isBlinking(id),
   });
 
   const router = createRouter(buildCommandMap({

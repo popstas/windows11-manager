@@ -33,6 +33,7 @@ function setup({ windows, sessions = {}, agents = {}, control = true, withStore 
     sessions,
     agents,
     tray: 100,
+    blinking: new Set(),
   };
   const winMan = {
     hasTabControl: () => control,
@@ -66,6 +67,7 @@ function setup({ windows, sessions = {}, agents = {}, control = true, withStore 
     log: (m, level = 'info') => logs.push(`${level}: ${m}`),
     store,
     onShown: ids => shown.push(ids),
+    isBlinking: id => world.blinking.has(id),
     now: () => clock,
     setIntervalFn: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
     clearIntervalFn: t => cleared.push(t),
@@ -111,6 +113,24 @@ describe('startTaskbarHide', () => {
     reset();
     svc.tick();
     expect(calls).toEqual([['add', 1]]);
+  });
+
+  it('мигающее окно (кеш) не прячется и возвращается сразу', () => {
+    // Скрытый пикер узнал бы о мигании только через минуты бэкоффа.
+    const { svc, world, calls, shown, reset } = setup({ sessions: { 1: A, 2: B } });
+    world.blinking.add(2);
+    reset();
+    svc.setSet({ sessions: [A, B] });
+    expect(calls, 'мигающее окно в наборе не прячется').toEqual([['delete', 1]]);
+    reset();
+    world.blinking.add(1);
+    svc.tick();
+    expect(calls, 'мигание началось на спрятанной кнопке — addTab на том же тике').toEqual([['add', 1]]);
+    expect(shown, 'resync — кадр мигания встанет на новую кнопку').toEqual([[1]]);
+    reset();
+    world.blinking.clear();
+    svc.tick();
+    expect(calls, 'мигание кончилось — набор снова прячет').toEqual([['delete', 1], ['delete', 2]]);
   });
 
   it('набор старше 20 минут — кнопки вернулись', () => {

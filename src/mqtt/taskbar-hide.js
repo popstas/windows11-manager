@@ -43,7 +43,7 @@ const TASKBAR_REHIDE_MS = 60 * 1000;
 const LOST_MAX = 64;
 
 function startTaskbarHide({
-  winMan, log, store, onShown = () => {},
+  winMan, log, store, onShown = () => {}, isBlinking = () => false,
   intervalMs = TASKBAR_HIDE_INTERVAL_MS, ttlMs = TASKBAR_HIDE_TTL_MS, rehideMs = TASKBAR_REHIDE_MS,
   now = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval,
 }) {
@@ -224,7 +224,11 @@ function startTaskbarHide({
       const agents = candidates.size ? winMan.claudeWtWindowAgents(windows.filter(w => candidates.has(w.id))) : [];
       advanceExplicit(agents);
       const agentOf = new Map(agents.map(a => [a.sessionId, a]));
-      const signalOf = id => hasSignal(agentOf.get(id));
+      // Мигание кеша (taskbar.js) — тоже сигнал: скрытый пикер узнал бы о нём
+      // только через минуты бэкоффа, а мигать спрятанной кнопкой некуда.
+      // Сеть не трогается — это память соседнего модуля.
+      const blinkingSessions = new Set(sessions.filter(s => isBlinking(s.id)).map(s => s.sessionId));
+      const signalOf = id => hasSignal(agentOf.get(id)) || blinkingSessions.has(id);
       const wanted = wantedHidden({ sessions, set: current, explicitOf: id => store.get(id), signalOf });
       const reapply = trayChanged || (hidden.size > 0 && now() - lastRehide >= rehideMs);
       if (reapply) {

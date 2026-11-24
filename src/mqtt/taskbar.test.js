@@ -315,6 +315,20 @@ describe('cacheWarn — мигание перед остыванием кеша'
     expect(calls).toEqual([['progress', 1, 8, 100]]);
   });
 
+  it('isBlinking — мигает ли окно сейчас (для прятания кнопок)', () => {
+    const { svc, world } = waiting();
+    expect(svc.isBlinking(1)).toBe(false);
+    svc.cacheWarn(body());
+    expect(svc.isBlinking(1)).toBe(true);
+    expect(svc.isBlinking(2)).toBe(false);
+    world.foreground = 1;
+    svc.tick();
+    svc.cacheWarn(body());
+    svc.stop();
+    expect(svc.isBlinking(1), 'stop гасит мигание').toBe(false);
+    expect(setup({ control: false }).svc.isBlinking(1), 'заглушка').toBe(false);
+  });
+
   it('до порога не мигает', () => {
     const { svc, calls, timers, world } = waiting();
     world.now = END - 601;
