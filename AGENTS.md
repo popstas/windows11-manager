@@ -174,7 +174,10 @@ openHASP — на shome (`R:`). Состояние течёт в одну сто
 **Входящие (Telegram, почта) — третий житель службы без брокера.**
 `src/mqtt/telegram-inbox.js` (чистая часть — `src/claude-wt/telegram-inbox-helpers.js`)
 опрашивает `claudeWt.telegramInbox.dir` и на каждый новый `*.md` в корне открывает
-окно сессии `tg-<имя>` (или по шаблону `telegramInbox.sessionName`) через `openInboxSession` (`src/claude-wt/inbox.js`): дорога
+окно сессии `tg-<имя>` (или по шаблону `telegramInbox.sessionName`, у
+отправителя из `sessionNameByUser` — по его шаблону; `{task}` там — первый
+`/task/<id>` из текста файла, единственное место, где наблюдатель читает
+содержимое) через `openInboxSession` (`src/claude-wt/inbox.js`): дорога
 проектного хоткея без поиска открытого окна, но шаблон свой —
 `claudeWt.launchInbox`, `launchNew` не трогается. Конфиг читается на каждом
 проходе, так что включение не требует перезапуска. Имя файла пишется в

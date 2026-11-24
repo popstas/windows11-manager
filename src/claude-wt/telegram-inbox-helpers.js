@@ -77,12 +77,13 @@ function parseInboxFileName(name) {
  * Имя сессии по шаблону `claudeWt.telegramInbox.sessionName`.
  *
  * Подстановки: `{base}` (имя без `.md`) у любого файла, `{date}`, `{time}`,
- * `{user}`, `{id}` — у файла формата `<date>_<time>_<user>_<id>.md`.
+ * `{user}`, `{id}` — у файла формата `<date>_<time>_<user>_<id>.md`, `{task}` —
+ * из `extra.task` (id задачи из текста файла, см. `taskIdFromText`).
  * Незнакомая подстановка остаётся как есть. Не вышло — `<prefix>-{base}`
  * (`tg-{base}` у telegram) и `warning` для журнала: файл всё равно должен
  * открыться.
  */
-function inboxSessionName(file, template = DEFAULT_SESSION_NAME, prefix = 'tg') {
+function inboxSessionName(file, template = DEFAULT_SESSION_NAME, prefix = 'tg', extra = {}) {
   const base = String(file).replace(/\.md$/i, '');
   const fallback = `${prefix}-${base}`;
   const tpl = template || `${prefix}-{base}`;
@@ -90,12 +91,51 @@ function inboxSessionName(file, template = DEFAULT_SESSION_NAME, prefix = 'tg') 
   if (!parsed && PARSED_KEYS.some(k => tpl.includes(`{${k}}`))) {
     return { name: fallback, warning: `name does not match <date>_<time>_<user>_<id>.md, session named ${fallback}` };
   }
-  const vars = { base, ...parsed };
-  const name = tpl.replace(/\{(base|date|time|user|id)\}/g, (_, k) => vars[k]).trim();
+  const task = str(extra?.task);
+  if (!task && tpl.includes('{task}')) {
+    return { name: fallback, warning: `no task link in the file for {task}, session named ${fallback}` };
+  }
+  const vars = { base, ...parsed, task };
+  const name = tpl.replace(/\{(base|date|time|user|id|task)\}/g, (_, k) => vars[k]).trim();
   if (!name || UNSAFE_NAME.test(name) || hasControlChar(name)) {
     return { name: fallback, warning: `sessionName '${tpl}' gives a name the launch command cannot carry, session named ${fallback}` };
   }
   return { name, warning: null };
+}
+
+// Ссылка на задачу в тексте: `https://tagilcity.planfix.com/task/933149/?comment=…`.
+const TASK_LINK = /\/task\/(\d+)/;
+
+/** Id первой задачи в тексте файла (`…/task/<id>`) или `''`. */
+function taskIdFromText(text) {
+  const m = TASK_LINK.exec(typeof text === 'string' ? text : '');
+  return m ? m[1] : '';
+}
+
+/**
+ * Шаблон имени для файла: `sessionNameByUser[<user>]` (регистр не важен, как у
+ * имён Telegram), иначе `sessionName` inbox'а.
+ */
+function inboxTemplateFor(cfg, file) {
+  const user = parseInboxFileName(file)?.user?.toLowerCase();
+  return (user && cfg?.sessionNameByUser?.[user]) || cfg?.sessionName || '';
+}
+
+/**
+ * Имя сессии файла по конфигу inbox'а. Шаблон отправителя с `{task}`, а
+ * ссылки на задачу в тексте нет (уведомление про контакт, файл не прочитался)
+ * — имя по общему `sessionName`, с `warning`: шаблон отправителя уточняет
+ * общий, а не заменяет его.
+ */
+function inboxSessionNameFor(file, cfg, text = null) {
+  const prefix = cfg?.sessionPrefix ?? 'tg';
+  const template = inboxTemplateFor(cfg, file);
+  const task = taskIdFromText(text);
+  if (template !== cfg?.sessionName && template.includes('{task}') && !task) {
+    const res = inboxSessionName(file, cfg?.sessionName, prefix, { task });
+    return { name: res.name, warning: res.warning ?? `no task link in the file, session named by sessionName: ${res.name}` };
+  }
+  return inboxSessionName(file, template, prefix, { task });
 }
 
 /**
@@ -124,6 +164,22 @@ function inboxRemoteFile(fileDir, name) {
   return dir ? `${dir}/${name}` : String(name);
 }
 
+/**
+ * `sessionNameByUser` из конфига: отправитель (ключ в нижнем регистре) →
+ * шаблон. Пустые ключи и значения, не строки — мимо; объект без прототипа,
+ * чтобы отправитель `constructor` не нашёл чужого.
+ */
+function userTemplates(raw) {
+  const out = Object.create(null);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [user, tpl] of Object.entries(raw)) {
+    const u = str(user).toLowerCase();
+    const t = str(tpl);
+    if (u && t) out[u] = t;
+  }
+  return out;
+}
+
 const positive = (v, fallback) => (Number.isFinite(v) && v >= 0 ? v : fallback);
 
 const str = v => (typeof v === 'string' ? v.trim() : '');
@@ -146,6 +202,7 @@ function normalizeInboxConfig(raw = {}, { statePath = '', name = LEGACY_NAME, la
     fileDir: str(raw.fileDir),
     terminal: str(raw.terminal),
     sessionName: str(raw.sessionName) || `${prefix}-{base}`,
+    sessionNameByUser: userTemplates(raw.sessionNameByUser),
     statePath: str(raw.statePath) || inboxStatePathNextTo(statePath, name),
     pollMs: Math.max(250, positive(raw.pollMs, 3000)),
     settleMs: positive(raw.settleMs, 2000),
@@ -339,6 +396,9 @@ export {
   inboxSkipReason,
   isSyncthingTemp,
   inboxSessionName,
+  inboxSessionNameFor,
+  inboxTemplateFor,
+  taskIdFromText,
   parseInboxFileName,
   uniqueSessionName,
   keepSessionsOf,
