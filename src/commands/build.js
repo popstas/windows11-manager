@@ -9,6 +9,7 @@ import { claudeCommands, parseIdPayload, slotFromPayload } from './claude-comman
 import { throttlePress } from './press-throttle.js';
 import { createDelayedSlotOff } from './delayed-slot-off.js';
 import { sessionIconCommands } from './session-icon-commands.js';
+import { taskbarHideCommands } from './taskbar-hide-commands.js';
 
 const SLOT_COUNT_DEFAULT = 10;
 
@@ -22,7 +23,7 @@ const SLOT_COUNT_DEFAULT = 10;
  * списке пикера, дребезжать нечему.
  */
 function buildCommandMap({
-  winMan, config, log, notify, haExport, publishDone = () => {}, dock = null, taskbar = null, sessionIcons = null,
+  winMan, config, log, notify, haExport, publishDone = () => {}, dock = null, taskbar = null, sessionIcons = null, taskbarHide = null,
 }) {
   const windows = windowCommands({ winMan, config, log, notify });
   const claude = claudeCommands({ winMan, log, notify, slots: () => haExport.slots() });
@@ -148,6 +149,8 @@ function buildCommandMap({
     ...(sessionIcons ? sessionIconCommands({
       store: sessionIcons.store, icons: sessionIcons.icons, getCfg: () => winMan.getClaudeWtConfig(), log,
     }) : {}),
+    // Прятание кнопок погашенных сессий (служба и хранилище — у service.js).
+    ...(taskbarHide ? taskbarHideCommands({ store: taskbarHide.store, service: taskbarHide.service, log }) : {}),
     'claude-session-open': withRefresh(claude['claude-session-open']),
     'claude-session-new': claude['claude-session-new'],
     'claude-terminal': claude['claude-terminal'],

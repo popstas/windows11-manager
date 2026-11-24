@@ -379,6 +379,24 @@ async function start() {
     });
 
   claudeWt
+    .command('taskbar-show-all')
+    .description('return every hidden taskbar button of Claude terminal windows')
+    // Просит запущенную службу (она одна владеет спрятанными кнопками), а не
+    // правит что-то сама: тот же маршрут, что и у пункта трея.
+    .action(async () => {
+      const { getConfig } = await import('./config.js');
+      const port = getConfig().httpPort ?? 9722;
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/claude-wt/taskbar-show-all`, { method: 'POST', body: '{}' });
+        console.log(await res.text());
+        process.exit(res.ok ? 0 : 1);
+      } catch (e) {
+        console.error(`[claude-wt] service is not reachable on port ${port}: ${e.message}`);
+        process.exit(1);
+      }
+    });
+
+  claudeWt
     .command('open-project')
     .description('focus the last open session for a project cwd, or spawn a fresh named Claude')
     .requiredOption('--cwd <path>', 'Linux project directory')

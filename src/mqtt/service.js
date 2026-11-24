@@ -107,6 +107,7 @@ function startService({
   const router = createRouter(buildCommandMap({
     winMan, config: withBase, log, notify, haExport, publishDone, dock, taskbar,
     sessionIcons: { store: sessionIconStore, icons: () => windowIcons },
+    taskbarHide: { store: taskbarHideStore, service: taskbarHide },
   }));
 
   // Брокер этим троим не нужен, и ждать подключения они не должны: расстановка

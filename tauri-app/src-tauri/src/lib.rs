@@ -1973,6 +1973,13 @@ pub fn run() {
                 true,
                 None::<&str>,
             )?;
+            let claude_wt_taskbar_show_all_i = MenuItem::with_id(
+                app,
+                "taskbar_show_all",
+                "Show all taskbar buttons",
+                true,
+                None::<&str>,
+            )?;
             // Плитка и каскад для терминалов Claude. Знак перед подписью — тот
             // же приём, что на маке (macos-windows-manager): символ без
             // цветного Emoji_Presentation сам берёт цвет и размер у шрифта
@@ -2056,6 +2063,7 @@ pub fn run() {
                 &claude_wt_i,
                 &tracked_count_i,
                 &claude_wt_restore_i,
+                &claude_wt_taskbar_show_all_i,
                 &claude_wt_place_tile_i,
                 &claude_wt_place_cascade_i,
             ];
@@ -2166,6 +2174,13 @@ pub fn run() {
                             app,
                             &["src/index.js", "claude-wt", "restore"],
                             "claude-wt restore",
+                        );
+                    }
+                    "taskbar_show_all" => {
+                        run_node_command(
+                            app,
+                            &["src/index.js", "claude-wt", "taskbar-show-all"],
+                            "Show all taskbar buttons",
                         );
                     }
                     "claude_wt_place_tile" => {
