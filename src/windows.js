@@ -65,6 +65,26 @@ function flashWindow(id, on) {
 }
 
 /**
+ * Сама кнопка окна на панели задач (ITaskbarList::DeleteTab/AddTab), по hwnd
+ * любого процесса: убрать и вернуть. Окно при этом живёт и остаётся в
+ * Alt+Tab. Аддон, собранный до этих функций, их не знает — вызовы молча
+ * дают false, а `hasTabControl()` говорит зовущему, что прятать нечем.
+ */
+function hasTabControl() {
+  return Boolean(addon?.deleteTab && addon?.addTab);
+}
+
+function deleteTab(id) {
+  if (!hasTabControl()) return false;
+  return addon.deleteTab(id);
+}
+
+function addTab(id) {
+  if (!hasTabControl()) return false;
+  return addon.addTab(id);
+}
+
+/**
  * Иконка окна (WM_SETICON) по hwnd любого процесса: .ico или картинка
  * (.png и т.п.). Пустой путь снимает поставленную снаружи иконку. Иконку
  * держит этот процесс: пока он жив, окно её показывает.
@@ -212,6 +232,9 @@ export {
   hasTaskbarControl,
   setTaskbarProgress,
   flashWindow,
+  hasTabControl,
+  deleteTab,
+  addTab,
   hasWindowIconControl,
   setWindowIcon,
   hasOverlayIconControl,
