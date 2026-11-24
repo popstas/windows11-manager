@@ -36,7 +36,7 @@ function setup({ windows, sessions = {}, agents = {}, control = true, withStore 
   };
   const winMan = {
     hasTabControl: () => control,
-    getVisibleWindowIds: vi.fn(() => world.windows.map(w => w.id)),
+    getVisibleWindowIds: vi.fn(() => world.windows.filter(w => !w.invisible).map(w => w.id)),
     getWindowById: vi.fn(id => {
       const w = world.windows.find(x => x.id === id);
       return w ? { path: w.path, getTitle: () => w.title } : null;
@@ -281,6 +281,89 @@ describe('startTaskbarHide', () => {
     svc.tick();
     expect(store.get(A)).toEqual({ mode: 'hide', hwnd: 2 });
     expect(calls).toEqual([['delete', 2]]);
+  });
+
+  it('невидимое окно, вернувшись не нужным, получает addTab', () => {
+    // Замер на nb: SW_HIDE и SW_SHOW кнопку не возвращают.
+    const { svc, world, calls, shown, logs, reset } = setup({ sessions: { 1: A, 2: B } });
+    svc.setSet({ sessions: [A] });
+    world.windows[0].invisible = true;
+    svc.tick();
+    svc.setSet({ sessions: [] });
+    reset();
+    world.windows[0].invisible = false;
+    svc.tick();
+    expect(calls).toEqual([['add', 1]]);
+    expect(shown, 'кнопка новая — значки ставятся заново').toEqual([[1]]);
+    expect(logs).toContain(`info: taskbar hide: 1 ${A} возвращена`);
+    reset();
+    svc.tick();
+    expect(calls, 'один раз').toEqual([]);
+  });
+
+  it('невидимое окно, вернувшись всё ещё нужным, прячется снова', () => {
+    const { svc, world, calls, reset } = setup({ sessions: { 1: A } });
+    svc.setSet({ sessions: [A] });
+    world.windows[0].invisible = true;
+    svc.tick();
+    reset();
+    world.windows[0].invisible = false;
+    svc.tick();
+    expect(calls).toEqual([['add', 1], ['delete', 1]]);
+  });
+
+  it('новое окно терминала получает addTab молча', () => {
+    const { svc, world, calls, shown, logs, reset } = setup({ sessions: {} });
+    reset();
+    world.windows.push({ id: 4, path: WEZ, title: 'new' });
+    svc.tick();
+    expect(calls).toEqual([['add', 4]]);
+    expect(shown).toEqual([]);
+    expect(logs).toEqual([]);
+  });
+
+  it('showAll возвращает кнопку и окну, пропадавшему из списка', () => {
+    const { svc, world, calls, shown, reset } = setup({ sessions: { 1: A, 2: B } });
+    svc.setSet({ sessions: [A] });
+    world.windows[0].invisible = true;
+    svc.tick();
+    world.windows[0].invisible = false;
+    reset();
+    // Без тика между появлением и пунктом трея.
+    expect(svc.showAll()).toBe(1);
+    expect(calls).toEqual([['add', 1], ['add', 2]]);
+    expect(shown).toEqual([[1]]);
+  });
+
+  it('явная отметка переживает невидимость окна, снимается, только когда окна нет', () => {
+    const { svc, world, store } = setup({ sessions: { 1: A } });
+    store.set(A, 'hide');
+    svc.tick();
+    world.windows[0].invisible = true;
+    svc.tick();
+    expect(store.get(A)).toEqual({ mode: 'hide', hwnd: 1 });
+    world.windows = world.windows.slice(1);
+    svc.tick();
+    expect(store.get(A)).toBeUndefined();
+  });
+
+  it('набор опустел — спрятанная кнопка возвращена', () => {
+    const { svc, calls, shown, reset } = setup({ sessions: { 1: A } });
+    svc.setSet({ sessions: [A] });
+    reset();
+    svc.setSet({ sessions: [] });
+    expect(calls).toEqual([['add', 1]]);
+    expect(shown).toEqual([[1]]);
+  });
+
+  it('окно потеряло сессию — кнопка возвращена', () => {
+    // Вкладка wt сменилась: заголовок больше не находит сессию.
+    const { svc, world, calls, reset } = setup({ sessions: { 1: A } });
+    svc.setSet({ sessions: [A] });
+    reset();
+    delete world.sessions[1];
+    svc.tick();
+    expect(calls).toEqual([['add', 1]]);
   });
 
   it('showAll и stop возвращают всё', () => {

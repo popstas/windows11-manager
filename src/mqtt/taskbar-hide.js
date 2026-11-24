@@ -39,6 +39,8 @@ import { terminalWindowsOf } from './window-icons.js';
 const TASKBAR_HIDE_INTERVAL_MS = 3000;
 const TASKBAR_HIDE_TTL_MS = 20 * 60 * 1000;
 const TASKBAR_REHIDE_MS = 60 * 1000;
+// Сколько пропавших из видимых спрятанных окон помнить.
+const LOST_MAX = 64;
 
 function startTaskbarHide({
   winMan, log, store, onShown = () => {},
@@ -63,6 +65,11 @@ function startTaskbarHide({
   const taskbarWindow = () => (typeof winMan.getTaskbarWindow === 'function' ? winMan.getTaskbarWindow() : 0);
   // hwnd → sessionId: кнопки, которые спрятали мы.
   const hidden = new Map();
+  // Спрятанные окна, пропавшие из видимых (SW_HIDE и прочее): кнопка у них
+  // по-прежнему удалена (замер на nb, AGENTS.md). Вернутся видимыми — addTab.
+  const lost = new Map();
+  // Окна терминалов прошлого тика: новое среди них получает addTab.
+  let known = new Set();
   // Набор от пикера и время его прихода.
   let set = new Set();
   let setAt = 0;
@@ -82,16 +89,42 @@ function startTaskbarHide({
   }
 
   // Неудавшийся addTab оставляет окно в `hidden`: следующий тик повторит.
+  // Окну, которое мы не прятали, addTab ничего не меняет (замер на nb) — ни
+  // строки, ни `onShown`.
   function show(ids) {
     const back = [];
     for (const id of ids) {
+      const sessionId = hidden.get(id) ?? lost.get(id);
+      const ours = hidden.has(id) || lost.has(id);
       if (!winMan.addTab(id)) continue;
-      log(`taskbar hide: ${id} ${hidden.get(id)} возвращена`);
       hidden.delete(id);
+      lost.delete(id);
+      if (!ours) continue;
+      log(`taskbar hide: ${id} ${sessionId} возвращена`);
       back.push(id);
     }
     if (back.length) onShown(back);
     return back.length;
+  }
+
+  // Невидимого окна (SW_HIDE) в `present` нет, а кнопка у него остаётся
+  // удалённой, — поэтому «нет среди видимых» не значит «закрылось» (решение
+  // ревью Task 4, поверх формулировки плана «hwnd нет среди окон — окно
+  // закрылось»). Окно терминала, появившееся среди видимых, получает addTab до
+  // плана: показанной кнопке это ничего не делает, а всё ещё нужное спрячется
+  // обычным планом на том же тике.
+  function returnAppeared(termIds) {
+    const appeared = [...termIds].filter(id => !known.has(id));
+    known = termIds;
+    if (!appeared.length) return;
+    // Своё, не вернувшееся, — снова в `hidden`: план повторит addTab.
+    const ours = appeared.filter(id => lost.has(id));
+    show(appeared);
+    for (const id of ours) {
+      if (!lost.has(id)) continue;
+      hidden.set(id, lost.get(id));
+      lost.delete(id);
+    }
   }
 
   // Неудавшийся deleteTab в `hidden` не попадает: следующий тик повторит.
@@ -132,12 +165,15 @@ function startTaskbarHide({
   }
 
   // Явные отметки: закрылось окно — снять, появилось окно сессии — запомнить.
+  // «Закрылось» — окна нет вовсе (getWindowById → null), а не «нет среди
+  // видимых»: невидимое окно ещё вернётся (решение ревью Task 4). Спрашиваются
+  // только отмеченные hwnd, которых нет в `present`, — обычно ни одного.
   function trackExplicit(present, bySession) {
     for (const id of store.ids()) {
       const e = store.get(id);
       if (!e) continue;
       if (Number.isFinite(e.hwnd)) {
-        if (!present.has(e.hwnd)) store.set(id, null);
+        if (!present.has(e.hwnd) && !winMan.getWindowById(e.hwnd)) store.set(id, null);
       } else if (bySession.has(id)) {
         store.patch(id, { hwnd: bySession.get(id) });
       }
@@ -161,7 +197,15 @@ function startTaskbarHide({
     try {
       watchTaskbar();
       const { windows, present } = terminalWindows();
-      for (const id of [...hidden.keys()]) if (!present.has(id)) hidden.delete(id);
+      for (const id of [...hidden.keys()]) {
+        if (present.has(id)) continue;
+        lost.set(id, hidden.get(id));
+        hidden.delete(id);
+      }
+      // Закрытые окна в `lost` копились бы всю жизнь службы.
+      while (lost.size > LOST_MAX) lost.delete(lost.keys().next().value);
+      const termIds = new Set(windows.map(w => w.id));
+      returnAppeared(termIds);
       if (!hidden.size) lastRehide = now();
       const current = liveSet();
       if (!current.size && !store.ids().length && !hidden.size) {
@@ -187,7 +231,6 @@ function startTaskbarHide({
         trayChanged = false;
         lastRehide = now();
       }
-      const termIds = new Set(windows.map(w => w.id));
       const { remove, add } = planTabs(new Set(hidden.keys()), wanted, termIds, reapply);
       // Панели нет (explorer лежит) — прятать некуда: ждать её возвращения.
       if (tray || typeof winMan.getTaskbarWindow !== 'function') hide(remove, new Map(sessions.map(s => [s.id, s.sessionId])));
@@ -201,7 +244,8 @@ function startTaskbarHide({
   }
 
   try {
-    for (const { id } of terminalWindows().windows) winMan.addTab(id);
+    known = new Set(terminalWindows().windows.map(w => w.id));
+    for (const id of known) winMan.addTab(id);
   } catch (e) {
     report(e);
   }
@@ -230,13 +274,19 @@ function startTaskbarHide({
     return { applied: false, reason: 'not applied (see tray log)' };
   }
 
+  // Спрятанное плюс все окна терминалов на экране: кнопку могли потерять и мимо
+  // `hidden` (окно пропадало из видимых). Показанной кнопке addTab — no-op.
+  function returnAll() {
+    return show([...new Set([...hidden.keys(), ...terminalWindows().windows.map(w => w.id)])]);
+  }
+
   /** Пункт трея «Show all taskbar buttons»: сбросить отметки и набор, вернуть всё. */
   function showAll() {
     store.clearAll();
     set = new Set();
     setAt = now();
     try {
-      return show([...hidden.keys()]);
+      return returnAll();
     } catch (e) {
       report(e);
       return 0;
@@ -251,11 +301,12 @@ function startTaskbarHide({
     stop() {
       clearIntervalFn(timer);
       try {
-        for (const id of [...hidden.keys()]) winMan.addTab(id);
+        for (const id of new Set([...hidden.keys(), ...terminalWindows().windows.map(w => w.id)])) winMan.addTab(id);
       } catch (e) {
         report(e);
       }
       hidden.clear();
+      lost.clear();
     },
   };
 }
