@@ -395,11 +395,28 @@ Window titles are compared in decoration-stripped form (`title-helpers.js`): Cla
 | Overlay and progress set while hidden, then `addTab` | the new button has neither |
 | Overlay and progress set on the shown button, then `deleteTab` + `addTab` | both gone |
 
-Decision: **`reapplyEveryTick = false`.** Nothing other than an explorer restart brings a button back, so hide again only on events: when `getTaskbarWindow()` changes, treat every hidden window as unknown and hide it again, the same signal `window-icons.js` uses for badges. Explorer's answer cannot tell the caller whether a button is hidden: overlay, progress, icon and flash all return `true` on a hidden button and are then lost. The module has to keep its own hidden set, skip decorating hidden buttons, and mark a window unknown in `taskbar.js` and `window-icons.js` after `addTab` so both draw again. `deleteTab` outlives its caller, and the tray kills the service without running `stop()`. Buttons hidden by a killed instance would then stay hidden with nobody tracking them, and event-only re-hiding never revisits them. So the first pass after start must `addTab` every terminal window it does not want hidden. That is safe because `addTab` on a shown button changes nothing, decorations included. Side note: `VirtualDesktop11.exe /GetDesktopFromWindowHandle` once answered "Window to handle … not found" for both hidden windows while a shown window resolved. That was a few minutes after `deleteTab`, right after the `SW_HIDE`/`SW_SHOW` step, so the cause was not isolated. After a desktop switch the same hidden windows resolved and `MoveWindowHandle` worked. Treat a desktop lookup for a hidden window as unreliable. Not measured:
+**Decision: `reapplyEveryTick = false`; re-hide on a taskbar hwnd change plus every 60 s.**
+
+Of the measured events, only an explorer restart brings a button back. Re-hiding therefore runs on two triggers:
+
+- **Taskbar change.** When `getTaskbarWindow()` changes, the taskbar-change handler treats every hidden window as unknown and hides it again. This is the same signal `window-icons.js` uses for badges.
+- **Safety net.** Every hidden window is hidden again once per `TASKBAR_REHIDE_MS` = 60 s. This covers the events listed as not measured below. `DeleteTab` is idempotent and cheap, so the extra call costs nothing visible.
+
+Explorer's answers cannot tell the caller whether a button is hidden: overlay, progress, icon and flash all return `true` on a hidden button, and what they set is lost. That has three consequences:
+
+- The module keeps its own hidden set.
+- Decorating a hidden button needs no special casing: the call succeeds without errors or log noise and has no effect.
+- After `addTab` the module re-applies the badge and the progress bar by marking the window unknown in `window-icons.js` and `taskbar.js` (their `resync`), because the new button starts clean.
+
+`deleteTab` outlives its caller, and the tray kills the service without running `stop()`. Buttons hidden by a killed instance would stay hidden with nobody tracking them. So the first pass after start must `addTab` every terminal window it does not want hidden. That is safe: `addTab` on a shown button changes nothing, decorations included.
+
+Side note: `VirtualDesktop11.exe /GetDesktopFromWindowHandle` once answered "Window to handle … not found" for both hidden windows while a shown window resolved. That was a few minutes after `deleteTab`, right after the `SW_HIDE`/`SW_SHOW` step, so the cause was not isolated. After a desktop switch the same hidden windows resolved and `MoveWindowHandle` worked. Treat a desktop lookup for a hidden window as unreliable.
+
+Not measured:
 - a real Claude session window (the service's calls on one were reproduced directly instead);
 - a human Alt+Tab or click;
 - a terminal recreating its window (that gives a new hwnd, and a new hwnd gets a new button anyway);
-- monitor connect/disconnect, lock/unlock, sleep/resume. None of these changes `Shell_TrayWnd`, so the event signal would miss them if they bring buttons back.
+- monitor connect/disconnect and docking, DPI changes, lock/unlock, sleep/resume. Whether any of these brings buttons back is unknown. It is also unverified whether they change the `getTaskbarWindow()` hwnd: secondary taskbars can be recreated, and explorer may rebuild a taskbar while the primary hwnd stays the same. The hwnd-change trigger may therefore miss them, and the 60 s re-hide is what closes that gap.
 
 Rebuilding the vendored addon on Windows (after a change in `lib/windows.cc`): the running node processes keep `build\Release\addon.node` loaded, so move it aside first (`move /y addon.node addon.old.node`, renaming a loaded DLL is allowed), then `node-gyp configure --msvs_version=2022` (only if the generated project points at a missing Visual Studio) and `node-gyp build` from `vendor\node-window-manager`, using npm's bundled `node_modules\npm\node_modules\node-gyp\bin\node-gyp.js`. Restart the tray afterwards so its children load the new build. If linking stops with `LNK1103: debugging information corrupt` on `windows.obj`, the incremental link-time data is stale: delete `build\Release\addon.iobj`, `addon.ipdb` and `build\Release\obj\addon\**\*.obj`, then build again. That happened on nb, 2026-11-24, with no code problem behind it.
 
