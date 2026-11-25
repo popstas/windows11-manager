@@ -17,6 +17,15 @@ describe('trackTitle', () => {
     expect(second.stableTitle).toBe('ccfzf');
   });
 
+  // pid окна едет в файл трекера тем же путём, что app: потеряйся он здесь —
+  // session type на pc-virt не нашёл бы сокет окна.
+  it('carries the window pid, keeping the last known one', () => {
+    const first = trackTitle(undefined, win({ pid: 31544 }), 2);
+    expect(first.pid).toBe(31544);
+    expect(trackTitle(first, win(), 2).pid).toBe(31544);
+    expect(trackTitle(undefined, win(), 2).pid).toBe(0);
+  });
+
   it('restarts the count when the title changes', () => {
     const first = trackTitle(undefined, win(), 2);
     const second = trackTitle(first, win(), 2);

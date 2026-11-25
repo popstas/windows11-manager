@@ -37,7 +37,7 @@ describe('buildWindowsFile', () => {
     });
     expect(out.windows.aaa).toEqual({
       title: 'ccfzf-picker', desktop: 2, lastSeen: 1700, focusedAt: 1650, unreadAt: 1680,
-      app: 'WindowsTerminal.exe', icon: '', minimized: false,
+      app: 'WindowsTerminal.exe', pid: 0, icon: '', minimized: false,
       monitor: null, zone: null, slot: null,
     });
   });
@@ -129,9 +129,27 @@ describe('buildWindowsFile', () => {
       windows: [{ title: 'fresh', sessionId: 'zzz' }], slots: {}, host: 'pc', pid: 1, nowMs: 0,
     });
     expect(out.windows.zzz).toEqual({
-      title: 'fresh', desktop: null, lastSeen: 0, focusedAt: 0, unreadAt: 0, app: '', icon: '', minimized: false,
+      title: 'fresh', desktop: null, lastSeen: 0, focusedAt: 0, unreadAt: 0, app: '', pid: 0, icon: '', minimized: false,
       monitor: null, zone: null, slot: null,
     });
+  });
+
+  // claude-wt session type на pc-virt находит по pid сокет gui-sock-<pid>
+  // окна WezTerm. Мусор и отсутствие — ноль, как у прочих чисел записи.
+  it('carries the pid of the window process, zero when unknown or junk', () => {
+    const out = buildWindowsFile({
+      windows: [
+        { title: 'a', sessionId: 'aaa', app: 'wezterm-gui.exe', pid: 31544 },
+        { title: 'b', sessionId: 'bbb', pid: -3 },
+        { title: 'c', sessionId: 'ccc', pid: '17' },
+        { title: 'd', sessionId: 'ddd' },
+      ],
+      slots: {}, host: 'pc', pid: 1, nowMs: 0,
+    });
+    expect(out.windows.aaa.pid).toBe(31544);
+    expect(out.windows.bbb.pid).toBe(0);
+    expect(out.windows.ccc.pid).toBe(0);
+    expect(out.windows.ddd.pid).toBe(0);
   });
 
   it('survives missing windows and slots', () => {
@@ -202,6 +220,11 @@ describe('windowsFingerprint', () => {
     const a = { one: { desktop: 1, title: 'x' }, two: { desktop: 2, title: 'y' } };
     const b = { two: { desktop: 2, title: 'y' }, one: { desktop: 1, title: 'x' } };
     expect(windowsFingerprint(a)).toBe(windowsFingerprint(b));
+  });
+
+  it('notices a session that moved to another window process', () => {
+    const base = { one: { desktop: 1, title: 'x', pid: 10 } };
+    expect(windowsFingerprint({ one: { desktop: 1, title: 'x', pid: 11 } })).not.toBe(windowsFingerprint(base));
   });
 
   it('notices a moved desktop, a renamed window and a closed one', () => {
