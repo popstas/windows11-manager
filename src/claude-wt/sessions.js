@@ -1,14 +1,14 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { indexSessions, indexBackgroundAgents, indexShellSessions, hasHookStamp, mergeIndexes } from './sessions-helpers.js';
+import { indexSessions, indexBackgroundAgents, indexShellSessions, indexProjectOwners, hasHookStamp, mergeIndexes } from './sessions-helpers.js';
 import { progressStamp, activityAt } from './progress.js';
 
 // Кэш — по пути: дампов теперь бывает два (удалённый на V: и местный при
 // `features.localSource`), и общий слот на двоих вытеснял бы один другим —
 // каждый тик перечитывался бы дамп в двести килобайт по сетевому диску.
 const caches = new Map();
-const EMPTY = Object.freeze({ index: {}, agents: {}, shells: new Set() });
+const EMPTY = Object.freeze({ index: {}, agents: {}, shells: new Set(), owners: {} });
 let lastWarnedAt = 0;
 const WARN_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -147,13 +147,14 @@ function loadDump(filePath, progressDir = '', nowMs = Date.now(), wanted = false
     next = {
       path: filePath, mtimeMs: stat.mtimeMs, stamp, readAt: nowMs,
       index, agents: indexBackgroundAgents(dump), shells: indexShellSessions(dump),
+      owners: indexProjectOwners(dump),
       usesHookStamps: dumpNeedsHookStamps(dump),
     };
   } catch (e) {
     warnThrottled(`session dump unreadable (${filePath}): ${e.message}`);
     next = {
       path: filePath, mtimeMs: stat.mtimeMs, stamp, readAt: nowMs, index: {}, agents: {},
-      shells: new Set(), usesHookStamps: true,
+      shells: new Set(), owners: {}, usesHookStamps: true,
     };
   }
   caches.set(filePath, next);
@@ -225,8 +226,22 @@ function loadAll(cfg, nowMs, wanted, home) {
  * Цена — местная тёзка окна не получит.
  */
 function loadSessionIndexFor(cfg, nowMs = Date.now(), wanted = false, home = os.homedir()) {
-  const all = loadAll(cfg, nowMs, wanted, home);
-  return mergeIndexes(all.filter(a => a.local).map(a => a.dump.index), all.filter(a => !a.local).map(a => a.dump.index));
+  return mergeField(loadAll(cfg, nowMs, wanted, home), 'index');
+}
+
+/** Поле кэша дампа из всех источников: местные, поверх — удалённые. */
+function mergeField(all, field) {
+  return mergeIndexes(all.filter(a => a.local).map(a => a.dump[field]), all.filter(a => !a.local).map(a => a.dump[field]));
+}
+
+/**
+ * Индекс заголовков и владельцы (`loadProjectOwnersFor`) за один проход по
+ * источникам: каждый проход — `stat` дампа на сетевом диске, а службы иконок
+ * и кнопок панели задач спрашивают оба сразу.
+ */
+function loadSessionIndexAndOwnersFor(cfg, nowMs = Date.now(), home = os.homedir()) {
+  const all = loadAll(cfg, nowMs, false, home);
+  return { index: mergeField(all, 'index'), owners: mergeField(all, 'owners') };
 }
 
 /** Фоновые агенты из всех источников; удалённый перебивает на том же родителе. */
@@ -242,9 +257,19 @@ function loadShellSessionsFor(cfg, nowMs = Date.now(), home = os.homedir()) {
   return out;
 }
 
-export { indexSessions, indexBackgroundAgents, indexShellSessions, compareSessions } from './sessions-helpers.js';
+/**
+ * id сессии → каталог проекта-владельца (`projectCwd` дампа) из всех
+ * источников; удалённый перебивает на том же id. Из того же кэша, что индекс
+ * заголовков, — лишнего чтения дампа нет.
+ */
+function loadProjectOwnersFor(cfg, nowMs = Date.now(), home = os.homedir()) {
+  return mergeField(loadAll(cfg, nowMs, false, home), 'owners');
+}
+
+export { indexSessions, indexBackgroundAgents, indexShellSessions, indexProjectOwners, compareSessions } from './sessions-helpers.js';
 export { mergeIndexes } from './sessions-helpers.js';
 export {
   loadSessionIndex, loadBackgroundAgents, loadShellSessions, invalidateSessionIndex,
   localDumpPath, sessionDumps, loadSessionIndexFor, loadBackgroundAgentsFor, loadShellSessionsFor,
+  loadProjectOwnersFor, loadSessionIndexAndOwnersFor,
 };

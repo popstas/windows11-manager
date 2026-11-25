@@ -159,6 +159,35 @@ describe('resumeClaudeSession', () => {
     expect(h.seen).toEqual([[11, 22]]);
   });
 
+  describe('владелец сессии из дампа (projectCwd)', () => {
+    const cfg = { projects: [{ name: 'repo', cwd: '/p/repo', profile: 'Work' }] };
+    const profileOf = args => (args.includes('-p') ? args[args.indexOf('-p') + 1] : '');
+
+    it('профиль — по владельцу сессии (worktree), а не по её каталогу', async () => {
+      const h = resumeHarness({ cfg, deps: { projectCwdOf: id => (id === 'w1' ? '/p/repo' : '') } });
+      await resumeClaudeSession({ id: 'w1', cwd: '/p/repo.feat' }, h.deps);
+      expect(profileOf(h.spawned[0].args)).toBe('Work');
+    });
+
+    it('владелец не известен (имя вместо id, дамп без поля) — профиль по каталогу, как раньше', async () => {
+      const asked = [];
+      const h = resumeHarness({ cfg, deps: { projectCwdOf: (id) => { asked.push(id); return ''; } } });
+      await resumeClaudeSession({ id: 'planfix-42', cwd: '/p/repo' }, h.deps);
+      expect(asked).toEqual(['planfix-42']);
+      expect(profileOf(h.spawned[0].args)).toBe('Work');
+      const g = resumeHarness({ cfg, deps: { projectCwdOf: () => '' } });
+      await resumeClaudeSession({ id: 'w1', cwd: '/p/repo.feat' }, g.deps);
+      expect(profileOf(g.spawned[0].args)).toBe('');
+    });
+
+    it('местность судится по каталогу сессии, а не по владельцу', async () => {
+      const h = resumeHarness({ cfg, deps: { projectCwdOf: () => '/p/repo' } });
+      const res = await resumeClaudeSession({ id: 'x', cwd: 'C:\\work\\local-repo' }, h.deps);
+      expect(res).toMatchObject({ ok: false, action: 'local' });
+      expect(h.spawned).toEqual([]);
+    });
+  });
+
   it('каталог без своего профиля не добавляет профильных аргументов', async () => {
     const h = resumeHarness();
     await resumeClaudeSession({ id: 'abc', cwd: '/home/popstas/projects/other' }, h.deps);

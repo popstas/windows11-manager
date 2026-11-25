@@ -20,6 +20,11 @@
  * первое совпавшее правило. Сессии однотипны, и отличать их нужно внутри
  * проекта, не трогая его иконку, — поэтому слот тот же, что у head, а head
  * в режиме `badge` его не уступает. Проект — по точному cwd, как у иконки.
+ *
+ * Каталог проекта сессии — `projectCwd || cwd` (решение head 26.11): владельца
+ * у сессии из git worktree, подкаталога или подмодуля называет ccfzf полем
+ * `projectCwd` дампа, и иконка со значками идут за ним так же, как уже идёт
+ * тип проекта. Сравнение по-прежнему точное — меняется только ключ.
  */
 import { fileURLToPath } from 'node:url';
 import { profileForTerminal } from './project-helpers.js';
@@ -107,13 +112,14 @@ function badPatterns(cfg) {
  * Значок — head в режиме `badge`, иначе первое совпавшее правило `badges`
  * проекта по заголовку окна.
  */
-function iconFor({ sessionId, cwd, title }, { heads, cfg }) {
+function iconFor({ sessionId, cwd, projectCwd, title }, { heads, cfg }) {
   const isHead = Boolean(sessionId && heads?.has(sessionId));
-  const badge = () => badgeFor(title, projectFor(cwd, cfg));
-  if (!isHead) return { icon: projectIconFor(cwd, cfg), overlay: badge() };
+  const owner = projectCwd || cwd;
+  const badge = () => badgeFor(title, projectFor(owner, cfg));
+  if (!isHead) return { icon: projectIconFor(owner, cfg), overlay: badge() };
   const headBadge = cfg.windowIcons?.head || BUILTIN_HEAD_ICON;
   if (headModeOf(cfg) === 'icon') return { icon: headBadge, overlay: badge() };
-  return { icon: projectIconFor(cwd, cfg), overlay: headBadge };
+  return { icon: projectIconFor(owner, cfg), overlay: headBadge };
 }
 
 const ABSOLUTE = /^(?:[a-zA-Z]:[\\/]|[\\/])/;

@@ -194,6 +194,24 @@ function indexShellSessions(dump) {
 }
 
 /**
+ * id → projectCwd: каталог проекта-владельца у сессий, чей владелец — не их
+ * собственный каталог. Поле пишет ccfzf (worktree рядом с основным репо,
+ * подкаталог, подмодуль); по нему менеджер ищет иконку, значки и профиль
+ * терминала. Ключ — id, а не заголовок: заголовочный индекс держит одну
+ * лучшую из тёзок и пропускает фоновых, а подъём по id просит любую. Дамп
+ * без поля (ccfzf до worktree) даёт пусто — всё ищется по cwd, как раньше.
+ */
+function indexProjectOwners(dump) {
+  const sessions = Array.isArray(dump?.sessions) ? dump.sessions : [];
+  const owners = {};
+  for (const s of sessions) {
+    if (!s?.id || typeof s.projectCwd !== 'string' || !s.projectCwd || s.projectCwd === s.cwd) continue;
+    owners[s.id] = s.projectCwd;
+  }
+  return owners;
+}
+
+/**
  * Слить индексы двух источников: сначала местные, поверх — удалённые, то есть
  * на совпадающем ключе выигрывает удалённый (см. `loadSessionIndexFor`).
  */
@@ -203,5 +221,5 @@ function mergeIndexes(local = [], remote = []) {
 
 export {
   compareSessions, byActivityThen, stampOf, hasHookStamp, indexSessions, indexBackgroundAgents,
-  indexShellSessions, mergeIndexes,
+  indexShellSessions, indexProjectOwners, mergeIndexes,
 };

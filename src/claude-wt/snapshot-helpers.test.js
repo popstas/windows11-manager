@@ -244,6 +244,17 @@ describe('planSnapshotRestore', () => {
     expect(item.args).toEqual(['-w', '-1', '-p', 'ExpertizeMe', 'ssh', 'ccfzf --session a']);
   });
 
+  it('resolveProfile получает и id сессии — по нему ищется владелец каталога', () => {
+    const seen = [];
+    planSnapshotRestore({
+      snapshot,
+      openSessionIds: new Set(['b', 'c']),
+      launch: { command: 'wt.exe', args: ['ssh', 'ccfzf --session {id}'] },
+      resolveProfile: (cwd, id) => { seen.push([cwd, id]); return ''; },
+    });
+    expect(seen).toEqual([['/a', 'a']]);
+  });
+
   it('narrows to the requested sessions when asked', () => {
     const plan = planSnapshotRestore({ snapshot, openSessionIds: new Set(), sessionIds: ['b'], launch });
     expect(plan.map(p => p.sessionId)).toEqual(['b']);
