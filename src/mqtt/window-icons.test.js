@@ -384,6 +384,20 @@ describe('startWindowIcons', () => {
       expect(published.at(-1).c).toBe(TG);
     });
 
+    it('явная иконка важнее иконки владельца (projectCwd)', () => {
+      const store = tmpStore();
+      store.set('w', 'icon', TG);
+      const { calls } = setup({
+        windows: [{ id: 3, path: WT, title: 'w' }, { id: 4, path: WT, title: 'v' }],
+        sessions: {
+          3: { sessionId: 'w', cwd: '/p/home.feat', projectCwd: '/p/home' },
+          4: { sessionId: 'v', cwd: '/p/home.feat', projectCwd: '/p/home' },
+        },
+        store,
+      });
+      expect(calls).toEqual([[3, TG], [4, 'C:/ico/me.ico']]);
+    });
+
     it('явная иконка у head в режиме icon — явная, не значок head', () => {
       const store = tmpStore();
       store.set('h', 'icon', TG);

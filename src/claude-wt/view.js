@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { getWindows } from '../windows.js';
 import { getMons } from '../monitors.js';
 import { readState } from './state.js';
-import { loadSessionIndexFor, loadBackgroundAgentsFor, loadShellSessionsFor } from './sessions.js';
+import { loadSessionIndexFor, loadBackgroundAgentsFor, loadShellSessionsFor, loadSessionIndexAndOwnersFor } from './sessions.js';
 import { resolveSession } from './tracker-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
@@ -104,7 +104,10 @@ function claudeWtWindowSessions(windows) {
   const cfg = getClaudeWtConfig();
   if (!cfg.enabled || !cfg.statePath || !windows?.length) return [];
   const state = readState(cfg.statePath);
-  const index = loadSessionIndexFor(cfg);
+  // Владелец сессии (projectCwd дампа) — по id, поэтому и у окна, найденного
+  // по своей истории заголовков, а не по дампу: иконка и значки worktree —
+  // основного проекта. Один проход по дампам на оба: каждый — сетевой stat.
+  const { index, owners } = loadSessionIndexAndOwnersFor(cfg);
   const out = [];
   for (const w of windows) {
     // Заголовок без префиксов zellij/WezTerm: по нему ищется сессия и по нему
@@ -113,7 +116,10 @@ function claudeWtWindowSessions(windows) {
     const hit = resolveSession(title, index, state.slots);
     if (!hit) continue;
     const slot = state.slots[hit.id];
-    out.push({ id: w.id, sessionId: hit.id, cwd: hit.cwd || slot?.cwd || '', focusedAt: slot?.focusedAt ?? 0, title });
+    out.push({
+      id: w.id, sessionId: hit.id, cwd: hit.cwd || slot?.cwd || '', projectCwd: owners[hit.id] ?? '',
+      focusedAt: slot?.focusedAt ?? 0, title,
+    });
   }
   return out;
 }

@@ -25,6 +25,7 @@ vi.mock('./progress.js', async (importOriginal) => ({
 import {
   loadSessionIndex, loadShellSessions, invalidateSessionIndex,
   localDumpPath, sessionDumps, loadSessionIndexFor, loadBackgroundAgentsFor, loadShellSessionsFor,
+  loadProjectOwnersFor, loadSessionIndexAndOwnersFor,
 } from './sessions.js';
 
 // loadSessionIndex keeps its cache at module scope, keyed by path. Every test
@@ -415,5 +416,42 @@ describe('features.localSource: два дампа', () => {
     });
     expect(Object.keys(loadBackgroundAgentsFor(cfg, Date.now(), dir)).sort()).toEqual(['l1', 'r1']);
     expect([...loadShellSessionsFor(cfg, Date.now(), dir)].sort()).toEqual(['l1', 'r1']);
+  });
+
+  it('владельцы сессий (projectCwd) — из обоих, удалённый перебивает на том же id', () => {
+    const { cfg } = setup({
+      remote: dump([
+        { id: 'r1', title: 'p', cwd: '/p/a.wt', projectCwd: '/p/a' },
+        { id: 'x', title: 'x', cwd: '/p/x.wt', projectCwd: '/p/x-remote' },
+      ]),
+      local: dump([
+        { id: 'l1', title: 'q', cwd: 'C:/q/sub', projectCwd: 'C:/q' },
+        { id: 'x', title: 'x', cwd: '/p/x.wt', projectCwd: '/p/x-local' },
+      ]),
+    });
+    expect(loadProjectOwnersFor(cfg, Date.now(), dir)).toEqual({ r1: '/p/a', l1: 'C:/q', x: '/p/x-remote' });
+  });
+});
+
+describe('loadSessionIndexAndOwnersFor', () => {
+  it('индекс и владельцы — одним stat дампа', () => {
+    const p = freshPath();
+    writeDump(p, { sessions: [{ id: 'w', title: 'wt', cwd: '/p/a.feat', projectCwd: '/p/a', live: true, mtime: 1 }] }, T0);
+    const stat = vi.spyOn(fs, 'statSync');
+    const got = loadSessionIndexAndOwnersFor({ sessionsFile: p, progressDir: '' }, 1, dir);
+    expect(stat.mock.calls.filter(([f]) => f === p)).toHaveLength(1);
+    stat.mockRestore();
+    expect(got.index.wt).toMatchObject({ id: 'w', cwd: '/p/a.feat' });
+    expect(got.owners).toEqual({ w: '/p/a' });
+  });
+});
+
+describe('loadProjectOwnersFor', () => {
+  it('битый дамп и недоступный путь — пусто, а не падение', () => {
+    const broken = freshPath();
+    fs.writeFileSync(broken, '{not json');
+    expect(loadProjectOwnersFor({ sessionsFile: broken, progressDir: '' }, 1, dir)).toEqual({});
+    expect(loadProjectOwnersFor({ sessionsFile: path.join(dir, 'нет.json'), progressDir: '' }, 1, dir)).toEqual({});
+    expect(loadProjectOwnersFor({}, 1, dir)).toEqual({});
   });
 });

@@ -342,3 +342,44 @@ describe('значки проекта по заголовку', () => {
     expect(cfgOk.projects[0].badges).toEqual([{ match: ' tg ', icon: 'C:\\a.ico' }]);
   });
 });
+
+describe('владелец сессии из дампа (projectCwd)', () => {
+  // Сессия из worktree (`/p/exp.feat`) или подкаталога: своей записи в
+  // projects нет, владельца назвал ccfzf. Иконка, значки и профиль — его.
+  const owned = mergeClaudeWtConfig({
+    windowIcons: { profiles: { ExpertizeMe: 'C:\\ico\\exp.ico', home: 'C:\\ico\\me.ico' } },
+    projects: [
+      { name: 'exp', cwd: '/p/exp', icon: 'C:\\ico\\exp-own.ico', badges: [{ match: '-tg-', icon: 'C:\\ico\\telegram.ico' }] },
+      { name: 'home', cwd: '/p/home', profile: 'home' },
+      { name: 'wt-own', cwd: '/p/home.long', icon: 'C:\\ico\\long.ico' },
+    ],
+  });
+  const none = new Set();
+
+  it('иконка и значок badges — проекта-владельца', () => {
+    expect(iconFor({ sessionId: 's', cwd: '/p/exp.feat', projectCwd: '/p/exp', title: 'a-tg-b' }, { heads: none, cfg: owned }))
+      .toEqual({ icon: 'C:\\ico\\exp-own.ico', overlay: 'C:\\ico\\telegram.ico' });
+  });
+
+  it('иконка через профиль wt владельца', () => {
+    expect(iconFor({ sessionId: 's', cwd: '/p/home/sub', projectCwd: '/p/home' }, { heads: none, cfg: owned }).icon)
+      .toBe('C:\\ico\\me.ico');
+  });
+
+  it('head из worktree — иконка владельца и значок head', () => {
+    expect(iconFor({ sessionId: 'h', cwd: '/p/exp.feat', projectCwd: '/p/exp' }, { heads: new Set(['h']), cfg: owned }))
+      .toEqual({ icon: 'C:\\ico\\exp-own.ico', overlay: BUILTIN_HEAD_ICON });
+  });
+
+  it('без projectCwd — как сегодня, по точному cwd', () => {
+    expect(iconFor({ sessionId: 's', cwd: '/p/exp.feat', title: 'a-tg-b' }, { heads: none, cfg: owned }))
+      .toEqual({ icon: '', overlay: '' });
+    expect(iconFor({ sessionId: 's', cwd: '/p/exp', projectCwd: '', title: 'a-tg-b' }, { heads: none, cfg: owned }))
+      .toEqual({ icon: 'C:\\ico\\exp-own.ico', overlay: 'C:\\ico\\telegram.ico' });
+  });
+
+  it('владелец тоже по точному совпадению: чужого предка не ищем', () => {
+    expect(iconFor({ sessionId: 's', cwd: '/p/x', projectCwd: '/p/exp/', title: 'a-tg-b' }, { heads: none, cfg: owned }))
+      .toEqual({ icon: '', overlay: '' });
+  });
+});

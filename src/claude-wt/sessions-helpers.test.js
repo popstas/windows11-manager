@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { indexSessions, indexBackgroundAgents, indexShellSessions, compareSessions, hasHookStamp } from './sessions-helpers.js';
+import { indexSessions, indexBackgroundAgents, indexShellSessions, indexProjectOwners, compareSessions, hasHookStamp } from './sessions-helpers.js';
 
 const session = (over = {}) => ({
   id: 'a1', cwd: '/home/popstas/p', title: 'ccfzf', mtime: 100, live: false, ...over,
@@ -290,5 +290,40 @@ describe('indexShellSessions', () => {
   it('дамп ccfzf без поля — ни одной такой сессии', () => {
     expect(indexShellSessions({ sessions: [{ id: 'a', live: true, title: 't' }] }).size).toBe(0);
     expect(indexShellSessions(null).size).toBe(0);
+  });
+});
+
+describe('indexProjectOwners', () => {
+  // projectCwd ccfzf пишет в дамп, когда владелец сессии — не её каталог:
+  // worktree рядом с основным репо, подкаталог, подмодуль. По нему менеджер
+  // ищет иконку, значки и профиль терминала.
+  it('id → projectCwd у сессий, чей владелец — другой каталог', () => {
+    expect(indexProjectOwners({ sessions: [
+      session({ id: 'w', cwd: '/p/repo.feat', projectCwd: '/p/repo' }),
+      session({ id: 'm', cwd: '/p/repo' }),
+    ] })).toEqual({ w: '/p/repo' });
+  });
+
+  it('берёт и проигравших тёзок, и фоновых: подъём идёт по id, не по заголовку', () => {
+    expect(indexProjectOwners({ sessions: [
+      session({ id: 'a', title: 'same', cwd: '/p/x.wt', projectCwd: '/p/x', mtime: 1 }),
+      session({ id: 'b', title: 'same', cwd: '/p/y.wt', projectCwd: '/p/y', mtime: 2 }),
+      session({ id: 'bg', kind: 'background', parent: 'a', cwd: '/p/x.wt', projectCwd: '/p/x' }),
+    ] })).toEqual({ a: '/p/x', b: '/p/y', bg: '/p/x' });
+  });
+
+  it('projectCwd, равный cwd, пустой или не строка — не запись', () => {
+    expect(indexProjectOwners({ sessions: [
+      session({ id: 'same', cwd: '/p/x', projectCwd: '/p/x' }),
+      session({ id: 'empty', projectCwd: '' }),
+      session({ id: 'num', projectCwd: 5 }),
+      { projectCwd: '/p/noid' },
+    ] })).toEqual({});
+  });
+
+  it('дамп без поля (ccfzf до worktree) и битый дамп — пусто', () => {
+    expect(indexProjectOwners({ sessions: [session()] })).toEqual({});
+    expect(indexProjectOwners(null)).toEqual({});
+    expect(indexProjectOwners({ sessions: 'x' })).toEqual({});
   });
 });
