@@ -58,9 +58,11 @@ describe('childSessionIds', () => {
     expect([...ids].sort()).toEqual(['a', 'b', 'c']);
   });
 
-  it('протухшая и битая запись реестра — не ребёнок', () => {
+  it('старая (дольше 10 минут), битая и без head запись реестра — не ребёнок', () => {
+    // Ребёнка могли снять из каталога (head adopt), а реестр живёт неделю.
     const ids = childSessionIds(new Set(), [
-      { sessionId: 'old', headId: 'h', windowId: 1, at: now - 8 * 24 * 3600 * 1000 },
+      { sessionId: 'old', headId: 'h', windowId: 1, at: now - 11 * 60_000 },
+      { sessionId: 'nohead', windowId: 2, at: now - 1000 },
       { sessionId: 'x' },
       null,
     ], now);

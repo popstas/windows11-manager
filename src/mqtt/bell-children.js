@@ -8,7 +8,7 @@
  * привязка окна к сессии (`claudeWtWindowSessions`), а в цикл демона чтение
  * сетевого каталога детей не пускает бюджет опроса (AGENTS.md).
  *
- * Дети — sessionId из каталога `children` на pc-virt (с Windows — рядом с
+ * Дети — sessionId из каталога `children` на стороне ssh (с Windows — рядом с
  * sessionsFile, читается только список файлов) и из местного реестра
  * `child-registry.js`: ребёнок `session-new` попадает туда до SMB и до
  * привязки демоном, со своим hwnd.

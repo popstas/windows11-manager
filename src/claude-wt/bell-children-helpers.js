@@ -23,8 +23,6 @@
  * Отсюда и сердцебиение записи: файл переписывается при смене списка и не реже
  * раза в `BELL_HEARTBEAT_MS`.
  */
-import { CHILD_TTL_MS } from './child-registry.js';
-
 const BELL_FLAG_OFF = '.wezterm-bell-off';
 const BELL_FLAG_CHILDREN_OFF = '.wezterm-bell-children-off';
 const BELL_CHILDREN_FILE = '.wezterm-bell-children';
@@ -33,9 +31,10 @@ const BELL_HEADER = '# wezterm-bell-children';
 const BELL_CHILDREN_TTL_S = 300;
 const BELL_HEARTBEAT_MS = 60_000;
 /**
- * Свежая запись местного реестра детей: её hwnd верится, пока демон не
- * привязал окно. Дольше hwnd из реестра не берётся — Windows переиспользует
- * хэндлы, а реестр живёт неделю.
+ * Свежая запись местного реестра детей: ей верится, пока каталог детей не
+ * доехал по SMB и демон не привязал окно. Дольше запись не берётся вовсе:
+ * hwnd Windows переиспользует, а ребёнка могли снять (`head adopt` убирает
+ * файл из каталога) — реестр же живёт неделю. Дальше источник один — каталог.
  */
 const REGISTRY_HWND_TTL_MS = 10 * 60_000;
 
@@ -80,14 +79,15 @@ function bellTitleKey(title) {
 
 const isRegistryEntry = e => e && typeof e === 'object'
   && typeof e.sessionId === 'string' && e.sessionId
+  && typeof e.headId === 'string' && e.headId
   && Number.isInteger(e.windowId) && Number.isFinite(e.at);
 
-/** Дети этой машины по sessionId: каталог `children` на pc-virt и местный реестр. */
+const freshEntry = (e, nowMs) => isRegistryEntry(e) && nowMs - e.at <= REGISTRY_HWND_TTL_MS;
+
+/** Дети этой машины по sessionId: каталог `children` на стороне ssh и свежие записи местного реестра. */
 function childSessionIds(childrenDirIds, registry, nowMs) {
   const out = new Set(childrenDirIds ?? []);
-  for (const e of Array.isArray(registry) ? registry : []) {
-    if (isRegistryEntry(e) && nowMs - e.at <= CHILD_TTL_MS) out.add(e.sessionId);
-  }
+  for (const e of Array.isArray(registry) ? registry : []) if (freshEntry(e, nowMs)) out.add(e.sessionId);
   return out;
 }
 
@@ -104,8 +104,7 @@ function bellChildKeys({ windows, sessions, children, registry, now }) {
   const sessionOf = new Map();
   for (const s of sessions ?? []) if (s?.sessionId && !sessionOf.has(s.id)) sessionOf.set(s.id, s.sessionId);
   for (const e of Array.isArray(registry) ? registry : []) {
-    if (!isRegistryEntry(e) || now - e.at > REGISTRY_HWND_TTL_MS) continue;
-    if (!sessionOf.has(e.windowId)) sessionOf.set(e.windowId, e.sessionId);
+    if (freshEntry(e, now) && !sessionOf.has(e.windowId)) sessionOf.set(e.windowId, e.sessionId);
   }
   const kids = childSessionIds(children, registry, now);
   const child = new Set();
