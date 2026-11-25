@@ -70,13 +70,91 @@ wezterm.on('format-window-title', function(tab)
 end)
 
 -- Звонок своим звуком, как в wt (Стас 15.11: нужен). audible_bell умеет только
--- системный, поэтому звук играет отдельный процесс. Пока лежит флаг
--- ~/.wezterm-bell-off — молчит: его кладёт и снимает кнопка в статуслайне
--- ccfzf-picker (Стас 24.11), имя файла — контракт с wezterm_bell.rs пикера.
+-- системный, поэтому звук играет отдельный процесс. Режим — флаги в профиле,
+-- их кладёт и снимает кнопка в статуслайне ccfzf-picker (Стас 24.11 и 25.11),
+-- имена — контракт с wezterm_bell.rs пикера:
+--   ~/.wezterm-bell-off           — молчат все;
+--   ~/.wezterm-bell-children-off  — молчат дочерние сессии (у кого есть head);
+--   нет ни одного                 — звенят все.
+-- Какое окно дочернее, пишет служба windows11-manager в ~/.wezterm-bell-children
+-- (src/claude-wt/bell-children-helpers.js): первая строка — заголовок со
+-- временем, дальше ключ заголовка окна на строку. Нет файла, протух, не
+-- разобрался, упало что угодно — звенит (лишний звонок ребёнка лучше
+-- замолчавшего head).
 local BELL_SOUND = 'C:/profiles/sounds/mixkit-sci-fi-click-900.wav'
 local BELL_OFF = wezterm.home_dir .. '/.wezterm-bell-off'
-wezterm.on('bell', function()
-  local off = io.open(BELL_OFF); if off then off:close(); return end
+local BELL_CHILDREN_OFF = wezterm.home_dir .. '/.wezterm-bell-children-off'
+local BELL_CHILDREN = wezterm.home_dir .. '/.wezterm-bell-children'
+local BELL_CHILDREN_HEADER = '# wezterm-bell-children'
+-- Секунд верим списку: служба переписывает его не реже раза в минуту.
+local BELL_CHILDREN_TTL = 300
+-- Глифы статуса в начале заголовка, как GLYPH_RANGES в bell-children-helpers.js.
+local BELL_GLYPHS = {
+  { 0x00B7, 0x00B7 },
+  { 0x2190, 0x2BFF },
+  { 0x1F000, 0x1FAFF },
+}
+local function exists(path)
+  local f = io.open(path); if f then f:close(); return true end
+  return false
+end
+local function is_glyph(cp)
+  for _, r in ipairs(BELL_GLYPHS) do
+    if cp >= r[1] and cp <= r[2] then return true end
+  end
+  return false
+end
+local function trim(s) return (s:gsub('^%s+', ''):gsub('%s+$', '')) end
+-- Ключ заголовка — bellTitleKey в bell-children-helpers.js, фикстуры общие
+-- (wezterm/bell-title-cases.json): без [Z] и [i/n] WezTerm, приставки zellij
+-- «сессия | » и глифа Claude Code с пробелами за ним.
+local function bell_key(title)
+  if type(title) ~= 'string' then return '' end
+  local s = trim(title)
+  s = (s:gsub('^%[Z%] ', '', 1))
+  s = (s:gsub('^%[%d+/%d+%] ', '', 1))
+  s = (s:gsub('^[^%s|]+ | ', '', 1))
+  local i = 1
+  while i <= #s do
+    local ok, cp = pcall(utf8.codepoint, s, i)
+    if not ok or not is_glyph(cp) then break end
+    i = utf8.offset(s, 2, i)
+  end
+  if i > 1 then
+    local ws = s:match('^%s+', i)
+    if ws then s = s:sub(i + #ws) end
+  end
+  return trim(s)
+end
+-- Ключи детей или nil, если списку верить нельзя.
+local function bell_children()
+  local f = io.open(BELL_CHILDREN)
+  if not f then return nil end
+  local head = f:read('l') or ''
+  local prefix = BELL_CHILDREN_HEADER .. ' '
+  local stamp = head:sub(1, #prefix) == prefix and tonumber(head:sub(#prefix + 1)) or nil
+  if not stamp or math.abs(os.time() - stamp) > BELL_CHILDREN_TTL then f:close(); return nil end
+  local keys = {}
+  for line in f:lines() do
+    line = trim(line)
+    if line ~= '' then keys[line] = true end
+  end
+  f:close()
+  return keys
+end
+local function bell_muted(pane)
+  if exists(BELL_OFF) then return true end
+  if not exists(BELL_CHILDREN_OFF) then return false end
+  local ok, muted = pcall(function()
+    local keys = bell_children()
+    if not keys then return false end
+    local key = bell_key(pane:get_title())
+    return key ~= '' and keys[key] == true
+  end)
+  return ok and muted
+end
+wezterm.on('bell', function(_, pane)
+  if bell_muted(pane) then return end
   wezterm.background_child_process {
     'powershell.exe', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command',
     "(New-Object Media.SoundPlayer '" .. BELL_SOUND .. "').PlaySync()",
