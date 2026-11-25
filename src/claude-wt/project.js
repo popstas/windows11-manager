@@ -6,7 +6,7 @@ import { getMonitorByPoint } from '../monitors.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
 import { claudeWtSessions } from './view.js';
 import { readState } from './state.js';
-import { loadSessionIndexFor } from './sessions.js';
+import { loadSessionIndexFor, loadProjectOwnersFor } from './sessions.js';
 import { isLocalCwd } from './restore-helpers.js';
 import { resolveSession } from './tracker-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
@@ -285,9 +285,10 @@ async function focusNewTerminalWindow(knownIds, deps = {}) {
  *
  * Резюмировать есть чем: `claudeWt.launch.args` — тот же шаблон
  * `ccfzf --session {id} --kiosk`, которым восстановление возвращает сессию
- * после падения машины. Профиль терминала даёт каталог (`profileForTerminal`),
- * и он приезжает в теле просьбы — собранная в пикере команда `wt.exe` профиля
- * не знает.
+ * после падения машины. Профиль терминала даёт каталог (`profileForTerminal`):
+ * проекта-владельца из дампа (`projectCwd`, у сессии из worktree — основной
+ * репо), иначе тот, что приехал в теле просьбы, — собранная в пикере команда
+ * `wt.exe` профиля не знает.
  *
  * Геометрии здесь нет и взяться ей неоткуда: слот — это память о прежнем месте
  * окна, а его-то и нет. Окно встаёт туда, куда его поставит терминал; дальше
@@ -303,6 +304,10 @@ async function resumeClaudeSession({ id, cwd = '', terminal, cursor = null } = {
     spawnProcess = spawn,
     listWindows = terminalWindows,
     focusNew = focusNewTerminalWindow,
+    // Владелец каталога сессии (`projectCwd` дампа) — у сессии из worktree
+    // профиль основного проекта. Пусто — дамп поля не несёт или в `id`
+    // приехало имя (`/rename`), а не id: профиль по каталогу, как раньше.
+    projectCwdOf = sid => loadProjectOwnersFor(cfg)[sid] ?? '',
   } = deps;
   const sessionId = typeof id === 'string' ? id.trim() : '';
   if (!sessionId) return { ok: false, reason: 'id is required' };
@@ -317,7 +322,7 @@ async function resumeClaudeSession({ id, cwd = '', terminal, cursor = null } = {
   const { command, args } = planWtLaunch({
     launch: cfg.launch,
     vars: { id: sessionId },
-    profile: profileForTerminal(cwd, chosen.name, cfg),
+    profile: profileForTerminal(projectCwdOf(sessionId) || cwd, chosen.name, cfg),
     terminal: chosen.entry,
     retry: cfg.launch,
   });

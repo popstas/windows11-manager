@@ -97,6 +97,16 @@ describe('planRestore', () => {
     ]);
   });
 
+  it('resolveProfile получает и id сессии — по нему ищется владелец каталога', () => {
+    const st = state({ lastLayout: ['a1'], slots: { a1: slot({ titles: ['wt'], cwd: '/p/home.feat' }) } });
+    const launch = { command: 'wt.exe', args: ['ssh', 'ccfzf --session {id}'] };
+    const seen = [];
+    const plan = planRestore({ state: st, launch, resolveProfile: (cwd, id) => { seen.push([cwd, id]); return 'home'; } });
+    expect(seen).toEqual([['/p/home.feat', 'a1']]);
+    // Каталог в плане — сам слот: по нему splitLocalPlan отделяет местные.
+    expect(plan[0].cwd).toBe('/p/home.feat');
+  });
+
   it('applies WT profile after {id} substitution', () => {
     const launch = { command: 'wt.exe', args: ['-w', '-1', 'ssh', '-t', 'ccfzf --session {id}'] };
     expect(planRestore({ state: state(), launch, resolveProfile: () => 'popstas' })[0].args).toEqual([

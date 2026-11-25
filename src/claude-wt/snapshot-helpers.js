@@ -169,7 +169,7 @@ function planSnapshotRestore({ snapshot, openSessionIds, sessionIds, launch, res
       const planned = planWtLaunch({
         launch,
         vars: { id: s.id },
-        profile: resolve(s.cwd ?? ''),
+        profile: resolve(s.cwd ?? '', s.id),
         terminal,
         retry: launch,
       });

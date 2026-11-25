@@ -7,7 +7,7 @@ import { virtualDesktop } from '../virtual-desktop.js';
 import { getWindowsMonitors } from '../monitors.js';
 import { clampBoundsToMonitors } from '../geometry.js';
 import { readState } from './state.js';
-import { loadSessionIndexFor } from './sessions.js';
+import { loadSessionIndexFor, loadProjectOwnersFor } from './sessions.js';
 import { resolveSession } from './tracker-helpers.js';
 import { stripTitleDecoration } from './title-helpers.js';
 import { getClaudeWtConfig, isTerminalWindow } from './index.js';
@@ -40,6 +40,17 @@ function openSessionIds(cfg, state) {
     if (resolved) ids.add(resolved.id);
   }
   return ids;
+}
+
+/**
+ * Профиль терминала сессии: по проекту-владельцу (`projectCwd` дампа), когда
+ * он известен, иначе по каталогу слота. У сессии из git worktree своей записи
+ * в `claudeWt.projects` нет, а профиль нужен основного проекта — тот же ключ,
+ * что у иконки окна (`iconFor`). Дамп читается один раз на план, из кэша.
+ */
+function ownerProfile(cfg, terminalName) {
+  const owners = loadProjectOwnersFor(cfg);
+  return (cwd, sessionId) => profileForTerminal((sessionId && owners[sessionId]) || cwd, terminalName, cfg);
 }
 
 /**
@@ -87,7 +98,7 @@ async function restoreClaudeSessions({ force = false, sessionIds, terminal, curs
     console.error('[claude-wt] nothing to launch with: neither claudeWt.terminals nor claudeWt.launch.command is set');
     return { restored: [], skipped: [] };
   }
-  const resolveProfile = cwd => profileForTerminal(cwd, chosen.name, cfg);
+  const resolveProfile = ownerProfile(cfg, chosen.name);
   const fullPlan = planRestore({ state, launch: cfg.launch, sessionIds, resolveProfile, terminal: chosen.entry });
   const restored = [];
   const skipped = [];
@@ -283,7 +294,7 @@ async function restoreSnapshot({ id, sessionIds } = {}) {
     return { restored, skipped: snapshot.sessions.map(s => s.id) };
   }
   const state = readState(cfg.statePath);
-  const resolveProfile = cwd => profileForTerminal(cwd, chosen.name, cfg);
+  const resolveProfile = ownerProfile(cfg, chosen.name);
   const plan = planSnapshotRestore({
     snapshot,
     openSessionIds: openSessionIds(cfg, state),

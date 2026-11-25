@@ -60,6 +60,10 @@ function splitLocalPlan(plan) {
   return { launchable, local };
 }
 
+/**
+ * `resolveProfile(cwd, sessionId)` — профиль терминала слота; id нужен, чтобы
+ * найти владельца каталога (`projectCwd` дампа) у сессии из worktree.
+ */
 function planRestore({ state, launch, sessionIds, resolveProfile, terminal }) {
   const resolve = typeof resolveProfile === 'function' ? resolveProfile : () => '';
   return (resolveRestoreIds({ state, sessionIds }).ids)
@@ -69,7 +73,7 @@ function planRestore({ state, launch, sessionIds, resolveProfile, terminal }) {
       const planned = planWtLaunch({
         launch,
         vars: { id: sessionId },
-        profile: resolve(slot.cwd ?? ''),
+        profile: resolve(slot.cwd ?? '', sessionId),
         terminal,
         // Повтор после обрыва ssh — тот же шаблон: он и так по id.
         retry: launch,
