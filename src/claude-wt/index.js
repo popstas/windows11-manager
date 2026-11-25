@@ -106,7 +106,11 @@ function snapshot() {
     // только у объекта окна, и живёт тот в этой карте. Стоит это одного
     // разбора строки на окно за тик — путь уже прочитан, `getPath()` тут не
     // зовётся.
-    windows.push({ id, title, bounds, app: terminalAppName(w.path) });
+    // pid процесса окна — для `claude-wt session type`: у WezTerm каждое окно
+    // — свой процесс wezterm-gui со своим сокетом gui-sock-<pid>, и печатать
+    // в поле ввода ребёнка можно только в его. Берётся у объекта окна
+    // (initWindow уже прочитал), без нового вызова за тик.
+    windows.push({ id, title, bounds, app: terminalAppName(w.path), pid: w.processId });
   }
   return windows;
 }
