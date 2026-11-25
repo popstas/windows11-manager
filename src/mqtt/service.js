@@ -23,6 +23,7 @@ import { startAutoplacer } from './autoplacer.js';
 import { startTaskbarState } from './taskbar.js';
 import { startWindowIcons } from './window-icons.js';
 import { startTaskbarHide } from './taskbar-hide.js';
+import { startBellChildren } from './bell-children.js';
 import { createSessionIconStore } from '../claude-wt/session-icons.js';
 import { createTaskbarHideStore } from '../claude-wt/taskbar-hide-store.js';
 import { startDaemonWatchdog } from './daemon-watchdog.js';
@@ -131,6 +132,10 @@ function startService({
   // на кнопке панели задач (или вместо иконки, headMode: icon). Окнам и wt, и
   // WezTerm; держит их этот процесс.
   windowIcons = startWindowIcons({ winMan, log, store: sessionIconStore });
+  // Список окон дочерних сессий для звонка WezTerm в режиме `no children`
+  // (%USERPROFILE%\.wezterm-bell-children, читает wezterm.lua). Отдельно от
+  // иконок: те выключаются своим ключом, а звонок от них не зависит.
+  const bellChildren = startBellChildren({ winMan, log });
 
   const stats = settings ? createStatsPublisher({ winMan, publish, log, config: withBase }) : null;
 
@@ -190,6 +195,7 @@ function startService({
       taskbarHide.stop();
       taskbar.stop();
       windowIcons.stop();
+      bellChildren.stop();
       client?.end(true);
       httpServer.close();
     },
