@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   BUILTIN_HEAD_ICON, resolveIconPath, iconFor, headsDirFor, planIcons, iconsSidecarPath, publishedIcons,
-  projectIcons, headIcon, headModeOf, badgeFor, badPatterns,
+  projectIcons, headIcon, headModeOf, badgeFor, badPatterns, badCommonPatterns,
 } from './window-icons-helpers.js';
 import { mergeClaudeWtConfig } from './daemon-helpers.js';
 
@@ -340,6 +340,79 @@ describe('значки проекта по заголовку', () => {
   it('годные правила переживают разбор: путь обрезан, регэксп как есть', () => {
     const cfgOk = mergeClaudeWtConfig({ projects: [{ name: 'x', cwd: '/x', badges: [{ match: ' tg ', icon: ' C:\\a.ico ' }, null] }] });
     expect(cfgOk.projects[0].badges).toEqual([{ match: ' tg ', icon: 'C:\\a.ico' }]);
+  });
+});
+
+describe('общие значки по заголовку (windowIcons.badges)', () => {
+  // Решение Стаса 26.11: coord (`^co-`) — тоже head, и отличить его от head
+  // на панели задач можно только своим значком. Общее правило выше значка head.
+  const COORD = 'C:\\ico\\coord-badge.ico';
+  const common = mergeClaudeWtConfig({
+    windowIcons: {
+      profiles: {},
+      badges: [{ match: '([', icon: 'C:\\ico\\bad.ico' }, { match: '^co-', icon: COORD }],
+    },
+    projects: [
+      { name: 'exp', cwd: '/p/exp', icon: 'C:\\ico\\exp.ico', badges: [{ match: '-tg-', icon: 'C:\\ico\\telegram.ico' }] },
+    ],
+  });
+  const heads = new Set(['h']);
+  const none = new Set();
+
+  it('head в режиме badge — общее правило главнее значка head, иконка проекта на месте', () => {
+    expect(iconFor({ sessionId: 'h', cwd: '/p/exp', title: 'co-coord-badge' }, { heads, cfg: common }))
+      .toEqual({ icon: 'C:\\ico\\exp.ico', overlay: COORD });
+  });
+
+  it('head без совпадения — значок head, как сегодня', () => {
+    expect(iconFor({ sessionId: 'h', cwd: '/p/exp', title: 'hide-dimmed-windows-head' }, { heads, cfg: common }).overlay)
+      .toBe(BUILTIN_HEAD_ICON);
+  });
+
+  it('head в режиме icon — главная иконка значок head, значок на кнопке — общее правило', () => {
+    const iconCfg = { ...common, windowIcons: { ...common.windowIcons, headMode: 'icon' } };
+    expect(iconFor({ sessionId: 'h', cwd: '/p/exp', title: 'co-x-tg-y' }, { heads, cfg: iconCfg }))
+      .toEqual({ icon: BUILTIN_HEAD_ICON, overlay: COORD });
+  });
+
+  it('общее правило главнее проектных badges', () => {
+    expect(iconFor({ sessionId: 's', cwd: '/p/exp', title: 'co-x-tg-y' }, { heads: none, cfg: common }).overlay)
+      .toBe(COORD);
+  });
+
+  it('общее не совпало — проектное правило работает', () => {
+    expect(iconFor({ sessionId: 's', cwd: '/p/exp', title: 'x-tg-y' }, { heads: none, cfg: common }).overlay)
+      .toBe('C:\\ico\\telegram.ico');
+  });
+
+  it('действует и вне проектов', () => {
+    expect(iconFor({ sessionId: 's', cwd: '/elsewhere', title: 'co-z' }, { heads: none, cfg: common }).overlay)
+      .toBe(COORD);
+  });
+
+  it('кривой регэксп пропускается, следующее правило работает', () => {
+    expect(badCommonPatterns(common)).toEqual(['([']);
+    expect(iconFor({ sessionId: 'h', cwd: '/p/exp', title: 'co-z' }, { heads, cfg: common }).overlay)
+      .toBe(COORD);
+  });
+
+  it('без ключа — как сегодня: head со значком head, сессия с проектным', () => {
+    const plain = mergeClaudeWtConfig({ ...common, windowIcons: { profiles: {} } });
+    expect(plain.windowIcons.badges).toEqual([]);
+    expect(iconFor({ sessionId: 'h', cwd: '/p/exp', title: 'co-x' }, { heads, cfg: plain }).overlay).toBe(BUILTIN_HEAD_ICON);
+    expect(iconFor({ sessionId: 's', cwd: '/p/exp', title: 'co-x-tg-y' }, { heads: none, cfg: plain }).overlay)
+      .toBe('C:\\ico\\telegram.ico');
+  });
+
+  it('badCommonPatterns называет кривые регэкспы общих правил, badPatterns — только проектных', () => {
+    expect(badCommonPatterns(common)).toEqual(['([']);
+    expect(badPatterns(common)).toEqual([]);
+  });
+
+  it('мусор отбрасывается при разборе, годное — путь обрезан, регэксп как есть', () => {
+    const junk = mergeClaudeWtConfig({ windowIcons: { badges: [{ match: '', icon: 'a' }, { match: 'a' }, 'str', null, { match: ' co ', icon: ' C:\\a.ico ' }] } });
+    expect(junk.windowIcons.badges).toEqual([{ match: ' co ', icon: 'C:\\a.ico' }]);
+    expect(mergeClaudeWtConfig({ windowIcons: { badges: 'nope' } }).windowIcons.badges).toEqual([]);
   });
 });
 

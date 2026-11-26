@@ -21,6 +21,13 @@
  * проекта, не трогая его иконку, — поэтому слот тот же, что у head, а head
  * в режиме `badge` его не уступает. Проект — по точному cwd, как у иконки.
  *
+ * Общие значки по заголовку (решение Стаса 26.11): `claudeWt.windowIcons.badges`
+ * — тот же список `{match, icon}`, но для всех сессий, и главнее значка head:
+ * coord (`^co-`) — тоже head, и отличить его от head на панели задач можно
+ * только своим значком. Старшинство значка: явный от агента (служба,
+ * session-icons.json) → общее правило → значок head (режим `badge`) →
+ * проектные `badges`. Главную иконку общее правило не трогает.
+ *
  * Каталог проекта сессии — `projectCwd || cwd` (решение head 26.11): владельца
  * у сессии из git worktree, подкаталога или подмодуля называет ccfzf полем
  * `projectCwd` дампа, и иконка со значками идут за ним так же, как уже идёт
@@ -85,19 +92,25 @@ function compiled(match) {
   return patternCache.get(match);
 }
 
-/**
- * Значок первого правила проекта, чей регэксп совпал с заголовком; пустая
- * строка — значка нет. Правило с кривым регэкспом пропускается.
- */
-function badgeFor(title, project) {
-  if (!title || !project?.badges) return '';
-  for (const { match, icon } of project.badges) {
+// Значок первого правила, чей регэксп совпал с заголовком; '' — ни одно.
+// Правило с кривым регэкспом пропускается.
+function firstBadge(title, rules) {
+  if (!title || !rules) return '';
+  for (const { match, icon } of rules) {
     if (compiled(match)?.test(title)) return icon;
   }
   return '';
 }
 
-/** Регэкспы из `badges`, которые не компилируются, — для предупреждения в журнал. */
+/**
+ * Значок первого правила проекта, чей регэксп совпал с заголовком; пустая
+ * строка — значка нет. Правило с кривым регэкспом пропускается.
+ */
+function badgeFor(title, project) {
+  return firstBadge(title, project?.badges);
+}
+
+/** Регэкспы из проектных `badges`, которые не компилируются, — для предупреждения в журнал. */
 function badPatterns(cfg) {
   const bad = [];
   for (const p of cfg.projects ?? []) {
@@ -106,20 +119,27 @@ function badPatterns(cfg) {
   return bad;
 }
 
+/** То же для общих правил `windowIcons.badges`: в журнале у них своё имя ключа. */
+function badCommonPatterns(cfg) {
+  return (cfg.windowIcons?.badges ?? []).filter(({ match }) => !compiled(match)).map(({ match }) => match);
+}
+
 /**
  * Что поставить окну сессии: `{icon, overlay}` — главная иконка (WM_SETICON)
  * и значок на кнопке панели задач; пустая строка — не трогать / без значка.
- * Значок — head в режиме `badge`, иначе первое совпавшее правило `badges`
- * проекта по заголовку окна.
+ * Значок — первое совпавшее общее правило `windowIcons.badges`, иначе значок
+ * head в режиме `badge`, иначе первое совпавшее правило `badges` проекта по
+ * заголовку окна. Явный значок от агента кладёт поверх служба.
  */
 function iconFor({ sessionId, cwd, projectCwd, title }, { heads, cfg }) {
   const isHead = Boolean(sessionId && heads?.has(sessionId));
   const owner = projectCwd || cwd;
-  const badge = () => badgeFor(title, projectFor(owner, cfg));
+  const common = firstBadge(title, cfg.windowIcons?.badges);
+  const badge = () => common || badgeFor(title, projectFor(owner, cfg));
   if (!isHead) return { icon: projectIconFor(owner, cfg), overlay: badge() };
   const headBadge = cfg.windowIcons?.head || BUILTIN_HEAD_ICON;
   if (headModeOf(cfg) === 'icon') return { icon: headBadge, overlay: badge() };
-  return { icon: projectIconFor(owner, cfg), overlay: headBadge };
+  return { icon: projectIconFor(owner, cfg), overlay: common || headBadge };
 }
 
 const ABSOLUTE = /^(?:[a-zA-Z]:[\\/]|[\\/])/;
@@ -245,5 +265,5 @@ function headIcon(cfg, repoRoot) {
 
 export {
   REPO_ROOT, BUILTIN_HEAD_ICON, HEAD_MODES, headModeOf, iconFor, resolveIconPath, iconsSidecarPath,
-  publishedIcons, headsDirFor, planIcons, projectIcons, headIcon, badgeFor, badPatterns,
+  publishedIcons, headsDirFor, planIcons, projectIcons, headIcon, badgeFor, badPatterns, badCommonPatterns,
 };

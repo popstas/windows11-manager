@@ -1,6 +1,6 @@
 /** Pure helper functions for the claude-wt daemon. No external I/O. */
 
-import { normalizeProjects } from './project-helpers.js';
+import { normalizeProjects, normalizeBadges } from './project-helpers.js';
 import { upsertSlot } from './state-helpers.js';
 import { normalizeTerminals } from './terminal-helpers.js';
 import { normalizeHeadZones, normalizeChildPlacement } from './head-zones-helpers.js';
@@ -118,6 +118,7 @@ const CLAUDE_WT_DEFAULTS = {
     // Папка иконок для claude-wt window icon/badge (только .ico, плоско).
     dir: '',
     profiles: {},
+    badges: [],
   },
 };
 
@@ -160,6 +161,9 @@ function mergeClaudeWtConfig(raw) {
       // Карта профилей дополняет умолчания, а не заменяет: свой профиль в
       // конфиге не должен стирать встроенные.
       profiles: { ...CLAUDE_WT_DEFAULTS.windowIcons.profiles, ...(cfg.windowIcons?.profiles ?? {}) },
+      // Общие значки по заголовку окна для всех сессий (решение Стаса 26.11):
+      // `^co-` — значок coord поверх значка head.
+      badges: normalizeBadges(cfg.windowIcons?.badges),
     },
     terminalExecutables: normalizeTerminalExecutables(cfg.terminalExecutables),
     ...headZonesFrom(cfg),
