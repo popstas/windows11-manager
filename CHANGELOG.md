@@ -1,6 +1,26 @@
 # Changelog
 
 
+## v4.15.0 - 2026-11-26
+
+### Features
+
+- icons: Значок coord-badge.ico и документация windowIcons.badges
+- claude-wt: Общие значки окон по заголовку — claudeWt.windowIcons.badges
+- claude-wt: Профиль терминала при подъёме по id — по владельцу сессии
+- claude-wt: Иконка и значки окна — по владельцу сессии из дампа
+- mqtt: Служба пишет список окон детей для звонка WezTerm
+- wezterm: Звонок в режиме no children молчит у окон детей
+- claude-wt: Pid процесса окна в файле трекера
+
+### Bug Fixes
+
+- claude-wt: Запись реестра детей верится звонку 10 минут, не неделю
+
+### Documentation
+
+- claude-wt: Дизайн своего значка для сессий coord (^co-)
+
 ## v4.14.0 - 2026-11-24
 
 ### Features
