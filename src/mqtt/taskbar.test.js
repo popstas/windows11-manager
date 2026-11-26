@@ -364,6 +364,17 @@ describe('тихий конец хода (quiet)', () => {
     expect(spy.drops.n).toBe(2);
   });
 
+  it('сбой аддона после записи списка его не убирает', () => {
+    const spy = quietSpy();
+    const { svc, winMan, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'head' }], agents: { 1: 'review' }, bellQuiet: spy });
+    world.quiet[1] = true;
+    winMan.setTaskbarProgress.mockImplementation(() => { throw new Error('addon'); });
+    svc.tick();
+    expect(winMan.setTaskbarProgress).toHaveBeenCalled();
+    expect(spy.writes.at(-1)).toEqual(['head']);
+    expect(spy.drops.n).toBe(0);
+  });
+
   it('аддон без управления кнопками — список убирается, звенят все', () => {
     const spy = quietSpy();
     setup({ control: false, bellQuiet: spy });

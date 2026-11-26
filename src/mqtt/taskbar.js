@@ -195,6 +195,9 @@ function startTaskbarState({
   }
 
   function tick() {
+    // Список тихих в этом тике уже записан свежим — сбой дальше (аддон) его не
+    // портит, удалять незачем.
+    let listed = false;
     try {
       const { windows, present } = weztermWindows();
       if (!windows.length && !applied.size) {
@@ -210,6 +213,7 @@ function startTaskbarState({
         a.id, taskbarLook(a.agentState, Boolean(a.agentSeen), markOf(a), a.shell === true, isQuietAgent(a)),
       ]));
       bellQuiet.update(bellQuietKeys({ windows, quiet: new Set(agents.filter(isQuietAgent).map(a => a.id)) }));
+      listed = true;
       const { ops, next } = planTaskbar(applied, wanted, present);
       apply(ops);
       applied = next;
@@ -220,7 +224,7 @@ function startTaskbarState({
       lastError = '';
     } catch (e) {
       // Ключ, застрявший в списке тихих, глушил бы звонок вопроса — убрать сразу.
-      bellQuiet.drop();
+      if (!listed) bellQuiet.drop();
       report(e);
     }
   }
