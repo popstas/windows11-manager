@@ -34,8 +34,8 @@
  *
  * Явное, заданное из claude-wt CLI (`store`, src/claude-wt/session-icons.js),
  * ложится поверх `iconFor`: явная иконка важнее значка head в режиме icon и
- * иконки проекта, явный значок — значка head и правил `badges` (решение Стаса,
- * вариант A). Версия хранилища входит в отпечаток, так что правка встаёт на
+ * иконки проекта, явный значок — общих правил `windowIcons.badges`, значка
+ * head и правил `badges` (решение Стаса, вариант A). Версия хранилища входит в отпечаток, так что правка встаёт на
  * ближайшем тике; маршрут вдобавок зовёт `tick()` сам и спрашивает
  * `statusOf`, встало ли.
  */
@@ -43,7 +43,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   REPO_ROOT, BUILTIN_HEAD_ICON, iconFor, resolveIconPath, iconsSidecarPath, publishedIcons, headsDirFor, planIcons,
-  badPatterns,
+  badPatterns, badCommonPatterns,
 } from '../claude-wt/window-icons-helpers.js';
 import { writeFileAtomic } from '../commands/write-file-atomic.js';
 
@@ -117,7 +117,7 @@ function startWindowIcons({
   let lastPrint = '';
   let lastFull = 0;
   const failed = new Set();
-  // Кривые регэкспы из badges, о которых уже предупредили.
+  // Кривые регэкспы из badges и windowIcons.badges, о которых уже предупредили.
   const badNamed = new Set();
   // Путь значка head: у него подпись `head`, у значков проекта — имя файла.
   let headPath = '';
@@ -221,10 +221,15 @@ function startWindowIcons({
         return;
       }
       headPath = cfg.windowIcons?.head || BUILTIN_HEAD_ICON;
-      for (const m of badPatterns(cfg)) {
-        if (badNamed.has(m)) continue;
-        badNamed.add(m);
-        log(`window icons: кривой регэксп в badges: ${m}`, 'warn');
+      const bad = [
+        ...badCommonPatterns(cfg).map(m => ['windowIcons.badges', m]),
+        ...badPatterns(cfg).map(m => ['badges', m]),
+      ];
+      for (const [where, m] of bad) {
+        const key = `${where}|${m}`;
+        if (badNamed.has(key)) continue;
+        badNamed.add(key);
+        log(`window icons: кривой регэксп в ${where}: ${m}`, 'warn');
       }
       enabled = true;
       watchTaskbar();

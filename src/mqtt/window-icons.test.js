@@ -261,6 +261,52 @@ describe('startWindowIcons', () => {
     });
   });
 
+  describe('общие значки по заголовку (windowIcons.badges)', () => {
+    const COORD = 'C:\\ico\\coord-badge.ico';
+    const commonCfg = {
+      windowIcons: {
+        profiles: { home: 'C:/ico/me.ico' },
+        badges: [{ match: '([', icon: 'C:\\ico\\bad.ico' }, { match: '^co-', icon: COORD }],
+      },
+    };
+
+    it('окно coord-head получает значок coord, а не head; соседний head — значок head', () => {
+      const { overlays } = setup({
+        windows: [{ id: 1, path: WT, title: 'co-x' }, { id: 2, path: WEZ, title: 'lead' }],
+        sessions: { 1: { sessionId: 'c', cwd: '/p/home', title: 'co-x' }, 2: { sessionId: 'h', cwd: '/p/home', title: 'lead' } },
+        heads: ['c', 'h'],
+        config: commonCfg,
+      });
+      expect(overlays).toEqual([[1, COORD, 'coord-badge'], [2, 'C:/repo/icons/head-badge.ico', 'head']]);
+    });
+
+    it('кривой регэксп — один warn со своим ключом, остальные правила работают', () => {
+      const { svc, overlays, logs, advance } = setup({
+        windows: [{ id: 1, path: WT, title: 'co-x' }],
+        sessions: { 1: { sessionId: 'c', cwd: '/p/home', title: 'co-x' } },
+        config: commonCfg,
+      });
+      advance(60_000);
+      svc.tick();
+      expect(logs.filter(l => l === 'warn: window icons: кривой регэксп в windowIcons.badges: ([')).toHaveLength(1);
+      expect(logs.filter(l => l.includes('кривой регэксп в badges'))).toEqual([]);
+      expect(overlays[0]).toEqual([1, COORD, 'coord-badge']);
+    });
+
+    it('правка общих правил без смены окон переставляет значок на следующем тике', () => {
+      const { svc, overlays, world } = setup({
+        windows: [{ id: 1, path: WT, title: 'co-x' }],
+        sessions: { 1: { sessionId: 'c', cwd: '/p/home', title: 'co-x' } },
+        heads: ['c'],
+        config: commonCfg,
+      });
+      overlays.length = 0;
+      world.cfg = mergeClaudeWtConfig({ ...world.cfg, windowIcons: { ...world.cfg.windowIcons, badges: [] } });
+      svc.tick();
+      expect(overlays).toEqual([[1, 'C:/repo/icons/head-badge.ico', 'head']]);
+    });
+  });
+
   it('выключение одной строкой снимает поставленные иконки', () => {
     const { svc, calls, world } = setup({
       windows: [{ id: 2, path: WEZ, title: 'a' }], sessions: { 2: { sessionId: 'c', cwd: '/p/home' } },
@@ -420,6 +466,19 @@ describe('startWindowIcons', () => {
         config: { projects: [{ name: 'home', cwd: '/p/home', profile: 'home', badges: [{ match: '-tg-', icon: TG }] }] },
       });
       expect(overlays).toEqual([[1, PF, 'planfix'], [2, PF, 'planfix']]);
+    });
+
+    it('явный значок от агента главнее общего правила windowIcons.badges', () => {
+      const store = tmpStore();
+      store.set('c', 'badge', PF);
+      const { overlays } = setup({
+        windows: [{ id: 1, path: WT, title: 'co-x' }],
+        sessions: { 1: { sessionId: 'c', cwd: '/p/home', title: 'co-x' } },
+        heads: ['c'],
+        store,
+        config: { windowIcons: { badges: [{ match: '^co-', icon: 'C:\\ico\\coord-badge.ico' }] } },
+      });
+      expect(overlays).toEqual([[1, PF, 'planfix']]);
     });
 
     it('снятие явного значка возвращает автоматику', () => {
