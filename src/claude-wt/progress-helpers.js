@@ -89,6 +89,10 @@ function normalizeProgress(raw) {
     // `true` бывает лишь у review/idle, всё прочее — как без поля (старый хук).
     quiet: raw.quiet === true && QUIET_STATES.includes(state),
     turnFrom: TURN_FROM.includes(raw.turnFrom) ? raw.turnFrom : '',
+    // Конец последнего нетихого хода (unix-с, шкала `updated`); тихий ход его
+    // переносит. Нужен, чтобы тихий ход не гасил итог для Стаса, который тот
+    // ещё не видел (решение head 26.11). Ноль — старый хук, поля нет.
+    loudAt: Number.isFinite(raw.loudAt) && raw.loudAt > 0 ? raw.loudAt : 0,
   };
 }
 

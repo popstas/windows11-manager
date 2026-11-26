@@ -27,6 +27,14 @@ describe('hasSignal', () => {
     expect(hasSignal({ agentState: 'question', agentSeen: true })).toBe(true);
     expect(hasSignal({ agentState: 'review', agentSeen: false })).toBe(true);
   });
+  it('тихий review — не сигнал, кроме непросмотренного нетихого хода и unread', () => {
+    expect(hasSignal({ agentState: 'review', agentSeen: false, agentQuiet: true })).toBe(false);
+    expect(hasSignal({ agentState: 'review', agentSeen: false, agentQuiet: true, agentLoudUnseen: true })).toBe(true);
+    expect(hasSignal({ agentState: 'review', agentSeen: false, agentQuiet: true, agentUnread: true })).toBe(true);
+    expect(hasSignal({ agentState: 'question', agentSeen: false, agentQuiet: true })).toBe(true);
+    expect(hasSignal(undefined)).toBe(false);
+    expect(hasSignal(null)).toBe(false);
+  });
   it('просмотренный итог, idle, active, null — не сигнал', () => {
     expect(hasSignal({ agentState: 'review', agentSeen: true })).toBe(false);
     expect(hasSignal({ agentState: 'idle', agentSeen: false })).toBe(false);

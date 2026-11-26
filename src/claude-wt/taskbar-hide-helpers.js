@@ -5,6 +5,7 @@
  * кнопку возвращают — иначе их не увидеть.
  */
 import { isSessionUuid } from './session-name-helpers.js';
+import { quietHidesButton } from './taskbar-helpers.js';
 
 /**
  * Набор sessionId из тела запроса `{ sessions: [...] }`; прочее отброшено. По
@@ -23,10 +24,15 @@ function parseHideSet(body) {
   return out;
 }
 
-/** Сессия зовёт человека: вопрос или непросмотренное «готово». */
-function hasSignal({ agentState, agentSeen } = {}) {
+/**
+ * Сессия зовёт человека: вопрос или непросмотренное «готово». Тихий review
+ * (head, ребёнок работает) — не сигнал, если итог последнего нетихого хода
+ * просмотрен (`quietHidesButton`, решение head 26.11).
+ */
+function hasSignal(agent = {}) {
+  const { agentState, agentSeen } = agent ?? {};
   if (agentState === 'question') return true;
-  return agentState === 'review' && !agentSeen;
+  return agentState === 'review' && !agentSeen && !quietHidesButton(agent);
 }
 
 /**

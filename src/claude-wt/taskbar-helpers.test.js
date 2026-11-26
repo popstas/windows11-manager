@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  TBPF, taskbarLook, isQuietAgent, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks,
+  TBPF, taskbarLook, isQuietAgent, quietHidesButton, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks,
   cacheWarnDue, blinkBar, cacheWarnKey, parseCacheWarn,
 } from './taskbar-helpers.js';
 
@@ -82,6 +82,15 @@ describe('taskbarLook', () => {
     expect(isQuietAgent({ agentQuiet: false })).toBe(false);
     expect(isQuietAgent({})).toBe(false);
     expect(isQuietAgent(null)).toBe(false);
+  });
+
+  it('quietHidesButton: тихий и итог нетихого хода просмотрен', () => {
+    expect(quietHidesButton({ agentQuiet: true })).toBe(true);
+    expect(quietHidesButton({ agentQuiet: true, agentLoudUnseen: false })).toBe(true);
+    expect(quietHidesButton({ agentQuiet: true, agentLoudUnseen: true })).toBe(false);
+    expect(quietHidesButton({ agentQuiet: true, agentUnread: true })).toBe(false);
+    expect(quietHidesButton({ agentQuiet: false })).toBe(false);
+    expect(quietHidesButton(null)).toBe(false);
   });
 
   it('unknown — бегущая полоса', () => {

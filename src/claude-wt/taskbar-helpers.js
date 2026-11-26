@@ -51,7 +51,8 @@ const NONE = { state: 'none', value: 0, flash: false };
  * (`false`, не `null`: уже горящую с review кнопку надо погасить, а `null`
  * оставил бы её гореть), полоса — как у review/idle. Отметки сильнее: `unread`
  * зажигает и тихую. Зовущий передаёт сюда quiet уже без «непросмотрено» из
- * слота (`agentUnread` в view.js). `question` и `active` quiet не трогает —
+ * слота (`agentUnread` в view.js) и без непросмотренного нетихого хода
+ * (`agentLoudUnseen`) — `quietHidesButton`. `question` и `active` quiet не трогает —
  * хук его у них и не ставит.
  *
  * `unknown` сюда сейчас не доезжает: normalizeProgress его отбрасывает, и
@@ -80,6 +81,17 @@ function taskbarLook(agentState, seen = false, mark = null, shell = false, quiet
  */
 function isQuietAgent(agent) {
   return agent?.agentQuiet === true && agent?.agentUnread !== true;
+}
+
+/**
+ * Гасит ли тихий ход кнопку: тихий (`isQuietAgent`) и итог последнего
+ * нетихого хода уже просмотрен (`agentLoudUnseen` — нет, решение head 26.11).
+ * Иначе непрочитанный ответ Стасу пропал бы с панели от сообщения ребёнка —
+ * и это переживает перезапуск службы: `loudAt` пишет хук. Звонка не касается:
+ * звонок нетихого хода уже прозвенел.
+ */
+function quietHidesButton(agent) {
+  return isQuietAgent(agent) && agent?.agentLoudUnseen !== true;
 }
 
 function isWeztermPath(path) {
@@ -253,7 +265,7 @@ function parseCacheWarn(body) {
 }
 
 export {
-  TBPF, taskbarLook, isQuietAgent, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks,
+  TBPF, taskbarLook, isQuietAgent, quietHidesButton, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks,
   CACHE_TTL_SEC, CACHE_SAFETY_SEC, NEW_TURN_MARGIN_SEC, BLINK_MS,
   cacheWarnDue, blinkBar, cacheWarnKey, parseCacheWarn, newTurnSince,
 };

@@ -7,7 +7,7 @@ const WT = 'C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal\\WindowsTe
 function setup({ windows = [], agents = {}, control = true, bellQuiet } = {}) {
   const calls = [];
   const logs = [];
-  const world = { windows, agents, seen: {}, updated: {}, shell: {}, quiet: {}, unread: {}, foreground: 0, now: 0 };
+  const world = { windows, agents, seen: {}, updated: {}, shell: {}, quiet: {}, unread: {}, loud: {}, foreground: 0, now: 0 };
   const timers = [];
   const cleared = [];
   const winMan = {
@@ -24,6 +24,7 @@ function setup({ windows = [], agents = {}, control = true, bellQuiet } = {}) {
         agentSeen: Boolean(world.seen?.[w.id]), agentUpdated: world.updated?.[w.id] ?? 1,
         shell: Boolean(world.shell?.[w.id]),
         agentQuiet: Boolean(world.quiet?.[w.id]), agentUnread: Boolean(world.unread?.[w.id]),
+        agentLoudUnseen: Boolean(world.loud?.[w.id]),
       }))),
     getActiveWindowId: vi.fn(() => world.foreground ?? 0),
     setTaskbarProgress: vi.fn((id, state, value) => calls.push(['progress', id, state, value])),
@@ -326,6 +327,23 @@ describe('тихий конец хода (quiet)', () => {
     calls.length = 0;
     svc.tick();
     expect(calls).toEqual([['progress', 1, 0, 0], ['flash', 1, true]]);
+  });
+
+  it('непросмотренный итог нетихого хода тихий ход не гасит, а звонок тихого — глушится', () => {
+    const spy = quietSpy();
+    const { svc, calls, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'h' }], agents: { 1: 'review' }, bellQuiet: spy });
+    svc.tick();
+    // Ответ Стасу не просмотрен, ребёнок написал, ход head кончился тихо.
+    Object.assign(world, { quiet: { 1: true }, loud: { 1: true } });
+    calls.length = 0;
+    svc.tick();
+    expect(calls).toEqual([]);
+    expect(spy.writes.at(-1)).toEqual(['h']);
+    // Посмотрел — тихий ход дальше гасит, как без loudAt.
+    world.loud = {};
+    world.agents[1] = 'idle';
+    svc.tick();
+    expect(calls).toEqual([['progress', 1, 0, 0], ['flash', 1, false]]);
   });
 
   it('markUnread зажигает тихую сессию', () => {

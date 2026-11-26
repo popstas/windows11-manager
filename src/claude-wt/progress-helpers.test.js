@@ -11,7 +11,7 @@ describe('normalizeProgress', () => {
     })).toEqual({
       state: 'active', updated: 100, event: '', message: 'hi', summary: '', lastSummary: 'Закоммитил',
       prompt: 'добавь тесты', question: '', costUsd: 12, contextPct: 47, turnAt: 0, branch: '', pr_url: '',
-      quiet: false, turnFrom: '',
+      quiet: false, turnFrom: '', loudAt: 0,
     });
   });
 
@@ -23,6 +23,13 @@ describe('normalizeProgress', () => {
     expect(normalizeProgress({ state: 'review', updated: 1, quiet: 'true' }).quiet).toBe(false);
     // Старый хук без поля — как раньше.
     expect(normalizeProgress({ state: 'review', updated: 1 }).quiet).toBe(false);
+  });
+
+  it('loudAt — положительное число, иначе ноль (старый хук)', () => {
+    expect(normalizeProgress({ state: 'review', updated: 9, loudAt: 7 }).loudAt).toBe(7);
+    expect(normalizeProgress({ state: 'review', updated: 9, loudAt: '7' }).loudAt).toBe(0);
+    expect(normalizeProgress({ state: 'review', updated: 9, loudAt: -1 }).loudAt).toBe(0);
+    expect(normalizeProgress({ state: 'review', updated: 9 }).loudAt).toBe(0);
   });
 
   it('turnFrom — одно из значений контракта, иначе пусто', () => {
@@ -77,7 +84,7 @@ describe('normalizeProgress', () => {
       .toEqual({
         state: null, updated: 42, event: '', message: '', summary: '', lastSummary: '',
         prompt: '', question: '', costUsd: 0, contextPct: 0, turnAt: 0, branch: '', pr_url: '',
-        quiet: false, turnFrom: '',
+        quiet: false, turnFrom: '', loudAt: 0,
       });
   });
 
@@ -93,7 +100,7 @@ describe('normalizeProgress', () => {
       .toEqual({
         state: 'idle', updated: 0, event: '', message: '', summary: '', lastSummary: '',
         prompt: '', question: '', costUsd: 0, contextPct: 0, turnAt: 0, branch: '', pr_url: '',
-        quiet: false, turnFrom: '',
+        quiet: false, turnFrom: '', loudAt: 0,
       });
   });
 

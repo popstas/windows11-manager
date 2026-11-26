@@ -31,7 +31,7 @@
  */
 import {
   TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks,
-  isQuietAgent, BLINK_MS, cacheWarnDue, blinkBar, cacheWarnKey, parseCacheWarn, newTurnSince,
+  isQuietAgent, quietHidesButton, BLINK_MS, cacheWarnDue, blinkBar, cacheWarnKey, parseCacheWarn, newTurnSince,
 } from '../claude-wt/taskbar-helpers.js';
 import { bellQuietKeys } from '../claude-wt/bell-children-helpers.js';
 import { NO_BELL_QUIET } from './bell-quiet.js';
@@ -210,7 +210,7 @@ function startTaskbarState({
       marks = pruneMarks(marks, agents);
       const markOf = a => (markHolds(marks.get(a.sessionId), a.agentUpdated) ? marks.get(a.sessionId).kind : null);
       const wanted = new Map(agents.map(a => [
-        a.id, taskbarLook(a.agentState, Boolean(a.agentSeen), markOf(a), a.shell === true, isQuietAgent(a)),
+        a.id, taskbarLook(a.agentState, Boolean(a.agentSeen), markOf(a), a.shell === true, quietHidesButton(a)),
       ]));
       bellQuiet.update(bellQuietKeys({ windows, quiet: new Set(agents.filter(isQuietAgent).map(a => a.id)) }));
       listed = true;
