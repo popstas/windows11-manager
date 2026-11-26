@@ -11,7 +11,26 @@ describe('normalizeProgress', () => {
     })).toEqual({
       state: 'active', updated: 100, event: '', message: 'hi', summary: '', lastSummary: 'Закоммитил',
       prompt: 'добавь тесты', question: '', costUsd: 12, contextPct: 47, turnAt: 0, branch: '', pr_url: '',
+      quiet: false, turnFrom: '',
     });
+  });
+
+  it('quiet — только true и только у review/idle (контракт хука ccfzf)', () => {
+    expect(normalizeProgress({ state: 'review', updated: 1, quiet: true }).quiet).toBe(true);
+    expect(normalizeProgress({ state: 'idle', updated: 1, quiet: true }).quiet).toBe(true);
+    expect(normalizeProgress({ state: 'question', updated: 1, quiet: true }).quiet).toBe(false);
+    expect(normalizeProgress({ state: 'active', updated: 1, quiet: true }).quiet).toBe(false);
+    expect(normalizeProgress({ state: 'review', updated: 1, quiet: 'true' }).quiet).toBe(false);
+    // Старый хук без поля — как раньше.
+    expect(normalizeProgress({ state: 'review', updated: 1 }).quiet).toBe(false);
+  });
+
+  it('turnFrom — одно из значений контракта, иначе пусто', () => {
+    for (const v of ['human', 'head', 'child', 'peer', 'notice', 'wrapper', 'subagent']) {
+      expect(normalizeProgress({ state: 'review', updated: 1, turnFrom: v }).turnFrom).toBe(v);
+    }
+    expect(normalizeProgress({ state: 'review', updated: 1, turnFrom: 'robot' }).turnFrom).toBe('');
+    expect(normalizeProgress({ state: 'review', updated: 1, turnFrom: 1 }).turnFrom).toBe('');
   });
 
   it('treats missing money and context as zero', () => {
@@ -58,6 +77,7 @@ describe('normalizeProgress', () => {
       .toEqual({
         state: null, updated: 42, event: '', message: '', summary: '', lastSummary: '',
         prompt: '', question: '', costUsd: 0, contextPct: 0, turnAt: 0, branch: '', pr_url: '',
+        quiet: false, turnFrom: '',
       });
   });
 
@@ -73,6 +93,7 @@ describe('normalizeProgress', () => {
       .toEqual({
         state: 'idle', updated: 0, event: '', message: '', summary: '', lastSummary: '',
         prompt: '', question: '', costUsd: 0, contextPct: 0, turnAt: 0, branch: '', pr_url: '',
+        quiet: false, turnFrom: '',
       });
   });
 

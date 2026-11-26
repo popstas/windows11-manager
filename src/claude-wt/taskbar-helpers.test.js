@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks,
+  TBPF, taskbarLook, isQuietAgent, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks,
   cacheWarnDue, blinkBar, cacheWarnKey, parseCacheWarn,
 } from './taskbar-helpers.js';
 
@@ -49,6 +49,39 @@ describe('taskbarLook', () => {
     const shell = taskbarLook('review', false, null, true);
     const { ops } = planTaskbar(new Map([[1, shell]]), new Map([[1, taskbarLook('review')]]), new Set([1]));
     expect(ops).toEqual([{ id: 1, state: 'none', value: 0, flash: null }]);
+  });
+
+  it('тихий конец хода — без мигания, полоса как у review/idle', () => {
+    // Ход head начат ребёнком, ребёнок работает — Стасу делать нечего (26.11).
+    expect(taskbarLook('review', false, null, false, true)).toEqual({ state: 'none', value: 0, flash: false });
+    // false, а не null: idle должен погасить кнопку, зажжённую ещё на review.
+    expect(taskbarLook('idle', false, null, false, true)).toEqual({ state: 'none', value: 0, flash: false });
+    expect(taskbarLook('review', false, null, true, true)).toEqual({ state: 'normal', value: 2, flash: false });
+  });
+
+  it('unread сильнее тихого, seen — как было', () => {
+    expect(taskbarLook('review', true, 'unread', false, true).flash).toBe(true);
+    expect(taskbarLook('idle', false, 'unread', false, true).flash).toBe(true);
+    expect(taskbarLook('review', false, 'seen', false, true).flash).toBe(false);
+  });
+
+  it('вопрос и работа тихими не бывают', () => {
+    expect(taskbarLook('question', false, null, false, true)).toEqual(taskbarLook('question'));
+    expect(taskbarLook('active', false, null, false, true)).toEqual(taskbarLook('active'));
+  });
+
+  it('уже мигающая с review кнопка гаснет, когда ход стал тихим', () => {
+    const lit = taskbarLook('review');
+    const { ops } = planTaskbar(new Map([[1, lit]]), new Map([[1, taskbarLook('idle', false, null, false, true)]]), new Set([1]));
+    expect(ops).toEqual([{ id: 1, state: 'none', value: 0, flash: 'off' }]);
+  });
+
+  it('isQuietAgent: quiet хука без «непросмотрено» в слоте', () => {
+    expect(isQuietAgent({ agentQuiet: true })).toBe(true);
+    expect(isQuietAgent({ agentQuiet: true, agentUnread: true })).toBe(false);
+    expect(isQuietAgent({ agentQuiet: false })).toBe(false);
+    expect(isQuietAgent({})).toBe(false);
+    expect(isQuietAgent(null)).toBe(false);
   });
 
   it('unknown — бегущая полоса', () => {

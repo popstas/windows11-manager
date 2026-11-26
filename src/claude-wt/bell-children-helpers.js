@@ -22,11 +22,20 @@
  * застыл — через `BELL_CHILDREN_TTL_S` wezterm.lua его не верит и звенят все.
  * Отсюда и сердцебиение записи: файл переписывается при смене списка и не реже
  * раза в `BELL_HEARTBEAT_MS`.
+ *
+ * Второй список того же формата — `.wezterm-bell-quiet` (заголовок
+ * `# wezterm-bell-quiet <unix-секунды>`): окна сессий с тихим концом хода
+ * (`quiet` хука ccfzf, решение Стаса 26.11). Пишет его служба кнопок панели
+ * задач (src/mqtt/taskbar.js) — у неё уже есть состояние агентов окон WezTerm.
+ * wezterm.lua молчит у окна из него в любом режиме звонка; правила ключа,
+ * срока годности и fail-open те же.
  */
 const BELL_FLAG_OFF = '.wezterm-bell-off';
 const BELL_FLAG_CHILDREN_OFF = '.wezterm-bell-children-off';
 const BELL_CHILDREN_FILE = '.wezterm-bell-children';
 const BELL_HEADER = '# wezterm-bell-children';
+const BELL_QUIET_FILE = '.wezterm-bell-quiet';
+const BELL_QUIET_HEADER = '# wezterm-bell-quiet';
 /** Сколько wezterm.lua верит списку (то же число стоит в lua). */
 const BELL_CHILDREN_TTL_S = 300;
 const BELL_HEARTBEAT_MS = 60_000;
@@ -118,9 +127,26 @@ function bellChildKeys({ windows, sessions, children, registry, now }) {
   return [...child].filter(k => !other.has(k)).sort();
 }
 
-/** Текст файла списка. */
-function bellChildrenText(keys, nowSec) {
-  return [`${BELL_HEADER} ${nowSec}`, ...keys].join('\n') + '\n';
+/**
+ * Ключи окон тихих сессий. `windows` — окна WezTerm с сырым заголовком
+ * [{id, title}], `quiet` — hwnd окон, чья сессия сейчас тихая. Как у детей:
+ * ключ в списке, только если все окна с ним тихие — тёзка с вопросом иначе
+ * замолчал бы заодно.
+ */
+function bellQuietKeys({ windows, quiet }) {
+  const hush = new Set();
+  const other = new Set();
+  for (const w of windows ?? []) {
+    const key = bellTitleKey(w?.title);
+    if (!key) continue;
+    (quiet?.has(w.id) ? hush : other).add(key);
+  }
+  return [...hush].filter(k => !other.has(k)).sort();
+}
+
+/** Текст файла списка; `header` — заголовок списка детей или тихих. */
+function bellChildrenText(keys, nowSec, header = BELL_HEADER) {
+  return [`${header} ${nowSec}`, ...keys].join('\n') + '\n';
 }
 
 /**
@@ -136,6 +162,7 @@ function childrenDirFor(cfg) {
 }
 
 export {
-  BELL_FLAG_OFF, BELL_FLAG_CHILDREN_OFF, BELL_CHILDREN_FILE, BELL_HEADER, BELL_CHILDREN_TTL_S, BELL_HEARTBEAT_MS,
-  REGISTRY_HWND_TTL_MS, GLYPH_RANGES, bellTitleKey, childSessionIds, bellChildKeys, bellChildrenText, childrenDirFor,
+  BELL_FLAG_OFF, BELL_FLAG_CHILDREN_OFF, BELL_CHILDREN_FILE, BELL_HEADER, BELL_QUIET_FILE, BELL_QUIET_HEADER,
+  BELL_CHILDREN_TTL_S, BELL_HEARTBEAT_MS, REGISTRY_HWND_TTL_MS, GLYPH_RANGES,
+  bellTitleKey, childSessionIds, bellChildKeys, bellQuietKeys, bellChildrenText, childrenDirFor,
 };

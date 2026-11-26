@@ -21,6 +21,7 @@ import { createLinkReporter } from './link.js';
 import { createStatsPublisher } from './stats.js';
 import { startAutoplacer } from './autoplacer.js';
 import { startTaskbarState } from './taskbar.js';
+import { createBellQuietWriter } from './bell-quiet.js';
 import { startWindowIcons } from './window-icons.js';
 import { startTaskbarHide } from './taskbar-hide.js';
 import { startBellChildren } from './bell-children.js';
@@ -86,7 +87,9 @@ function startService({
   // Кнопки окон WezTerm на панели задач (прогресс и подсветка по состоянию
   // агента) — wt рисует их сам, WezTerm не умеет. Брокер не нужен. Заводится
   // до роутера: команда `claude-session-seen` гасит подсветку через него.
-  const taskbar = startTaskbarState({ winMan, log });
+  // Тот же тик пишет и список тихих окон для звонка WezTerm
+  // (%USERPROFILE%\.wezterm-bell-quiet): состояние агентов окон у него уже есть.
+  const taskbar = startTaskbarState({ winMan, log, bellQuiet: createBellQuietWriter({ log }) });
 
   // Явные иконки и значки окон сессий (claude-wt window icon|badge): одно
   // хранилище на маршруты и службу иконок. Маршрут пишет его сам, а службу

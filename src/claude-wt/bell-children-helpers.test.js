@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   BELL_CHILDREN_FILE, BELL_FLAG_OFF, BELL_FLAG_CHILDREN_OFF, BELL_HEADER, GLYPH_RANGES,
+  BELL_QUIET_FILE, BELL_QUIET_HEADER, bellQuietKeys,
   bellTitleKey, childSessionIds, bellChildKeys, bellChildrenText, childrenDirFor,
 } from './bell-children-helpers.js';
 
@@ -30,15 +31,23 @@ describe('контракт имён с wezterm.lua и пикером', () => {
     expect(BELL_FLAG_CHILDREN_OFF).toBe('.wezterm-bell-children-off');
   });
 
-  it('wezterm.lua называет в путях ровно флаги и файл списка', () => {
+  it('wezterm.lua называет в путях ровно флаги и оба файла списков', () => {
     // Только строки пути вида '/.wezterm-bell…' — имя в комментарии не в счёт.
     const names = new Set([...LUA.matchAll(/'\/(\.wezterm-bell[a-z-]*)'/g)].map(m => m[1]));
-    expect([...names].sort()).toEqual([BELL_CHILDREN_FILE, BELL_FLAG_CHILDREN_OFF, BELL_FLAG_OFF].sort());
+    expect([...names].sort())
+      .toEqual([BELL_CHILDREN_FILE, BELL_QUIET_FILE, BELL_FLAG_CHILDREN_OFF, BELL_FLAG_OFF].sort());
   });
 
   it('заголовок файла списка в lua тот же', () => {
     const m = LUA.match(/BELL_CHILDREN_HEADER = '([^']+)'/);
     expect(m?.[1]).toBe(BELL_HEADER);
+  });
+
+  it('заголовок списка тихих в lua тот же', () => {
+    expect(BELL_QUIET_FILE).toBe('.wezterm-bell-quiet');
+    const m = LUA.match(/BELL_QUIET_HEADER = '([^']+)'/);
+    expect(m?.[1]).toBe(BELL_QUIET_HEADER);
+    expect(BELL_QUIET_HEADER).toBe('# wezterm-bell-quiet');
   });
 
   it('таблица глифов в lua совпадает с js', () => {
@@ -191,5 +200,27 @@ describe('childrenDirFor', () => {
 
   it('без sessionsFile — пусто', () => {
     expect(childrenDirFor({})).toBe('');
+  });
+});
+
+describe('bellQuietKeys', () => {
+  it('ключи тихих окон по сырому заголовку, отсортированы', () => {
+    const windows = [{ id: 1, title: '✳ pf-inbox-head' }, { id: 2, title: 'kp-agent-head' }, { id: 3, title: 'boss' }];
+    expect(bellQuietKeys({ windows, quiet: new Set([2, 1]) })).toEqual(['kp-agent-head', 'pf-inbox-head']);
+  });
+
+  it('тёзка не тихий — ключа нет: его вопрос иначе замолчал бы', () => {
+    const windows = [{ id: 1, title: '✳ head' }, { id: 2, title: '⠂ head' }];
+    expect(bellQuietKeys({ windows, quiet: new Set([1]) })).toEqual([]);
+    expect(bellQuietKeys({ windows, quiet: new Set([1, 2]) })).toEqual(['head']);
+  });
+
+  it('пустой заголовок и пустые входы — ничего', () => {
+    expect(bellQuietKeys({ windows: [{ id: 1, title: '   ' }], quiet: new Set([1]) })).toEqual([]);
+    expect(bellQuietKeys({})).toEqual([]);
+  });
+
+  it('текст файла — тот же формат с заголовком тихих', () => {
+    expect(bellChildrenText(['a'], 7, BELL_QUIET_HEADER)).toBe('# wezterm-bell-quiet 7\na\n');
   });
 });

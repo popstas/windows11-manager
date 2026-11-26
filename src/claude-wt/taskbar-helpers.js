@@ -46,23 +46,40 @@ const NONE = { state: 'none', value: 0, flash: false };
  * seen и unread живут по своим правилам. У `active` и `question` признак
  * ничего не меняет: агент, который работает или спрашивает, `shell` не пишет.
  *
+ * `quiet` — тихий конец хода (поле хука ccfzf, решение Стаса 26.11): ход head
+ * начат не человеком, закончен в review/idle, а ребёнок работает. Мигания нет
+ * (`false`, не `null`: уже горящую с review кнопку надо погасить, а `null`
+ * оставил бы её гореть), полоса — как у review/idle. Отметки сильнее: `unread`
+ * зажигает и тихую. Зовущий передаёт сюда quiet уже без «непросмотрено» из
+ * слота (`agentUnread` в view.js). `question` и `active` quiet не трогает —
+ * хук его у них и не ставит.
+ *
  * `unknown` сюда сейчас не доезжает: normalizeProgress его отбрасывает, и
  * такое окно получает сброс. Ветка оставлена, чтобы соответствие хуку было
  * записано целиком.
  */
 const SHELL_VALUE = 2;
 
-function taskbarLook(agentState, seen = false, mark = null, shell = false) {
+function taskbarLook(agentState, seen = false, mark = null, shell = false, quiet = false) {
   const byMark = fallback => (mark === 'seen' ? false : mark === 'unread' ? true : fallback);
   const bar = shell ? { state: 'normal', value: SHELL_VALUE } : { state: 'none', value: 0 };
   switch (agentState) {
     case 'active': return { state: 'normal', value: 100, flash: false };
     case 'question': return { state: 'paused', value: 22, flash: byMark(true) };
-    case 'review': return { ...bar, flash: byMark(!seen) };
-    case 'idle': return { ...bar, flash: byMark(null) };
+    case 'review': return { ...bar, flash: byMark(quiet ? false : !seen) };
+    case 'idle': return { ...bar, flash: byMark(quiet ? false : null) };
     case 'unknown': return { state: 'indeterminate', value: 0, flash: false };
     default: return { ...NONE };
   }
+}
+
+/**
+ * Тихая ли сессия окна для кнопки и звонка: хук сказал `quiet`, и в слоте нет
+ * «непросмотрено» новее фокуса (`agentUnread`, claude-session-unread от
+ * человека или агента) — та отметка сильнее.
+ */
+function isQuietAgent(agent) {
+  return agent?.agentQuiet === true && agent?.agentUnread !== true;
 }
 
 function isWeztermPath(path) {
@@ -236,7 +253,7 @@ function parseCacheWarn(body) {
 }
 
 export {
-  TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks,
+  TBPF, taskbarLook, isQuietAgent, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks,
   CACHE_TTL_SEC, CACHE_SAFETY_SEC, NEW_TURN_MARGIN_SEC, BLINK_MS,
   cacheWarnDue, blinkBar, cacheWarnKey, parseCacheWarn, newTurnSince,
 };

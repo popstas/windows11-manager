@@ -118,18 +118,23 @@ function claudeWtWindowSessions(windows) {
     const slot = state.slots[hit.id];
     out.push({
       id: w.id, sessionId: hit.id, cwd: hit.cwd || slot?.cwd || '', projectCwd: owners[hit.id] ?? '',
-      focusedAt: slot?.focusedAt ?? 0, title,
+      focusedAt: slot?.focusedAt ?? 0, unreadAt: slot?.unreadAt ?? 0, title,
     });
   }
   return out;
 }
 
 /**
- * То же плюс состояние агента: [{id, title}] → [{id, sessionId, cwd, agentState, agentSeen, agentUpdated, shell}].
+ * То же плюс состояние агента: [{id, title}] → [{id, sessionId, cwd, agentState, agentSeen, agentUpdated,
+ * agentQuiet, agentUnread, shell}].
  * С сети читаются state.json только переданных окон (кэш 3 с у loadProgress).
  * `agentSeen` — окно выходило вперёд после последней записи агента
  * (`seenSinceUpdate`, тот же признак, что у пикера и панели). `shell` — ход
  * закончен, а фоновая команда идёт (`loadShellSessions`, из дампа ccfzf).
+ * `agentQuiet` — хук назвал конец хода тихим (`quiet` в state.json, только у
+ * review/idle). `agentUnread` — в слоте стоит «непросмотрено» от
+ * `claude-session-unread` новее фокуса окна: та отметка переживает запись хука
+ * и поэтому сильнее quiet (отметка службы `markHolds` сгорает на stop).
  */
 function claudeWtWindowAgents(windows) {
   const resolved = claudeWtWindowSessions(windows);
@@ -142,6 +147,8 @@ function claudeWtWindowAgents(windows) {
     agentState: progress[r.sessionId]?.state ?? null,
     agentSeen: seenSinceUpdate({ focusedAt: r.focusedAt }, progress[r.sessionId]),
     agentUpdated: progress[r.sessionId]?.updated ?? 0,
+    agentQuiet: progress[r.sessionId]?.quiet === true,
+    agentUnread: r.unreadAt > 0 && r.unreadAt > r.focusedAt,
     shell: shells.has(r.sessionId),
   }));
 }

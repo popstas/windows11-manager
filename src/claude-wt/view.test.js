@@ -32,7 +32,7 @@ describe('claudeWtWindowSessions — заголовок для значков п
   // молча получал бы значок telegram.
   it('отдаёт заголовок без глифа и приставки zellij — тот, по которому найдена сессия', () => {
     const got = claudeWtWindowSessions([{ id: 7, title: 'popstas | ✳ planfix_bot-tg-1' }]);
-    expect(got).toEqual([{ id: 7, sessionId: 'a1', cwd: '/p/exp', projectCwd: '', focusedAt: 5, title: 'planfix_bot-tg-1' }]);
+    expect(got).toEqual([{ id: 7, sessionId: 'a1', cwd: '/p/exp', projectCwd: '', focusedAt: 5, unreadAt: 0, title: 'planfix_bot-tg-1' }]);
   });
 });
 

@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BELL_HEADER } from './bell-children-helpers.js';
+import { BELL_HEADER, BELL_QUIET_HEADER } from './bell-children-helpers.js';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WEZ = path.join(ROOT, 'wezterm', 'wezterm.lua');
@@ -35,6 +35,7 @@ describe.skipIf(!LUA)('wezterm.lua: звонок по режимам', () => {
 
   const flag = name => fs.writeFileSync(path.join(home, name), '');
   const list = (text) => fs.writeFileSync(path.join(home, '.wezterm-bell-children'), text);
+  const quiet = (text) => fs.writeFileSync(path.join(home, '.wezterm-bell-quiet'), text);
   const nowSec = () => Math.floor(Date.now() / 1000);
   // [cmd, key, title] → 'play' | 'mute' на каждую строку.
   function bell(rows) {
@@ -107,6 +108,36 @@ describe.skipIf(!LUA)('wezterm.lua: звонок по режимам', () => {
   it('no children: сбой внутри проверки — звенит', () => {
     flag('.wezterm-bell-children-off');
     list(`${BELL_HEADER} ${nowSec()}\nkid\n`);
+    expect(bell([['keep', '', '!error']])).toEqual(['play']);
+  });
+
+  it('quiet: окно из списка тихих молчит без флагов', () => {
+    quiet(`${BELL_QUIET_HEADER} ${nowSec()}\nhead\n`);
+    expect(bell([['keep', '', '✳ head'], ['keep', '', 'boss']])).toEqual(['mute', 'play']);
+  });
+
+  it('quiet: молчит и в режиме no children, даже если не ребёнок', () => {
+    flag('.wezterm-bell-children-off');
+    quiet(`${BELL_QUIET_HEADER} ${nowSec()}\nhead\n`);
+    list(`${BELL_HEADER} ${nowSec()}\nkid\n`);
+    expect(bell([['keep', '', 'head'], ['keep', '', 'kid'], ['keep', '', 'boss']])).toEqual(['mute', 'mute', 'play']);
+  });
+
+  it('quiet: протухший, из будущего, битый или чужой заголовок — звенит', () => {
+    for (const text of [
+      `${BELL_QUIET_HEADER} ${nowSec() - 1000}\nhead\n`,
+      `${BELL_QUIET_HEADER} ${nowSec() + 1000}\nhead\n`,
+      'head\n',
+      `${BELL_HEADER} ${nowSec()}\nhead\n`,
+      '',
+    ]) {
+      quiet(text);
+      expect(bell([['keep', '', 'head']])).toEqual(['play']);
+    }
+  });
+
+  it('quiet: сбой внутри проверки — звенит', () => {
+    quiet(`${BELL_QUIET_HEADER} ${nowSec()}\nhead\n`);
     expect(bell([['keep', '', '!error']])).toEqual(['play']);
   });
 });

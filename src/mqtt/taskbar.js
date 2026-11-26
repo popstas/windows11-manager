@@ -31,8 +31,10 @@
  */
 import {
   TBPF, taskbarLook, isWeztermPath, planTaskbar, resetOps, markHolds, pruneMarks,
-  BLINK_MS, cacheWarnDue, blinkBar, cacheWarnKey, parseCacheWarn, newTurnSince,
+  isQuietAgent, BLINK_MS, cacheWarnDue, blinkBar, cacheWarnKey, parseCacheWarn, newTurnSince,
 } from '../claude-wt/taskbar-helpers.js';
+import { bellQuietKeys } from '../claude-wt/bell-children-helpers.js';
+import { NO_BELL_QUIET } from './bell-quiet.js';
 
 // Вопрос агента должен загореться быстро: wt рисует его сразу, а HA-экспорт
 // с его 15 с для этого слишком медленный.
@@ -41,13 +43,19 @@ const TASKBAR_INTERVAL_MS = 2500;
 function startTaskbarState({
   winMan, log, intervalMs = TASKBAR_INTERVAL_MS,
   setIntervalFn = setInterval, clearIntervalFn = clearInterval,
-  blinkMs = BLINK_MS, nowSec = () => Math.floor(Date.now() / 1000),
+  blinkMs = BLINK_MS, nowSec = () => Math.floor(Date.now() / 1000), bellQuiet = NO_BELL_QUIET,
 }) {
   const off = {
     tick() {}, dismiss() {}, markUnread() {}, cacheWarn() {}, resync() {}, isBlinking: () => false, stop() {},
   };
-  if (typeof winMan?.hasTaskbarControl !== 'function') return off;
+  // Без кнопок не считается и список тихих: файл от прошлого процесса — убрать,
+  // пусть звенят все.
+  if (typeof winMan?.hasTaskbarControl !== 'function') {
+    bellQuiet.drop();
+    return off;
+  }
   if (!winMan.hasTaskbarControl()) {
+    bellQuiet.drop();
     log('taskbar: в аддоне node-window-manager нет setTaskbarProgress/flashWindow — '
       + 'кнопки окон WezTerm не подсвечиваются (пересоберите vendor/node-window-manager)', 'warn');
     return off;
@@ -192,12 +200,16 @@ function startTaskbarState({
       if (!windows.length && !applied.size) {
         bySession = new Map();
         updateBlink();
+        bellQuiet.update([]);
         return;
       }
       const agents = windows.length ? winMan.claudeWtWindowAgents(windows) : [];
       marks = pruneMarks(marks, agents);
       const markOf = a => (markHolds(marks.get(a.sessionId), a.agentUpdated) ? marks.get(a.sessionId).kind : null);
-      const wanted = new Map(agents.map(a => [a.id, taskbarLook(a.agentState, Boolean(a.agentSeen), markOf(a), a.shell === true)]));
+      const wanted = new Map(agents.map(a => [
+        a.id, taskbarLook(a.agentState, Boolean(a.agentSeen), markOf(a), a.shell === true, isQuietAgent(a)),
+      ]));
+      bellQuiet.update(bellQuietKeys({ windows, quiet: new Set(agents.filter(isQuietAgent).map(a => a.id)) }));
       const { ops, next } = planTaskbar(applied, wanted, present);
       apply(ops);
       applied = next;
@@ -207,6 +219,8 @@ function startTaskbarState({
       updateBlink();
       lastError = '';
     } catch (e) {
+      // Ключ, застрявший в списке тихих, глушил бы звонок вопроса — убрать сразу.
+      bellQuiet.drop();
       report(e);
     }
   }
@@ -285,6 +299,7 @@ function startTaskbarState({
     stop() {
       clearIntervalFn(timer);
       stopBlinkTimer();
+      bellQuiet.drop();
       // Мигающее окно в `applied` может и не лежать (просмотренный review без
       // полосы) — сброс берёт оба списка, иначе жёлтая осталась бы висеть.
       const lit = new Set([...applied.keys(), ...blinking.keys()]);
