@@ -4,10 +4,10 @@ import { startTaskbarState } from './taskbar.js';
 const WEZ = 'C:\\Program Files\\WezTerm\\wezterm-gui.exe';
 const WT = 'C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal\\WindowsTerminal.exe';
 
-function setup({ windows = [], agents = {}, control = true } = {}) {
+function setup({ windows = [], agents = {}, control = true, bellQuiet } = {}) {
   const calls = [];
   const logs = [];
-  const world = { windows, agents, seen: {}, updated: {}, shell: {}, foreground: 0, now: 0 };
+  const world = { windows, agents, seen: {}, updated: {}, shell: {}, quiet: {}, unread: {}, loud: {}, foreground: 0, now: 0 };
   const timers = [];
   const cleared = [];
   const winMan = {
@@ -23,6 +23,8 @@ function setup({ windows = [], agents = {}, control = true } = {}) {
         id: w.id, sessionId: `s${w.id}`, agentState: world.agents[w.id],
         agentSeen: Boolean(world.seen?.[w.id]), agentUpdated: world.updated?.[w.id] ?? 1,
         shell: Boolean(world.shell?.[w.id]),
+        agentQuiet: Boolean(world.quiet?.[w.id]), agentUnread: Boolean(world.unread?.[w.id]),
+        agentLoudUnseen: Boolean(world.loud?.[w.id]),
       }))),
     getActiveWindowId: vi.fn(() => world.foreground ?? 0),
     setTaskbarProgress: vi.fn((id, state, value) => calls.push(['progress', id, state, value])),
@@ -34,6 +36,7 @@ function setup({ windows = [], agents = {}, control = true } = {}) {
     setIntervalFn: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
     clearIntervalFn: t => cleared.push(t),
     nowSec: () => world.now,
+    ...(bellQuiet ? { bellQuiet } : {}),
   });
   return { svc, calls, logs, winMan, world, timers, cleared };
 }
@@ -286,6 +289,114 @@ describe('startTaskbarState', () => {
   it('заглушка тоже умеет resync', () => {
     const { svc } = setup({ control: false });
     expect(() => svc.resync([1])).not.toThrow();
+  });
+});
+
+describe('тихий конец хода (quiet)', () => {
+  const quietSpy = () => {
+    const writes = [];
+    return { writes, drops: { n: 0 }, update(keys) { writes.push(keys); }, drop() { this.drops.n += 1; } };
+  };
+
+  it('тихий review не зажигает кнопку, а уже горящую гасит', () => {
+    const { svc, calls, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'h' }], agents: { 1: 'review' } });
+    calls.length = 0;
+    svc.tick();
+    expect(calls).toEqual([['progress', 1, 0, 0], ['flash', 1, true]]);
+    world.agents[1] = 'idle';
+    world.quiet[1] = true;
+    calls.length = 0;
+    svc.tick();
+    expect(calls).toEqual([['progress', 1, 0, 0], ['flash', 1, false]]);
+  });
+
+  it('тихий с первого тика — ничего не зажигается', () => {
+    const { svc, calls, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'h' }], agents: { 1: 'active' } });
+    svc.tick();
+    world.agents[1] = 'review';
+    world.quiet[1] = true;
+    calls.length = 0;
+    svc.tick();
+    expect(calls).toEqual([['progress', 1, 0, 0]]);
+  });
+
+  it('«непросмотрено» в слоте сильнее тихого', () => {
+    const { svc, calls, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'h' }], agents: { 1: 'active' } });
+    svc.tick();
+    Object.assign(world, { agents: { 1: 'review' }, quiet: { 1: true }, unread: { 1: true } });
+    calls.length = 0;
+    svc.tick();
+    expect(calls).toEqual([['progress', 1, 0, 0], ['flash', 1, true]]);
+  });
+
+  it('непросмотренный итог нетихого хода тихий ход не гасит, а звонок тихого — глушится', () => {
+    const spy = quietSpy();
+    const { svc, calls, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'h' }], agents: { 1: 'review' }, bellQuiet: spy });
+    svc.tick();
+    // Ответ Стасу не просмотрен, ребёнок написал, ход head кончился тихо.
+    Object.assign(world, { quiet: { 1: true }, loud: { 1: true } });
+    calls.length = 0;
+    svc.tick();
+    expect(calls).toEqual([]);
+    expect(spy.writes.at(-1)).toEqual(['h']);
+    // Посмотрел — тихий ход дальше гасит, как без loudAt.
+    world.loud = {};
+    world.agents[1] = 'idle';
+    svc.tick();
+    expect(calls).toEqual([['progress', 1, 0, 0], ['flash', 1, false]]);
+  });
+
+  it('markUnread зажигает тихую сессию', () => {
+    const { svc, calls, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'h' }], agents: { 1: 'idle' } });
+    world.quiet[1] = true;
+    svc.tick();
+    calls.length = 0;
+    world.now = 5;
+    svc.markUnread('s1');
+    expect(calls).toContainEqual(['flash', 1, true]);
+  });
+
+  it('пишет ключи тихих окон WezTerm в список звонка', () => {
+    const spy = quietSpy();
+    const { svc, world } = setup({
+      windows: [{ id: 1, path: WEZ, title: '✳ pf-inbox-head' }, { id: 2, path: WEZ, title: 'kid' }],
+      agents: { 1: 'review', 2: 'active' }, bellQuiet: spy,
+    });
+    world.quiet[1] = true;
+    svc.tick();
+    expect(spy.writes.at(-1)).toEqual(['pf-inbox-head']);
+    world.unread[1] = true;
+    svc.tick();
+    expect(spy.writes.at(-1)).toEqual([]);
+  });
+
+  it('без окон WezTerm — пустой список (сердцебиение), stop() и сбой тика его убирают', () => {
+    const spy = quietSpy();
+    const { svc, winMan } = setup({ windows: [{ id: 2, path: WT, title: 'b' }], bellQuiet: spy });
+    svc.tick();
+    expect(spy.writes.at(-1)).toEqual([]);
+    winMan.getVisibleWindowIds.mockImplementation(() => { throw new Error('boom'); });
+    svc.tick();
+    expect(spy.drops.n).toBe(1);
+    svc.stop();
+    expect(spy.drops.n).toBe(2);
+  });
+
+  it('сбой аддона после записи списка его не убирает', () => {
+    const spy = quietSpy();
+    const { svc, winMan, world } = setup({ windows: [{ id: 1, path: WEZ, title: 'head' }], agents: { 1: 'review' }, bellQuiet: spy });
+    world.quiet[1] = true;
+    winMan.setTaskbarProgress.mockImplementation(() => { throw new Error('addon'); });
+    svc.tick();
+    expect(winMan.setTaskbarProgress).toHaveBeenCalled();
+    expect(spy.writes.at(-1)).toEqual(['head']);
+    expect(spy.drops.n).toBe(0);
+  });
+
+  it('аддон без управления кнопками — список убирается, звенят все', () => {
+    const spy = quietSpy();
+    setup({ control: false, bellQuiet: spy });
+    expect(spy.drops.n).toBe(1);
   });
 });
 

@@ -81,12 +81,19 @@ end)
 -- временем, дальше ключ заголовка окна на строку. Нет файла, протух, не
 -- разобрался, упало что угодно — звенит (лишний звонок ребёнка лучше
 -- замолчавшего head).
+-- Второй список того же формата — ~/.wezterm-bell-quiet (заголовок
+-- «# wezterm-bell-quiet <unix-с>»): окна сессий с тихим концом хода (head,
+-- ребёнок которого работает, — Стасу делать нечего; решение 26.11). Его пишет
+-- служба кнопок панели задач (src/mqtt/taskbar.js), и молчит такое окно в любом
+-- режиме. Несвежий или битый — звенит.
 local BELL_SOUND = 'C:/profiles/sounds/mixkit-sci-fi-click-900.wav'
 local BELL_OFF = wezterm.home_dir .. '/.wezterm-bell-off'
 local BELL_CHILDREN_OFF = wezterm.home_dir .. '/.wezterm-bell-children-off'
 local BELL_CHILDREN = wezterm.home_dir .. '/.wezterm-bell-children'
 local BELL_CHILDREN_HEADER = '# wezterm-bell-children'
--- Секунд верим списку: служба переписывает его не реже раза в минуту.
+local BELL_QUIET = wezterm.home_dir .. '/.wezterm-bell-quiet'
+local BELL_QUIET_HEADER = '# wezterm-bell-quiet'
+-- Секунд верим списку (обоим): служба переписывает их не реже раза в минуту.
 local BELL_CHILDREN_TTL = 300
 -- Глифы статуса в начале заголовка, как GLYPH_RANGES в bell-children-helpers.js.
 local BELL_GLYPHS = {
@@ -126,12 +133,12 @@ local function bell_key(title)
   end
   return trim(s)
 end
--- Ключи детей или nil, если списку верить нельзя.
-local function bell_children()
-  local f = io.open(BELL_CHILDREN)
+-- Ключи списка (детей или тихих) или nil, если ему верить нельзя.
+local function bell_list(path, header)
+  local f = io.open(path)
   if not f then return nil end
   local head = f:read('l') or ''
-  local prefix = BELL_CHILDREN_HEADER .. ' '
+  local prefix = header .. ' '
   local stamp = head:sub(1, #prefix) == prefix and tonumber(head:sub(#prefix + 1)) or nil
   if not stamp or math.abs(os.time() - stamp) > BELL_CHILDREN_TTL then f:close(); return nil end
   local keys = {}
@@ -142,19 +149,30 @@ local function bell_children()
   f:close()
   return keys
 end
-local function bell_muted(pane)
-  if exists(BELL_OFF) then return true end
-  if not exists(BELL_CHILDREN_OFF) then return false end
-  local ok, muted = pcall(function()
-    local keys = bell_children()
+-- Окно в списке? Любой сбой — нет (звенит).
+local function in_list(pane, path, header)
+  local ok, hit = pcall(function()
+    local keys = bell_list(path, header)
     if not keys then return false end
     local key = bell_key(pane:get_title())
     return key ~= '' and keys[key] == true
   end)
-  return ok and muted
+  return ok and hit
+end
+local function bell_muted(pane)
+  if exists(BELL_OFF) then return true, 'off' end
+  if in_list(pane, BELL_QUIET, BELL_QUIET_HEADER) then return true, 'quiet' end
+  if not exists(BELL_CHILDREN_OFF) then return false, 'on' end
+  if in_list(pane, BELL_CHILDREN, BELL_CHILDREN_HEADER) then return true, 'child' end
+  return false, 'no children'
 end
 wezterm.on('bell', function(_, pane)
-  if bell_muted(pane) then return end
+  local muted, why = bell_muted(pane)
+  -- Строка на звонок в журнал WezTerm: по ней сверяется, когда Claude Code
+  -- звонит (конец хода или «waiting for your input» через минуту) и кто глушит.
+  local got, key = pcall(function() return bell_key(pane:get_title()) end)
+  pcall(wezterm.log_info, 'bell ' .. (muted and 'mute' or 'play') .. ' (' .. why .. '): ' .. (got and key or '?'))
+  if muted then return end
   wezterm.background_child_process {
     'powershell.exe', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command',
     "(New-Object Media.SoundPlayer '" .. BELL_SOUND .. "').PlaySync()",

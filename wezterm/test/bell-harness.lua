@@ -15,6 +15,7 @@ package.loaded['wezterm'] = {
   background_child_process = function() played = true end,
   config_builder = function() return {} end,
   font = function(x) return x end,
+  log_info = function() end,
 }
 dofile(wez_path)
 for line in io.lines() do

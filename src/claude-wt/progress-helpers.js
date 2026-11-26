@@ -16,6 +16,13 @@ const AGENT_STATES = ['active', 'question', 'review', 'idle'];
 // сегмента — `https://github.com/a&whoami/b/pull/1` проходил бы её целиком, а
 // строка без `shell` уходит в `cmd.exe /c start`, и `&` разбирает уже сам
 // cmd.exe. Форма та же, что и так вычисляет хук `wt-progress.sh`.
+// Откуда пришёл ход (`turnFrom`, контракт с хуком ccfzf feat/quiet-head):
+// человек, head, ребёнок, сосед, уведомление, обёртка, субагент.
+const TURN_FROM = ['human', 'head', 'child', 'peer', 'notice', 'wrapper', 'subagent'];
+// Состояния, в которых хук вправе сказать «тихо». В остальных поле не верится:
+// вопрос и работа всегда зовут как раньше.
+const QUIET_STATES = ['review', 'idle'];
+
 const PR_URL_RE = /^https:\/\/github\.com\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+\/pull\/\d+$/;
 
 /**
@@ -76,6 +83,16 @@ function normalizeProgress(raw) {
     // что поле переживает и рестарт сессии под новым id.
     branch: typeof raw.branch === 'string' ? raw.branch : '',
     pr_url: typeof raw.pr_url === 'string' && PR_URL_RE.test(raw.pr_url) ? raw.pr_url : '',
+    // Тихий конец хода (решение Стаса 26.11): ход head начат не человеком,
+    // закончен в review/idle, ребёнок работает — Стасу делать нечего, кнопка
+    // не мигает и WezTerm не звенит. Решает хук ccfzf; здесь только контракт:
+    // `true` бывает лишь у review/idle, всё прочее — как без поля (старый хук).
+    quiet: raw.quiet === true && QUIET_STATES.includes(state),
+    turnFrom: TURN_FROM.includes(raw.turnFrom) ? raw.turnFrom : '',
+    // Конец последнего нетихого хода (unix-с, шкала `updated`); тихий ход его
+    // переносит. Нужен, чтобы тихий ход не гасил итог для Стаса, который тот
+    // ещё не видел (решение head 26.11). Ноль — старый хук, поля нет.
+    loudAt: Number.isFinite(raw.loudAt) && raw.loudAt > 0 ? raw.loudAt : 0,
   };
 }
 
@@ -140,5 +157,5 @@ function seenSinceUpdate(slot, progress) {
 }
 
 export {
-  AGENT_STATES, normalizeProgress, sessionDescription, lastActivityAt, seenSinceUpdate,
+  AGENT_STATES, TURN_FROM, normalizeProgress, sessionDescription, lastActivityAt, seenSinceUpdate,
 };
