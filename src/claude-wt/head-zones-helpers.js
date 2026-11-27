@@ -297,6 +297,36 @@ function pickGroup({ groups, selected, activeId }) {
 }
 
 /**
+ * Кто в раскладке группы где стоит (часть 4, Стас 27.11).
+ *
+ * coord — прямой ребёнок head, у которого в `groups` есть своя группа (его id
+ * первым): он встаёт в первую зону под head. Стопка второй зоны — прямые дети
+ * head, не coord, затем дети coord (внуки head). Глубина один уровень: группы
+ * внуков не разворачиваются, правнуки в раскладку не попадают.
+ *
+ * @param {{ group: string[], groups: string[][] }} opts
+ * @returns {{ head: string, coords: string[], stack: string[] }}
+ */
+function groupMembers({ group, groups }) {
+  const [head, ...kids] = group;
+  const own = new Map();
+  for (const g of groups ?? []) {
+    if (g?.length && g[0] !== head && !own.has(g[0])) own.set(g[0], g.slice(1));
+  }
+  const coords = kids.filter(id => own.has(id));
+  const stack = kids.filter(id => !own.has(id));
+  const seen = new Set([head, ...kids]);
+  for (const c of coords) {
+    for (const id of own.get(c)) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      stack.push(id);
+    }
+  }
+  return { head, coords, stack };
+}
+
+/**
  * Раскладка группы: head в первую зону пары, дети стопкой во вторую — мест
  * `min(n, 3)`, ребёнок `i` на место `(i mod 3) + 1`, с четвёртого поверх.
  * В режиме `deck` — все дети во второй зоне целиком.
@@ -328,6 +358,7 @@ export {
   freeCandidates,
   pickFreeZone,
   pickGroup,
+  groupMembers,
   groupPlan,
   zonesCovered,
 };

@@ -15,6 +15,7 @@ import {
   freeCandidates,
   pickFreeZone,
   pickGroup,
+  groupMembers,
   groupPlan,
   zonesCovered,
 } from './head-zones-helpers.js';
@@ -217,6 +218,37 @@ describe('free', () => {
 
   it('кандидатов нет — null', () => {
     expect(pickFreeZone({ candidates: [], occupancy: new Map() })).toBeNull();
+  });
+});
+
+// Часть 4 (Стас 27.11): прямой ребёнок со своей группой — coord, он в первой
+// зоне под head, его дети — в стопке вместе с прямыми детьми head.
+describe('groupMembers', () => {
+  it('без вложенных групп — все дети в стопке', () => {
+    expect(groupMembers({ group: ['h', 'a', 'b'], groups: [['h', 'a', 'b']] }))
+      .toEqual({ head: 'h', coords: [], stack: ['a', 'b'] });
+  });
+
+  it('coord с двумя исполнителями и прямой ребёнок: сначала прямые, потом внуки', () => {
+    const groups = [['co', 'e1', 'e2'], ['h', 'co', 'd']];
+    expect(groupMembers({ group: groups[1], groups }))
+      .toEqual({ head: 'h', coords: ['co'], stack: ['d', 'e1', 'e2'] });
+  });
+
+  it('глубина один уровень: внук со своей группой — в стопке, правнук не попадает', () => {
+    const groups = [['y', 'z'], ['x', 'y'], ['h', 'x']];
+    expect(groupMembers({ group: groups[2], groups }))
+      .toEqual({ head: 'h', coords: ['x'], stack: ['y'] });
+  });
+
+  it('повторы и head среди внуков не дублируются', () => {
+    const groups = [['co', 'd', 'h', 'e1'], ['h', 'co', 'd']];
+    expect(groupMembers({ group: groups[1], groups }).stack).toEqual(['d', 'e1']);
+  });
+
+  it('копия своей же группы coord не делает', () => {
+    expect(groupMembers({ group: ['h', 'a'], groups: [['h', 'a'], ['h', 'a']] }))
+      .toEqual({ head: 'h', coords: [], stack: ['a'] });
   });
 });
 
