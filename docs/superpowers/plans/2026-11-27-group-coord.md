@@ -42,17 +42,17 @@
 **Interfaces:**
 - Produces: `groupMembers({ group: string[], groups: string[][] }) → { head: string, coords: string[], stack: string[] }`.
 
-- [ ] **Step 1: Падающие тесты** — `describe('groupMembers')`:
+- [x] **Step 1: Падающие тесты** — `describe('groupMembers')`:
   - без вложенных групп: `groupMembers({ group: ['h','a','b'], groups: [['h','a','b']] })` → `{ head: 'h', coords: [], stack: ['a','b'] }`;
   - coord с двумя исполнителями и прямой ребёнок: groups `[['co','e1','e2'], ['h','co','d']]`, group = второй → `{ head: 'h', coords: ['co'], stack: ['d','e1','e2'] }`;
   - цепочка: groups `[['y','z'], ['x','y'], ['h','x']]`, group `['h','x']` → `{ coords: ['x'], stack: ['y'] }` (z нет);
   - повтор и head во внуках не дублируются: groups `[['co','d','h','e1'], ['h','co','d']]` → `stack: ['d','e1']`;
   - группа самого head среди groups (`[['h','a'], ['h','a']]`) coord не делает: `coords: []`.
 
-- [ ] **Step 2:** `npx vitest run src/claude-wt/head-zones-helpers.test.js` — FAIL (`groupMembers` не экспортирован).
-- [ ] **Step 3:** реализовать `groupMembers`, экспортировать.
-- [ ] **Step 4:** тот же прогон — PASS.
-- [ ] **Step 5:** коммит `feat(claude-wt): groupMembers — coord и внуки в раскладке группы`.
+- [x] **Step 2:** `npx vitest run src/claude-wt/head-zones-helpers.test.js` — FAIL (`groupMembers` не экспортирован).
+- [x] **Step 3:** реализовать `groupMembers`, экспортировать.
+- [x] **Step 4:** тот же прогон — PASS.
+- [x] **Step 5:** коммит `feat(claude-wt): groupMembers — coord и внуки в раскладке группы`.
 
 ### Task 2: `arrangeGroup` ставит coord в первую зону
 
@@ -64,32 +64,33 @@
 **Interfaces:**
 - Consumes: `groupMembers` из Task 1.
 
-- [ ] **Step 1: Падающие тесты** — `describe('coord в группе')` со своей обвязкой: head `h` (окно 1, в 3:4), coord `co` (окно 20), исполнители `e1`, `e2` (21, 22), прямой ребёнок `d` (10); `groups: [['co','e1','e2'], ['h','co','d']]`; у всех окон `bringToTop` пишет id в `raised`.
+- [x] **Step 1: Падающие тесты** — `describe('coord в группе')` со своей обвязкой: head `h` (окно 1, в 3:4), coord `co` (окно 20), исполнители `e1`, `e2` (21, 22), прямой ребёнок `d` (10); `groups: [['co','e1','e2'], ['h','co','d']]`; у всех окон `bringToTop` пишет id в `raised`.
   - `selected: 'h'` → `placed` = `[{id:20,pos:R['3:1']}, {id:1,pos:R['3:1']}, {id:10,pos:third(Z,0)}, {id:21,pos:third(Z,1)}, {id:22,pos:third(Z,2)}]`; `raised` = `[20, 1, 10, 21, 22]`; `focus` ← 1; журнал `claude-place group: head head-session, coord co-x, детей 3 из 3`;
   - активен `co`, `selected: null` → раскладывается группа `co`: `placed[0].id === 20`, окна 1 и 10 не двигаются;
   - активен `co`, `selected: 'h'` → фокус 20 (Review Focus 1);
   - coord свёрнут → `placed` без 20, внуки 21 и 22 в стопке, журнал содержит `co … пропущено` и итог без `coord`;
   - coord на столе 2 → `placed` для 20 с `desktop: 1`;
   - цепочка `[['y','z'], ['x','y'], ['h','x']]` → z (окно своё) не в `placed`;
-  - deck: дети и внуки во второй зоне целиком, `raised` = `[20, 1, <выбранный>]` при `selected: 'e1'` (ид 21) и фокус 21; при `selected: 'h'` `raised` = `[20, 1]`.
-- [ ] **Step 2:** `npx vitest run src/claude-wt/group-layout.test.js` — новые FAIL, старые PASS.
-- [ ] **Step 3:** в `arrangeGroup` заменить `const [headId, ...kidIds] = group` на `groupMembers({ group, groups })`; окна coord собирать тем же циклом, что детей (общий хелпер «открытое несвёрнутое окно или запись в журнал»); расставлять coord, head, стопку; подъём и фокус — по Global Constraints. Шапку файла дополнить абзацем про coord.
-- [ ] **Step 4:** `npm test` — всё PASS.
-- [ ] **Step 5:** AGENTS.md: в пункт `claude-place group` — coord в первой зоне под head, внуки в стопке, глубина 1, ограничение «на чужом столе подъёма нет»; в пункт `deck` — внуки в колоду. Коммит `feat(claude-wt): раскладка группы — coord в первой зоне под head`.
+  - deck: дети и внуки во второй зоне целиком, `raised` = `[20, 1, <выбранный>]` при `selected: 'd'` (ид 10) и фокус 10; при `selected: 'h'` `raised` = `[20, 1]`. Внук выбранным в группе head не бывает: он есть только в группе coord, и `pickGroup` раскладывает её.
+- [x] **Step 2:** `npx vitest run src/claude-wt/group-layout.test.js` — новые FAIL, старые PASS.
+- [x] **Step 3:** в `arrangeGroup` заменить `const [headId, ...kidIds] = group` на `groupMembers({ group, groups })`; окна coord собирать тем же циклом, что детей (общий хелпер «открытое несвёрнутое окно или запись в журнал»); расставлять coord, head, стопку; подъём и фокус — по Global Constraints. Шапку файла дополнить абзацем про coord.
+- [x] **Step 4:** `npm test` — всё PASS.
+- [x] **Step 5:** AGENTS.md: в пункт `claude-place group` — coord в первой зоне под head, внуки в стопке, глубина 1, ограничение «на чужом столе подъёма нет»; в пункт `deck` — внуки в колоду. Коммит `feat(claude-wt): раскладка группы — coord в первой зоне под head`.
 
 ### Task 3: прогон на дереве из `claude-wt tree`
 
 **Files:**
 - Test: `src/claude-wt/group-layout.test.js`, `describe('живое дерево tg-gate-head')`: id и заголовки сессий сняты `claude-wt tree --json` (дерево `tg-gate-head → co-tg-gate → .gate-code, .gate-data`), плюс синтетический прямой ребёнок `.gate-direct`; окна — синтетические прямоугольники (в дереве геометрии нет). Ожидание записано таблицей `окно → зона → y` и порядком подъёма — она же идёт в отчёт.
 
-- [ ] **Step 1:** снять `claude-wt tree --json`, собрать фикстуру, группы — как `place_order::group_ids` (от глубокого к корню).
-- [ ] **Step 2:** тест: head и coord в 3:1, coord поднят раньше head, три окна в 3:4.
-- [ ] **Step 3:** `npm test` — PASS; таблицу плана расстановки — в отчёт coord.
-- [ ] **Step 4:** коммит, пуш `feat/group-coord`, PR в master.
+- [x] **Step 1:** снять `claude-wt tree --json`, собрать фикстуру, группы — как `place_order::group_ids` (от глубокого к корню).
+- [x] **Step 2:** тест: head и coord в 3:1, coord поднят раньше head, три окна в 3:4.
+- [x] **Step 3:** `npm test` — PASS; таблицу плана расстановки — в отчёт coord.
+- [x] **Step 4:** коммит, пуш `feat/group-coord`, PR в master.
 
 ### Task 4: Деплой (только по команде coord)
 
 - Выкатывается: node-часть windows11-manager, `src/claude-wt/` (демон не меняется, раскладку зовёт служба — `node src/index.js mqtt`).
 - Команда (делает coord): `BRANCH=feat/group-coord ./data/scripts/deploy-pc.sh --no-build` на nb. Мак пропущен, недоступен; popstas-pc исключён.
-- Проверка: на nb Ctrl+Win+F10 из окна head `wt-autocompact-head` — `co-autocompact` в первой зоне под head, исполнители стопкой во второй; в логе трея `claude-place group: head wt-autocompact-head, coord co-autocompact, детей N из N`. Из окна coord — раскладывается группа coord, head на месте.
+- Живые зоны nb (`claudeWt.headZones: { 1: [1, 2], 2: [3, 4], 3: [5, 6] }`, `childPlacement` не задан — stack): `wt-autocompact-head` стоит в 2:3 → он и `co-autocompact` в 2:3, исполнители стопкой в 2:4.
+- Проверка: на nb Ctrl+Win+F10 из окна head `wt-autocompact-head` — `co-autocompact` в первой зоне под head, исполнители стопкой во второй; в логе трея `claude-place group: head wt-autocompact-head, coord co-autocompact, детей N из N`. CLI `claude-wt window layout` (ccfzf) шлёт одну плоскую группу всех потомков — coord с этой дороги не распознаётся и идёт в стопку, как раньше. Из окна coord — раскладывается группа coord, head на месте.
 - После проверки: мерж PR, на nb `git checkout master && git pull --ff-only` в `C:\projects\js\windows11-manager`.
