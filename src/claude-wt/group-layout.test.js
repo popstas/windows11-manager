@@ -363,17 +363,17 @@ describe('coord в группе', () => {
   });
 });
 
-// Дерево снято `claude-wt tree --json` на nb 27.11.2026: tg-gate-head →
-// co-tg-gate → .gate-code, .gate-data. Прямого ребёнка у head в тот момент не
-// было — `.gate-direct` добавлен. Группы — как их шлёт пикер
+// Форма дерева снята `claude-wt tree --json` на nb 27.11.2026 (head → coord →
+// два исполнителя), имена и id заменены нейтральными. Прямого ребёнка у head
+// в тот момент не было — `kid-direct` добавлен. Группы — как их шлёт пикер
 // (`place_order::group_ids`): от самого глубокого head к корню.
-describe('живое дерево tg-gate-head', () => {
+describe('живое дерево head → coord → исполнители', () => {
   const S = {
-    head: { id: 'cef3ebaf-8865-4083-ba8a-299b4c103aed', title: 'tg-gate-head', wid: 1 },
-    coord: { id: '602d264f-6f58-4ede-8e16-c8dcdfb05213', title: 'co-tg-gate', wid: 2 },
-    code: { id: '18fef38e-9104-4c9d-bdaa-698041f72779', title: '.gate-code', wid: 3 },
-    data: { id: '5a6959c9-236d-4215-a8e4-5a8b17b1e5f4', title: '.gate-data', wid: 4 },
-    direct: { id: 'direct-0000', title: '.gate-direct', wid: 5 },
+    head: { id: '00000000-0000-4000-8000-000000000001', title: 'head-a', wid: 1 },
+    coord: { id: '00000000-0000-4000-8000-000000000002', title: 'coord-a', wid: 2 },
+    code: { id: '00000000-0000-4000-8000-000000000003', title: 'kid-1', wid: 3 },
+    data: { id: '00000000-0000-4000-8000-000000000004', title: 'kid-2', wid: 4 },
+    direct: { id: '00000000-0000-4000-8000-000000000005', title: 'kid-direct', wid: 5 },
   };
   const groups = [
     [S.coord.id, S.code.id, S.data.id],
@@ -413,22 +413,22 @@ describe('живое дерево tg-gate-head', () => {
     const h = liveHarness(S.head.wid);
     await arrangeGroup({ groups, selected: null, log: h.log }, h.deps);
     expect(h.placed).toEqual([
-      { окно: 'co-tg-gate', зона: '3:1', y: 0 },
-      { окно: 'tg-gate-head', зона: '3:1', y: 0 },
-      { окно: '.gate-direct', зона: '3:4', y: 0 },
-      { окно: '.gate-code', зона: '3:4', y: 389 },
-      { окно: '.gate-data', зона: '3:4', y: 778 },
+      { окно: 'coord-a', зона: '3:1', y: 0 },
+      { окно: 'head-a', зона: '3:1', y: 0 },
+      { окно: 'kid-direct', зона: '3:4', y: 0 },
+      { окно: 'kid-1', зона: '3:4', y: 389 },
+      { окно: 'kid-2', зона: '3:4', y: 778 },
     ]);
-    expect(h.raised).toEqual(['co-tg-gate', 'tg-gate-head', '.gate-direct', '.gate-code', '.gate-data']);
+    expect(h.raised).toEqual(['coord-a', 'head-a', 'kid-direct', 'kid-1', 'kid-2']);
     expect(h.deps.focus).toHaveBeenCalledWith(S.head.wid);
-    expect(h.log).toHaveBeenCalledWith('claude-place group: head tg-gate-head, coord co-tg-gate, детей 3 из 3');
+    expect(h.log).toHaveBeenCalledWith('claude-place group: head head-a, coord coord-a, детей 3 из 3');
   });
 
   it('из окна coord: раскладывается группа coord, head и прямой ребёнок на месте', async () => {
     const h = liveHarness(S.coord.wid);
     await arrangeGroup({ groups, selected: null, log: h.log }, h.deps);
     expect(h.placed.map(p => [p.окно, p.зона])).toEqual([
-      ['co-tg-gate', '3:1'], ['.gate-code', '3:4'], ['.gate-data', '3:4'],
+      ['coord-a', '3:1'], ['kid-1', '3:4'], ['kid-2', '3:4'],
     ]);
   });
 });
