@@ -1,6 +1,28 @@
 # Changelog
 
 
+## v4.16.0 - 2026-11-27
+
+### Features
+
+- claude-wt: Раскладка группы — coord в первой зоне под head
+- claude-wt: GroupMembers — coord и внуки в раскладке группы
+- claude-wt: Тихий ход не гасит непросмотренный нетихий итог (loudAt)
+- claude-wt: Тихий конец хода head — без мигания кнопки и звонка WezTerm
+
+### Bug Fixes
+
+- claude-wt: Сбой аддона после записи списка тихих его не удаляет
+
+### Documentation
+
+- plan: Раскладка с coord — живые зоны nb, отметки задач
+
+### Testing
+
+- claude-wt: Нейтральные id и имена в фикстуре дерева группы
+- claude-wt: Раскладка группы на живом дереве tg-gate-head
+
 ## v4.15.0 - 2026-11-26
 
 ### Features
