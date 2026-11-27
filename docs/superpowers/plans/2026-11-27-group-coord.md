@@ -80,8 +80,7 @@
 ### Task 3: прогон на дереве из `claude-wt tree`
 
 **Files:**
-- Create: `src/claude-wt/fixtures/group-coord-tree.json` — groups и сессии, снятые `claude-wt tree --json` (дерево `tg-gate-head → co-tg-gate → .gate-code, .gate-data`) плюс прямой ребёнок head; окна — синтетические прямоугольники.
-- Test: `src/claude-wt/group-layout.test.js` — тест «живое дерево»: план расстановки печатается таблицей `окно → зона → порядок подъёма` (`console.table` в тесте не нужен — таблица для отчёта снимается скриптом в scratchpad).
+- Test: `src/claude-wt/group-layout.test.js`, `describe('живое дерево tg-gate-head')`: id и заголовки сессий сняты `claude-wt tree --json` (дерево `tg-gate-head → co-tg-gate → .gate-code, .gate-data`), плюс синтетический прямой ребёнок `.gate-direct`; окна — синтетические прямоугольники (в дереве геометрии нет). Ожидание записано таблицей `окно → зона → y` и порядком подъёма — она же идёт в отчёт.
 
 - [ ] **Step 1:** снять `claude-wt tree --json`, собрать фикстуру, группы — как `place_order::group_ids` (от глубокого к корню).
 - [ ] **Step 2:** тест: head и coord в 3:1, coord поднят раньше head, три окна в 3:4.

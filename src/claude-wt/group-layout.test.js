@@ -362,3 +362,73 @@ describe('coord в группе', () => {
     });
   });
 });
+
+// Дерево снято `claude-wt tree --json` на nb 27.11.2026: tg-gate-head →
+// co-tg-gate → .gate-code, .gate-data. Прямого ребёнка у head в тот момент не
+// было — `.gate-direct` добавлен. Группы — как их шлёт пикер
+// (`place_order::group_ids`): от самого глубокого head к корню.
+describe('живое дерево tg-gate-head', () => {
+  const S = {
+    head: { id: 'cef3ebaf-8865-4083-ba8a-299b4c103aed', title: 'tg-gate-head', wid: 1 },
+    coord: { id: '602d264f-6f58-4ede-8e16-c8dcdfb05213', title: 'co-tg-gate', wid: 2 },
+    code: { id: '18fef38e-9104-4c9d-bdaa-698041f72779', title: '.gate-code', wid: 3 },
+    data: { id: '5a6959c9-236d-4215-a8e4-5a8b17b1e5f4', title: '.gate-data', wid: 4 },
+    direct: { id: 'direct-0000', title: '.gate-direct', wid: 5 },
+  };
+  const groups = [
+    [S.coord.id, S.code.id, S.data.id],
+    [S.head.id, S.coord.id, S.direct.id],
+  ];
+
+  function liveHarness(active) {
+    const raised = [];
+    const windows = new Map();
+    const sessions = Object.values(S).map((x, i) => {
+      const w = win(x.wid, x === S.head ? R['3:4'] : { x: 2100 + 40 * i, y: 40 * i, width: 700, height: 500 });
+      w.bringToTop = vi.fn(() => raised.push(x.title));
+      windows.set(x.wid, w);
+      return { id: x.id, title: x.title, open: true, windowId: x.wid, desktop: 1 };
+    });
+    const placed = [];
+    const zoneName = pos => Object.entries(R).find(([, r]) => r.x === pos.x && r.width === pos.width)?.[0] ?? '?';
+    const deps = {
+      cfg: () => ({ headZones: HZ, headZonesProblems: [] }),
+      layout: () => LAYOUT,
+      sessions: () => ({ ok: true, sessions }),
+      getWindow: id => windows.get(id),
+      activeId: () => active,
+      desktopOf: async () => 0,
+      place: vi.fn(async ({ w, rule }) => {
+        const t = Object.values(S).find(x => x.wid === w.id).title;
+        placed.push({ окно: t, зона: zoneName(rule.pos), y: rule.pos.y });
+        w.bounds = rule.pos;
+        return { changes: [{ name: 'bounds' }] };
+      }),
+      focus: vi.fn(() => true),
+    };
+    return { deps, placed, raised, log: vi.fn() };
+  }
+
+  it('из окна head: head и coord в 3:1, coord под head, трое стопкой в 3:4', async () => {
+    const h = liveHarness(S.head.wid);
+    await arrangeGroup({ groups, selected: null, log: h.log }, h.deps);
+    expect(h.placed).toEqual([
+      { окно: 'co-tg-gate', зона: '3:1', y: 0 },
+      { окно: 'tg-gate-head', зона: '3:1', y: 0 },
+      { окно: '.gate-direct', зона: '3:4', y: 0 },
+      { окно: '.gate-code', зона: '3:4', y: 389 },
+      { окно: '.gate-data', зона: '3:4', y: 778 },
+    ]);
+    expect(h.raised).toEqual(['co-tg-gate', 'tg-gate-head', '.gate-direct', '.gate-code', '.gate-data']);
+    expect(h.deps.focus).toHaveBeenCalledWith(S.head.wid);
+    expect(h.log).toHaveBeenCalledWith('claude-place group: head tg-gate-head, coord co-tg-gate, детей 3 из 3');
+  });
+
+  it('из окна coord: раскладывается группа coord, head и прямой ребёнок на месте', async () => {
+    const h = liveHarness(S.coord.wid);
+    await arrangeGroup({ groups, selected: null, log: h.log }, h.deps);
+    expect(h.placed.map(p => [p.окно, p.зона])).toEqual([
+      ['co-tg-gate', '3:1'], ['.gate-code', '3:4'], ['.gate-data', '3:4'],
+    ]);
+  });
+});
