@@ -247,3 +247,118 @@ describe('arrangeGroup', () => {
     expect((await arrangeGroup({ groups: [h.group], selected: 'h', log: h.log }, h.deps)).ok).toBe(false);
   });
 });
+
+// Часть 4 (Стас 27.11): ребёнок со своей группой (coord) — в первой зоне под
+// head, его дети — в стопку второй зоны вместе с прямыми детьми head.
+describe('coord в группе', () => {
+  const Z = R['3:4'];
+  const GROUPS = [['co', 'e1', 'e2'], ['h', 'co', 'd']];
+
+  function coordHarness({ over = {}, active = 1, mode, groups = GROUPS, extra = [] } = {}) {
+    const raised = [];
+    const windows = new Map();
+    const sessions = [];
+    const add = (id, wid, title, bounds) => {
+      const o = over[id] ?? {};
+      const w = win(wid, o.bounds ?? bounds);
+      w.bringToTop = vi.fn(() => raised.push(wid));
+      windows.set(wid, w);
+      sessions.push({ id, title, open: o.closed ? false : true, windowId: wid, desktop: o.desktop ?? 1 });
+    };
+    add('h', 1, 'head-session', R['3:4']);
+    add('co', 20, 'co-x', { x: 100, y: 100, width: 600, height: 400 });
+    add('e1', 21, '.e1', { x: 150, y: 150, width: 600, height: 400 });
+    add('e2', 22, '.e2', { x: 200, y: 200, width: 600, height: 400 });
+    add('d', 10, 'd', { x: 250, y: 250, width: 600, height: 400 });
+    for (const [id, wid] of extra) add(id, wid, id, { x: 300, y: 300, width: 600, height: 400 });
+    const placed = [];
+    const deps = {
+      cfg: () => ({ headZones: HZ, headZonesProblems: [], ...(mode ? { childPlacement: mode } : {}) }),
+      layout: () => LAYOUT,
+      sessions: () => ({ ok: true, sessions }),
+      getWindow: id => windows.get(id),
+      activeId: () => active,
+      desktopOf: async () => 0,
+      place: vi.fn(async ({ w, rule }) => { placed.push({ id: w.id, ...rule }); w.bounds = rule.pos; return { changes: [{ name: 'bounds' }] }; }),
+      focus: vi.fn(() => true),
+    };
+    return { deps, placed, raised, log: vi.fn(), groups };
+  }
+
+  it('coord в первой зоне под head, внуки в стопке после прямого ребёнка', async () => {
+    const h = coordHarness();
+    const res = await arrangeGroup({ groups: h.groups, selected: 'h', log: h.log }, h.deps);
+    expect(res).toEqual({ ok: true, placed: 5 });
+    expect(h.placed).toEqual([
+      { id: 20, pos: R['3:1'] },
+      { id: 1, pos: R['3:1'] },
+      { id: 10, pos: third(Z, 0) },
+      { id: 21, pos: third(Z, 1) },
+      { id: 22, pos: third(Z, 2) },
+    ]);
+    expect(h.raised).toEqual([20, 1, 10, 21, 22]);
+    expect(h.deps.focus).toHaveBeenCalledWith(1);
+    expect(h.log).toHaveBeenCalledWith('claude-place group: head head-session, coord co-x, детей 3 из 3');
+  });
+
+  it('нажатие из окна coord раскладывает группу coord, head не двигается', async () => {
+    const h = coordHarness({ active: 20 });
+    await arrangeGroup({ groups: h.groups, selected: null, log: h.log }, h.deps);
+    expect(h.placed.map(p => p.id)).toEqual([20, 21, 22]);
+    // Окно coord стоит на мониторе 1 — его группа раскладывается там.
+    expect(h.placed[0].pos).toEqual(R['1:3']);
+  });
+
+  // Единственный случай, когда coord оказывается над head: фокус по прежнему
+  // правилу остаётся у активного окна.
+  it('активен coord, выбран head — фокус остаётся у coord', async () => {
+    const h = coordHarness({ active: 20 });
+    await arrangeGroup({ groups: h.groups, selected: 'h', log: h.log }, h.deps);
+    expect(h.placed[1]).toEqual({ id: 1, pos: R['3:1'] });
+    expect(h.deps.focus).toHaveBeenCalledWith(20);
+  });
+
+  it('свёрнутый coord пропущен, его дети всё равно в стопке', async () => {
+    const h = coordHarness({ over: { co: { bounds: { x: -32000, y: -32000, width: 160, height: 28 } } } });
+    await arrangeGroup({ groups: h.groups, selected: 'h', log: h.log }, h.deps);
+    expect(h.placed.map(p => p.id)).toEqual([1, 10, 21, 22]);
+    expect(h.log).toHaveBeenCalledWith('claude-place group: окно сессии co свёрнуто или исчезло — пропущено');
+    expect(h.log).toHaveBeenCalledWith('claude-place group: head head-session, детей 3 из 3');
+  });
+
+  it('coord с другого стола едет на стол head', async () => {
+    const h = coordHarness({ over: { co: { desktop: 2 } } });
+    await arrangeGroup({ groups: h.groups, selected: 'h', log: h.log }, h.deps);
+    expect(h.placed[0]).toEqual({ id: 20, pos: R['3:1'], desktop: 1 });
+  });
+
+  it('глубина один уровень: правнук не двигается', async () => {
+    const groups = [['e1', 'z'], ['co', 'e1', 'e2'], ['h', 'co', 'd']];
+    const h = coordHarness({ groups, extra: [['z', 30]] });
+    await arrangeGroup({ groups, selected: 'h', log: h.log }, h.deps);
+    expect(h.placed.map(p => p.id)).toEqual([20, 1, 10, 21, 22]);
+  });
+
+  describe('deck', () => {
+    it('внуки в колоду, выбран head — подняты coord и head', async () => {
+      const h = coordHarness({ mode: 'deck' });
+      await arrangeGroup({ groups: h.groups, selected: 'h', log: h.log }, h.deps);
+      expect(h.placed).toEqual([
+        { id: 20, pos: R['3:1'] },
+        { id: 1, pos: R['3:1'] },
+        ...[10, 21, 22].map(id => ({ id, pos: Z })),
+      ]);
+      expect(h.raised).toEqual([20, 1]);
+      expect(h.deps.focus).toHaveBeenCalledWith(1);
+    });
+
+    // Внук выбранным здесь не бывает: он есть только в группе coord, и
+    // pickGroup с ним раскладывает её. Выбран прямой ребёнок — он сверху.
+    it('selected — прямой ребёнок: он сверху колоды после coord и head', async () => {
+      const h = coordHarness({ mode: 'deck' });
+      await arrangeGroup({ groups: h.groups, selected: 'd', log: h.log }, h.deps);
+      expect(h.raised).toEqual([20, 1, 10]);
+      expect(h.deps.focus).toHaveBeenCalledWith(10);
+    });
+  });
+});

@@ -10,6 +10,12 @@
  * (`groupPlan`). Двигаются только окна группы. Ребёнок с другого стола едет
  * на стол head. Подъём и фокус — только если человек сейчас на столе head:
  * иначе `bringToTop()` утащил бы его туда.
+ *
+ * Прямой ребёнок со своей группой в `groups` — coord (решение Стаса 27.11):
+ * он встаёт в первую зону под head и поднимается раньше него, а его дети
+ * (внуки head) идут в стопку второй зоны после прямых детей head
+ * (`groupMembers`). Глубина один уровень. Фокус — по прежнему правилу, и
+ * единственный случай «coord над head» — когда активное окно и есть coord.
  */
 import { claudeWtSessions } from './view.js';
 import { getWindowById, getActiveWindowId, focusWindowById } from '../windows.js';
@@ -19,7 +25,7 @@ import { getClaudeWtConfig } from './index.js';
 import { resolveHeadLayout } from './head-zones.js';
 import { isMinimized } from '../windows-helpers.js';
 import { pickFocusTarget } from '../claude-layout-helpers.js';
-import { locateWindow, pickGroup, groupPlan } from './head-zones-helpers.js';
+import { locateWindow, pickGroup, groupMembers, groupPlan } from './head-zones-helpers.js';
 
 const DEFAULT_DEPS = {
   cfg: () => getClaudeWtConfig(),
@@ -79,7 +85,7 @@ async function arrangeGroup({ groups, selected, log = () => {} }, deps = {}) {
   const group = pickGroup({ groups, selected, activeId: activeSession });
   if (!group) return { ok: false, reason: 'ни одна группа не содержит выбранную или активную сессию' };
 
-  const [headId, ...kidIds] = group;
+  const { head: headId, coords: coordIds, stack: kidIds } = groupMembers({ group, groups });
   const hs = open.find(s => s.id === headId);
   const headW = hs ? d.getWindow(hs.windowId) : null;
   const headRect = boundsOf(headW);
@@ -99,20 +105,25 @@ async function arrangeGroup({ groups, selected, log = () => {} }, deps = {}) {
   }
 
   const headDesktop = hs.desktop ?? null;
-  const kids = [];
-  for (const id of kidIds) {
-    const s = open.find(x => x.id === id);
-    if (!s) {
-      log(`${TAG}: сессия ${id} здесь не открыта — пропущена`);
-      continue;
+  const windowsOf = ids => {
+    const out = [];
+    for (const id of ids) {
+      const s = open.find(x => x.id === id);
+      if (!s) {
+        log(`${TAG}: сессия ${id} здесь не открыта — пропущена`);
+        continue;
+      }
+      const w = d.getWindow(s.windowId);
+      if (!boundsOf(w)) {
+        log(`${TAG}: окно сессии ${id} свёрнуто или исчезло — пропущено`);
+        continue;
+      }
+      out.push({ id, w, desktop: s.desktop ?? null, title: s.title ?? id });
     }
-    const w = d.getWindow(s.windowId);
-    if (!boundsOf(w)) {
-      log(`${TAG}: окно сессии ${id} свёрнуто или исчезло — пропущено`);
-      continue;
-    }
-    kids.push({ id, w, desktop: s.desktop ?? null });
-  }
+    return out;
+  };
+  const coords = windowsOf(coordIds);
+  const kids = windowsOf(kidIds);
   const deck = cfg.childPlacement === 'deck';
   const plan = groupPlan({ first: rects.first, second: rects.second, n: kids.length, mode: deck ? 'deck' : 'stack' });
   // Текущий стол — до переносов: активное окно может быть ребёнком, который
@@ -129,11 +140,14 @@ async function arrangeGroup({ groups, selected, log = () => {} }, deps = {}) {
       log(`${TAG}: ${w.id} — ${e.message}`, 'error');
     }
   };
+  const toHeadDesktop = desktop => (headDesktop != null && desktop != null && desktop !== headDesktop
+    ? { desktop: headDesktop } : {});
+  // coord — в ту же первую зону, раньше head: тот ляжет поверх.
+  for (const { w, desktop } of coords) await put(w, { pos: plan.head, ...toHeadDesktop(desktop) });
   await put(headW, { pos: plan.head });
   for (let i = 0; i < kids.length; i += 1) {
     const { w, desktop } = kids[i];
-    const move = headDesktop != null && desktop != null && desktop !== headDesktop;
-    await put(w, { pos: plan.children[i], ...(move ? { desktop: headDesktop } : {}) });
+    await put(w, { pos: plan.children[i], ...toHeadDesktop(desktop) });
   }
 
   // Стол не узнался — не поднимать: подъём окна с чужого стола уводит туда
@@ -146,7 +160,10 @@ async function arrangeGroup({ groups, selected, log = () => {} }, deps = {}) {
     // работал.
     const pickedId = selected ?? activeSession;
     const picked = deck ? kids.find(k => k.id === pickedId) ?? null : null;
-    const all = deck ? [headW, ...(picked ? [picked.w] : [])] : [headW, ...kids.map(k => k.w)];
+    const under = coords.map(c => c.w);
+    const above = deck ? (picked ? [picked.w] : []) : kids.map(k => k.w);
+    // coord раньше head: из первой зоны head поднимается последним.
+    const all = [...under, headW, ...above];
     for (const w of all) {
       try {
         w.bringToTop();
@@ -155,10 +172,12 @@ async function arrangeGroup({ groups, selected, log = () => {} }, deps = {}) {
       }
     }
     // Выбранный ребёнок колоды — тот, ради кого нажимали: фокус ему.
-    const focusId = picked ? picked.w.id : pickFocusTarget(all.map(w => w.id), activeBefore);
+    // Без активного окна в группе фокус — head, как до coord: он первым.
+    const focusId = picked ? picked.w.id : pickFocusTarget([headW, ...under, ...above].map(w => w.id), activeBefore);
     if (focusId !== null && !d.focus(focusId)) log(`${TAG}: фокус не дошёл до окна ${focusId}`, 'warn');
   }
-  log(`${TAG}: head ${hs.title ?? headId}, детей ${kids.length} из ${kidIds.length}`);
+  const coordText = coords.length ? `, coord ${coords.map(c => c.title).join(', ')}` : '';
+  log(`${TAG}: head ${hs.title ?? headId}${coordText}, детей ${kids.length} из ${kidIds.length}`);
   return { ok: true, placed };
 }
 
